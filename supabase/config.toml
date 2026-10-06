@@ -1,9 +1,9 @@
 # Minimal Supabase CLI config for this project (run `supabase init` merges defaults).
-project_id = "maazan"
+project_id = "kjfihzskaqcboeejnkak"
 
 [auth]
-site_url = "http://localhost:5173"
-additional_redirect_urls = ["https://localhost:5173"]
+site_url = "https://eithan1710.github.io/Calorie-Tracker/"
+additional_redirect_urls = ["http://localhost:5173"]
 
 [auth.email]
 enable_signup = true
@@ -13,10 +13,13 @@ otp_length = 6
 otp_expiry = 3600
 
 [functions.analyze-food]
+import_map = "./functions/deno.json"
 verify_jwt = false   # the function verifies the user itself (supports new API keys)
 
 [functions.health-ingest]
+import_map = "./functions/deno.json"
 verify_jwt = false   # authenticated with the personal Shortcuts token
 
 [functions.send-reminders]
+import_map = "./functions/deno.json"
 verify_jwt = false   # authenticated with x-cron-secret

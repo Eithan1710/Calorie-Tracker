@@ -52,7 +52,7 @@ export function HealthConnect() {
   const [open, setOpen] = useState(false)
   const [token, setToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
+  const appUrl = typeof window !== 'undefined' ? `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/$/, '') : ''
   const canBackground = hasSupabase && isSignedIn()
 
   const copy = async (s: string) => {

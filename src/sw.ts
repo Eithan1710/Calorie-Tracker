@@ -25,18 +25,19 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(payload.title ?? 'מאזן', {
       body: payload.body ?? 'לא שכחת לעדכן את היום? 🥗',
       tag: 'daily-reminder',
-      icon: '/pwa-192.png',
-      badge: '/badge-72.png',
+      icon: new URL('pwa-192.png', self.registration.scope).href,
+      badge: new URL('badge-72.png', self.registration.scope).href,
       lang: 'he',
       dir: 'rtl',
-      data: { url: payload.url ?? '/?add=1' },
+      // relative to the app's scope so it works under a sub-path (GitHub Pages)
+      data: { url: new URL(payload.url ?? './?add=1', self.registration.scope).href },
     }),
   )
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = (event.notification.data?.url as string) ?? '/'
+  const url = (event.notification.data?.url as string) ?? self.registration.scope
   event.waitUntil(
     (async () => {
       const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })

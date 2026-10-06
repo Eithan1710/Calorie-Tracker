@@ -8,7 +8,11 @@ import { apiPlugin } from './dev/apiPlugin'
 // keep the edge-function copy of the nutrition skill in sync with SKILL.md
 execFileSync(process.execPath, ['scripts/sync-skill.mjs'], { stdio: 'inherit' })
 
+// GitHub Pages serves the app under /<repo>/ — set VITE_BASE=/Calorie-Tracker/ there
+const base = process.env.VITE_BASE || '/'
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     tailwindcss(),
@@ -27,8 +31,8 @@ export default defineConfig({
         description: 'מעקב קלוריות וחלבון מהיר, בעברית',
         lang: 'he',
         dir: 'rtl',
-        start_url: '/',
-        scope: '/',
+        start_url: './',
+        scope: './',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f5f3ee',

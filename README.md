@@ -49,21 +49,36 @@ npm run build       # typecheck + production PWA build → dist/
 
 Requires Node ≥ 22.18 (the dev API imports the shared TypeScript pipeline directly).
 
-## Deploying (Supabase + any static host)
+## Deployment
 
-1. Create a Supabase project. Apply the schema: `supabase link && supabase db push`
-   (`supabase/migrations/…_init.sql` — tables + Row Level Security).
-2. Auth → Email: keep email OTP on and put `{{ .Token }}` in the *Magic Link* template — the PWA signs in with a
-   6-digit code (a magic link would open Safari instead of the installed app).
-3. Secrets & functions:
-   ```bash
-   supabase secrets set --env-file .env      # GEMINI_API_KEY, GROQ_API_KEY, … (see .env.example)
-   supabase functions deploy analyze-food health-ingest send-reminders
-   ```
-4. Reminders (optional): `npx web-push generate-vapid-keys`, set `VAPID_*` + `CRON_SECRET`, create the two Vault
-   secrets described at the top of `supabase/migrations/…_reminder_cron.sql`, then apply that migration.
-5. Build the frontend with `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (and `VITE_VAPID_PUBLIC_KEY`) and host
-   `dist/` anywhere static (Vercel, Netlify, Cloudflare Pages, GitHub Pages). Serve over HTTPS.
+**Live setup:** app on GitHub Pages → <https://eithan1710.github.io/Calorie-Tracker/>, backend in the Supabase
+project `kjfihzskaqcboeejnkak` (shared with another app — every מאזן table, policy, function and Vault secret
+is prefixed `mz_`, and anonymous sessions from the other app are excluded from מאזן data and the AI endpoint).
+
+| Piece | How it's deployed |
+|---|---|
+| Database schema + RLS, Vault helpers, reminder cron | `supabase/migrations/*` (applied) |
+| Web Push keys, cron secret | generated inside Supabase and kept in Vault — never in the repo or CI |
+| Edge functions + AI keys | [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) on push to `main` (or run it manually) |
+| PWA | [`pages.yml`](.github/workflows/pages.yml) on push to `main`: tests → build → GitHub Pages |
+
+**Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Required | |
+|---|---|---|
+| `SUPABASE_ACCESS_TOKEN` | yes | <https://supabase.com/dashboard/account/tokens> — lets the workflow deploy functions and set their secrets |
+| `GEMINI_API_KEY` | yes | <https://aistudio.google.com/apikey> (free tier) |
+| `ALLOWED_EMAILS` | recommended | comma-separated; only these accounts may use the AI endpoint |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `USDA_FDC_API_KEY` | optional | fallback providers / USDA lookups |
+
+**One-time Supabase dashboard setting:** Authentication → Email Templates → *Magic Link*: add `{{ .Token }}`
+(e.g. `קוד הכניסה שלך: {{ .Token }}`). The PWA signs in with that 6-digit code — a magic link would open
+Safari instead of the installed app. Supabase's built-in mailer only delivers to the project's team members
+and is rate-limited, which is fine for a personal app; add custom SMTP for anything more.
+
+**Deploying your own copy elsewhere:** apply `supabase/migrations`, then
+`select public.mz_set_secret('mz_project_url', 'https://<ref>.supabase.co');`, change the project ref in the two
+workflows, and build with `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` (+ `VITE_BASE` for a sub-path).
 
 ## Environment variables
 
@@ -77,9 +92,10 @@ All documented in [`.env.example`](.env.example). Summary:
 | `AI_PROVIDER_ORDER`, `AI_TIMEOUT_MS` | server | Chain order / timeout |
 | `USDA_FDC_API_KEY`, `USDA_FDC_DISABLED` | server | USDA FoodData Central lookups for foods outside the table |
 | `REQUIRE_AUTH`, `ALLOWED_EMAILS` | server | Protect the free AI quota (signed-in users / allow-list) |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `CRON_SECRET` | server | Web Push reminder |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | client (public) | Optional sync + hosted functions |
-| `VITE_VAPID_PUBLIC_KEY` | client (public) | Push subscription |
+| `VAPID_*`, `CRON_SECRET` | server (optional) | Override the Web Push keys / cron secret that otherwise live in Vault |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | client (public) | Optional sync + hosted functions |
+| `VITE_BASE` | build | Sub-path for hosting, e.g. `/Calorie-Tracker/` on GitHub Pages |
+| `VITE_VAPID_PUBLIC_KEY` | client (public, optional) | Otherwise fetched from `send-reminders` |
 | `VITE_API_BASE` | client (public) | Override the analyze endpoint |
 
 AI keys are **never** bundled into the frontend — only `VITE_*` values are, and none of them are secret.
@@ -172,7 +188,8 @@ plugin (a small native companion) — the energy model and data layer don't chan
 ## Reminders — what works where
 
 - A web page can't schedule an OS notification for later (the Notification Triggers API was abandoned).
-- **Reliable:** Web Push. `pg_cron` calls `send-reminders` every 15 min; it sends one push per local day at/after
+- **Reliable:** Web Push. `pg_cron` calls `send-reminders` every 15 min (authenticated with a Vault-held
+  secret; the VAPID key pair is generated server-side on first use and also kept in Vault); it sends one push per local day at/after
   21:30, and skips users who logged something after 17:00. iPhone/iPad support Web Push **only for PWAs added
   to the Home Screen** (iOS 16.4+); the settings screen explains this.
 - **Without a backend:** a local timer fires while the app is open/backgrounded, and an in-app banner appears when
@@ -182,7 +199,7 @@ plugin (a small native companion) — the energy model and data layer don't chan
 
 - Local-first: IndexedDB (records) + localStorage (settings). Sync is optional, last-write-wins on `updated_at`,
   soft deletes so removals propagate.
-- Supabase schema in [`supabase/migrations`](supabase/migrations): `profiles`, `food_entries` (items as validated
+- Supabase schema in [`supabase/migrations`](supabase/migrations) (all prefixed `mz_`): `profiles`, `food_entries` (items as validated
   JSONB — always read/written with their entry, which keeps offline sync atomic), `exercises`, `health_data`,
   `daily_summaries`, `ai_analysis_logs`, `push_subscriptions`, `health_ingest_tokens`. **RLS on every table**,
   owner-only; the ingest-token hash isn't readable even by its owner. Minimal personal data (age, not birth date;

@@ -1,4 +1,6 @@
 -- מאזן — initial schema
+-- Every object is prefixed `mz_` so the app can share a Supabase project with
+-- other apps without name collisions.
 -- Local-first app: the browser is the source of truth while offline, and syncs
 -- rows here when signed in. Every table is private to its owner via RLS.
 -- Personal data kept to the minimum needed for the energy model (no name, no
@@ -7,7 +9,7 @@
 create extension if not exists pgcrypto;
 
 -- ── profiles ──────────────────────────────────────────────────────────────
-create table public.profiles (
+create table public.mz_profiles (
   user_id          uuid primary key references auth.users (id) on delete cascade,
   sex              text not null check (sex in ('male', 'female')),
   age              smallint not null check (age between 14 and 100),
@@ -25,7 +27,7 @@ create table public.profiles (
 -- (name, grams, per-100 g values, source, confidence, assumptions) as JSONB:
 -- items are always read/written together with their entry, and keeping them
 -- in one row makes offline sync atomic. Totals are denormalised for queries.
-create table public.food_entries (
+create table public.mz_food_entries (
   id             uuid primary key,
   user_id        uuid not null references auth.users (id) on delete cascade default auth.uid(),
   date           date not null,
@@ -47,11 +49,11 @@ create table public.food_entries (
   updated_at     timestamptz not null default now(),
   deleted_at     timestamptz
 );
-create index food_entries_user_date on public.food_entries (user_id, date);
-create index food_entries_user_updated on public.food_entries (user_id, updated_at);
+create index mz_food_entries_user_date on public.mz_food_entries (user_id, date);
+create index mz_food_entries_user_updated on public.mz_food_entries (user_id, updated_at);
 
 -- ── exercises ─────────────────────────────────────────────────────────────
-create table public.exercises (
+create table public.mz_exercises (
   id           uuid primary key,
   user_id      uuid not null references auth.users (id) on delete cascade default auth.uid(),
   date         date not null,
@@ -63,10 +65,10 @@ create table public.exercises (
   updated_at   timestamptz not null default now(),
   deleted_at   timestamptz
 );
-create index exercises_user_updated on public.exercises (user_id, updated_at);
+create index mz_exercises_user_updated on public.mz_exercises (user_id, updated_at);
 
 -- ── health_data (steps; written by the app or by the Apple Shortcuts bridge) ─
-create table public.health_data (
+create table public.mz_health_data (
   user_id     uuid not null references auth.users (id) on delete cascade default auth.uid(),
   date        date not null,
   steps       integer not null default 0 check (steps between 0 and 150000),
@@ -75,10 +77,10 @@ create table public.health_data (
   updated_at  timestamptz not null default now(),
   primary key (user_id, date)
 );
-create index health_data_user_updated on public.health_data (user_id, updated_at);
+create index mz_health_data_user_updated on public.mz_health_data (user_id, updated_at);
 
 -- ── daily_summaries (cache computed by the app; used by reminders & server-side history) ─
-create table public.daily_summaries (
+create table public.mz_daily_summaries (
   user_id      uuid not null references auth.users (id) on delete cascade default auth.uid(),
   date         date not null,
   calories_in  numeric(7, 1) not null default 0,
@@ -94,7 +96,7 @@ create table public.daily_summaries (
 );
 
 -- ── ai_analysis_logs (written by the analyze-food function; no images, text truncated) ─
-create table public.ai_analysis_logs (
+create table public.mz_ai_analysis_logs (
   id          bigint generated always as identity primary key,
   user_id     uuid not null references auth.users (id) on delete cascade,
   created_at  timestamptz not null default now(),
@@ -107,10 +109,10 @@ create table public.ai_analysis_logs (
   latency_ms  integer,
   attempts    jsonb not null default '[]'::jsonb
 );
-create index ai_logs_user_created on public.ai_analysis_logs (user_id, created_at desc);
+create index mz_ai_logs_user_created on public.mz_ai_analysis_logs (user_id, created_at desc);
 
 -- ── push_subscriptions (Web Push for the 21:30 reminder) ──────────────────
-create table public.push_subscriptions (
+create table public.mz_push_subscriptions (
   id             uuid primary key default gen_random_uuid(),
   user_id        uuid not null references auth.users (id) on delete cascade default auth.uid(),
   endpoint       text not null unique,
@@ -124,55 +126,57 @@ create table public.push_subscriptions (
 );
 
 -- ── health_ingest_tokens (personal token for the Shortcuts automation; hash only) ─
-create table public.health_ingest_tokens (
+create table public.mz_health_ingest_tokens (
   user_id    uuid primary key references auth.users (id) on delete cascade default auth.uid(),
   token_hash text not null unique check (char_length(token_hash) = 64),
   created_at timestamptz not null default now()
 );
 
 -- ── Row Level Security: owner-only everywhere ─────────────────────────────
-alter table public.profiles             enable row level security;
-alter table public.food_entries         enable row level security;
-alter table public.exercises            enable row level security;
-alter table public.health_data          enable row level security;
-alter table public.daily_summaries      enable row level security;
-alter table public.ai_analysis_logs     enable row level security;
-alter table public.push_subscriptions   enable row level security;
-alter table public.health_ingest_tokens enable row level security;
+-- Owner check + real (email) accounts only: the project may allow anonymous
+-- sign-ins for other apps, and those sessions must not touch מאזן data.
+alter table public.mz_profiles             enable row level security;
+alter table public.mz_food_entries         enable row level security;
+alter table public.mz_exercises            enable row level security;
+alter table public.mz_health_data          enable row level security;
+alter table public.mz_daily_summaries      enable row level security;
+alter table public.mz_ai_analysis_logs     enable row level security;
+alter table public.mz_push_subscriptions   enable row level security;
+alter table public.mz_health_ingest_tokens enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['profiles', 'food_entries', 'exercises', 'health_data', 'daily_summaries', 'push_subscriptions']
+  foreach t in array array['mz_profiles', 'mz_food_entries', 'mz_exercises', 'mz_health_data', 'mz_daily_summaries', 'mz_push_subscriptions']
   loop
-    execute format('create policy "%1$s_select_own" on public.%1$I for select to authenticated using ((select auth.uid()) = user_id)', t);
-    execute format('create policy "%1$s_insert_own" on public.%1$I for insert to authenticated with check ((select auth.uid()) = user_id)', t);
-    execute format('create policy "%1$s_update_own" on public.%1$I for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)', t);
-    execute format('create policy "%1$s_delete_own" on public.%1$I for delete to authenticated using ((select auth.uid()) = user_id)', t);
+    execute format('create policy "%1$s_select_own" on public.%1$I for select to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> ''is_anonymous'')::boolean is not true)', t);
+    execute format('create policy "%1$s_insert_own" on public.%1$I for insert to authenticated with check ((select auth.uid()) = user_id and ((select auth.jwt()) ->> ''is_anonymous'')::boolean is not true)', t);
+    execute format('create policy "%1$s_update_own" on public.%1$I for update to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> ''is_anonymous'')::boolean is not true) with check ((select auth.uid()) = user_id and ((select auth.jwt()) ->> ''is_anonymous'')::boolean is not true)', t);
+    execute format('create policy "%1$s_delete_own" on public.%1$I for delete to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> ''is_anonymous'')::boolean is not true)', t);
   end loop;
 end $$;
 
 -- logs: the user may read their own; only the service role (edge function) writes
-create policy "ai_logs_select_own" on public.ai_analysis_logs for select to authenticated using ((select auth.uid()) = user_id);
+create policy "mz_ai_logs_select_own" on public.mz_ai_analysis_logs for select to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true);
 
 -- ingest token: the user may create/rotate/delete theirs but never read the hash back
-create policy "tokens_insert_own" on public.health_ingest_tokens for insert to authenticated with check ((select auth.uid()) = user_id);
-create policy "tokens_update_own" on public.health_ingest_tokens for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
-create policy "tokens_delete_own" on public.health_ingest_tokens for delete to authenticated using ((select auth.uid()) = user_id);
+create policy "mz_tokens_insert_own" on public.mz_health_ingest_tokens for insert to authenticated with check ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true);
+create policy "mz_tokens_update_own" on public.mz_health_ingest_tokens for update to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true) with check ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true);
+create policy "mz_tokens_delete_own" on public.mz_health_ingest_tokens for delete to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true);
 -- upsert needs to see the existing row for conflict resolution; expose only existence
-create policy "tokens_select_own" on public.health_ingest_tokens for select to authenticated using ((select auth.uid()) = user_id);
+create policy "mz_tokens_select_own" on public.mz_health_ingest_tokens for select to authenticated using ((select auth.uid()) = user_id and ((select auth.jwt()) ->> 'is_anonymous')::boolean is not true);
 -- column privileges only bite once the table-wide grant is gone
-revoke select on public.health_ingest_tokens from authenticated, anon;
-grant select (user_id, created_at) on public.health_ingest_tokens to authenticated;
+revoke select on public.mz_health_ingest_tokens from authenticated, anon;
+grant select (user_id, created_at) on public.mz_health_ingest_tokens to authenticated;
 
 -- keep updated_at honest when a client forgets
-create or replace function public.touch_updated_at() returns trigger language plpgsql as $$
+create or replace function public.mz_touch_updated_at() returns trigger language plpgsql set search_path = '' as $$
 begin
   if new.updated_at is null or new.updated_at < old.updated_at then
     new.updated_at := now();
   end if;
   return new;
 end $$;
-create trigger profiles_touch before update on public.profiles for each row execute function public.touch_updated_at();
-create trigger food_touch before update on public.food_entries for each row execute function public.touch_updated_at();
-create trigger exercises_touch before update on public.exercises for each row execute function public.touch_updated_at();
+create trigger mz_profiles_touch before update on public.mz_profiles for each row execute function public.mz_touch_updated_at();
+create trigger mz_food_touch before update on public.mz_food_entries for each row execute function public.mz_touch_updated_at();
+create trigger mz_exercises_touch before update on public.mz_exercises for each row execute function public.mz_touch_updated_at();

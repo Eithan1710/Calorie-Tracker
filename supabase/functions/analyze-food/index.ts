@@ -21,7 +21,8 @@ Deno.serve(async (req) => {
   if (env('REQUIRE_AUTH') !== 'false') {
     const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
     const { data, error } = await admin.auth.getUser(token)
-    if (error || !data.user) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
+    // anonymous sessions (allowed in a shared project for other apps) don't get the AI quota
+    if (error || !data.user || data.user.is_anonymous) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
     const allowed = (env('ALLOWED_EMAILS') ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
     if (allowed.length && !allowed.includes((data.user.email ?? '').toLowerCase())) {
       return json({ error: 'unauthorized', message: 'החשבון הזה לא מורשה.' }, 403)
@@ -43,7 +44,7 @@ Deno.serve(async (req) => {
     log: (entry) => {
       if (!userId) return
       // fire-and-forget; never store images, and only a truncated text
-      admin.from('ai_analysis_logs').insert({
+      admin.from('mz_ai_analysis_logs').insert({
         user_id: userId,
         input_kind: parsed.data.image ? 'photo' : parsed.data.mode === 'correct' ? 'correction' : 'text',
         input_text: (parsed.data.correction ?? parsed.data.text ?? '').slice(0, 200),

@@ -120,17 +120,17 @@ async function push() {
   const touchedDates = new Set([...dirtyFood, ...dirtyEx, ...dirtyHealth].map((r) => r.date))
 
   if (dirtyFood.length) {
-    const { error } = await sb.from('food_entries').upsert(dirtyFood.map((f) => foodToRow(f, userId!)))
+    const { error } = await sb.from('mz_food_entries').upsert(dirtyFood.map((f) => foodToRow(f, userId!)))
     if (error) throw error
     markClean('food', dirtyFood.map((f) => f.id))
   }
   if (dirtyEx.length) {
-    const { error } = await sb.from('exercises').upsert(dirtyEx.map((e) => exToRow(e, userId!)))
+    const { error } = await sb.from('mz_exercises').upsert(dirtyEx.map((e) => exToRow(e, userId!)))
     if (error) throw error
     markClean('exercise', dirtyEx.map((e) => e.id))
   }
   if (dirtyHealth.length) {
-    const { error } = await sb.from('health_data').upsert(
+    const { error } = await sb.from('mz_health_data').upsert(
       dirtyHealth.map((h) => ({ user_id: userId, date: h.date, steps: h.steps, source: h.source, updated_at: h.updated_at })),
       { onConflict: 'user_id,date' },
     )
@@ -163,7 +163,7 @@ async function push() {
         updated_at: new Date().toISOString(),
       }
     })
-    await sb.from('daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
+    await sb.from('mz_daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
   }
 }
 
@@ -176,9 +176,9 @@ async function pull() {
   const startedAt = new Date().toISOString()
 
   const [food, ex, health] = await Promise.all([
-    sb.from('food_entries').select('*').gt('updated_at', sinceIso).limit(5000),
-    sb.from('exercises').select('*').gt('updated_at', sinceIso).limit(5000),
-    sb.from('health_data').select('date,steps,source,updated_at').gt('updated_at', sinceIso).limit(5000),
+    sb.from('mz_food_entries').select('*').gt('updated_at', sinceIso).limit(5000),
+    sb.from('mz_exercises').select('*').gt('updated_at', sinceIso).limit(5000),
+    sb.from('mz_health_data').select('date,steps,source,updated_at').gt('updated_at', sinceIso).limit(5000),
   ])
   if (food.error) throw food.error
   if (ex.error) throw ex.error
@@ -208,7 +208,7 @@ async function syncProfile() {
   if (!sb || !userId) return
   const st = getState().settings
   if (isValidProfile(st.profile)) {
-    await sb.from('profiles').upsert({
+    await sb.from('mz_profiles').upsert({
       user_id: userId,
       sex: st.profile.sex,
       age: st.profile.age,
@@ -221,7 +221,7 @@ async function syncProfile() {
       updated_at: new Date().toISOString(),
     })
   } else {
-    const { data } = await sb.from('profiles').select('*').eq('user_id', userId).maybeSingle()
+    const { data } = await sb.from('mz_profiles').select('*').eq('user_id', userId).maybeSingle()
     if (data) {
       updateSettings({
         profile: { sex: data.sex, age: data.age, heightCm: Number(data.height_cm), weightKg: Number(data.weight_kg) },
@@ -290,7 +290,10 @@ export async function pushProfile() {
 export async function sendLoginCode(email: string): Promise<string | null> {
   const sb = await getSupabase()
   if (!sb) return 'הסנכרון לא מוגדר'
-  const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
+  })
   return error ? 'לא הצלחנו לשלוח קוד. בדוק את הכתובת ונסה שוב.' : null
 }
 

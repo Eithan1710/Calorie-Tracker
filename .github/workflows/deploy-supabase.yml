@@ -1,0 +1,79 @@
+# Deploys the Supabase Edge Functions and syncs AI keys from GitHub secrets.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  — https://supabase.com/dashboard/account/tokens
+#   GEMINI_API_KEY         — https://aistudio.google.com/apikey (free tier)
+# Optional: GROQ_API_KEY, OPENROUTER_API_KEY, USDA_FDC_API_KEY, ALLOWED_EMAILS
+#
+# Database migrations live in supabase/migrations and are applied separately
+# (they need DB credentials); everything else server-side is here.
+name: Deploy Supabase functions
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**', 'skills/**', '.github/workflows/deploy-supabase.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-deploy
+  cancel-in-progress: false
+
+env:
+  SUPABASE_PROJECT_REF: kjfihzskaqcboeejnkak
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          missing=0
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret"; missing=1; }
+          [ -n "$GEMINI_API_KEY" ] || echo "::warning::GEMINI_API_KEY is not set — the app will use the offline parser only"
+          exit $missing
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Embed the nutrition skill into the function bundle
+        run: node scripts/sync-skill.mjs
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Sync AI secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+          ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
+        run: |
+          # write only the secrets that are set; values never appear in the log
+          : > secrets.env
+          for k in GEMINI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY USDA_FDC_API_KEY ALLOWED_EMAILS; do
+            v="${!k}"
+            [ -n "$v" ] && printf '%s=%s\n' "$k" "$v" >> secrets.env
+          done
+          if [ -s secrets.env ]; then
+            supabase secrets set --env-file secrets.env --project-ref "$SUPABASE_PROJECT_REF"
+          fi
+          rm -f secrets.env
+
+      - name: Deploy functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # all three authenticate themselves (user JWT / Shortcuts token / cron secret)
+          for fn in analyze-food health-ingest send-reminders; do
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+          done

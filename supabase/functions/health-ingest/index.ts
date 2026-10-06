@@ -36,13 +36,13 @@ Deno.serve(async (req) => {
   if (!body.success) return json({ error: 'invalid body' }, 400)
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
-  const { data: owner } = await admin.from('health_ingest_tokens').select('user_id').eq('token_hash', await sha256Hex(token)).maybeSingle()
+  const { data: owner } = await admin.from('mz_health_ingest_tokens').select('user_id').eq('token_hash', await sha256Hex(token)).maybeSingle()
   if (!owner) return json({ error: 'invalid token' }, 401)
 
-  const { data: profile } = await admin.from('profiles').select('timezone').eq('user_id', owner.user_id).maybeSingle()
+  const { data: profile } = await admin.from('mz_profiles').select('timezone').eq('user_id', owner.user_id).maybeSingle()
   const date = body.data.date ?? todayIn(profile?.timezone ?? 'Asia/Jerusalem')
 
-  const { error } = await admin.from('health_data').upsert(
+  const { error } = await admin.from('mz_health_data').upsert(
     { user_id: owner.user_id, date, steps: body.data.steps, active_kcal: body.data.active_kcal ?? null, source: 'shortcut', updated_at: new Date().toISOString() },
     { onConflict: 'user_id,date' },
   )

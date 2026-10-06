@@ -1,6 +1,6 @@
 import { getState, foodForDate, updateSettings } from '../data/store'
 import { toDateKey } from '../domain/goal'
-import { VAPID_PUBLIC_KEY, hasSupabase } from './config'
+import { API_BASE, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY, hasSupabase } from './config'
 import { getSupabase } from './supabase'
 
 /**
@@ -42,16 +42,30 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
 }
 
+/** The Web Push public key: build-time env, else generated/stored server-side (Vault). */
+async function vapidPublicKey(): Promise<string | null> {
+  if (VAPID_PUBLIC_KEY) return VAPID_PUBLIC_KEY
+  try {
+    const res = await fetch(`${API_BASE}/send-reminders?vapid-public-key`, { headers: SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {} })
+    if (!res.ok) return null
+    return ((await res.json()) as { publicKey?: string }).publicKey ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Subscribe to server push if the backend is configured and the user is signed in. */
 async function subscribePush(): Promise<boolean> {
-  if (!hasSupabase || !VAPID_PUBLIC_KEY || !('PushManager' in window)) return false
+  if (!hasSupabase || !('PushManager' in window)) return false
+  const publicKey = await vapidPublicKey()
+  if (!publicKey) return false
   const sb = await getSupabase()
   const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } }
   if (!sb || !data.session) return false
   const reg = await navigator.serviceWorker.ready
-  const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) }))
+  const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }))
   const j = sub.toJSON()
-  const { error } = await sb.from('push_subscriptions').upsert(
+  const { error } = await sb.from('mz_push_subscriptions').upsert(
     {
       user_id: data.session.user.id,
       endpoint: sub.endpoint,
@@ -72,7 +86,7 @@ async function unsubscribePush() {
   const sub = await reg?.pushManager?.getSubscription()
   if (!sub) return
   const sb = await getSupabase()
-  await sb?.from('push_subscriptions').update({ enabled: false }).eq('endpoint', sub.endpoint)
+  await sb?.from('mz_push_subscriptions').update({ enabled: false }).eq('endpoint', sub.endpoint)
   await sub.unsubscribe().catch(() => {})
 }
 
@@ -136,7 +150,7 @@ export function scheduleLocalReminder() {
     updateSettings({ lastReminderDate: toDateKey(new Date()) })
     try {
       const reg = await navigator.serviceWorker.ready
-      await reg.showNotification('מאזן', { body: REMINDER_TEXT, tag: 'daily-reminder', icon: '/pwa-192.png', badge: '/badge-72.png', lang: 'he', dir: 'rtl', data: { url: '/?add=1' } })
+      await reg.showNotification('מאזן', { body: REMINDER_TEXT, tag: 'daily-reminder', icon: `${import.meta.env.BASE_URL}pwa-192.png`, badge: `${import.meta.env.BASE_URL}badge-72.png`, lang: 'he', dir: 'rtl', data: { url: `${import.meta.env.BASE_URL}?add=1` } })
     } catch {
       /* ignore */
     }
