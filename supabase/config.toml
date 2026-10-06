@@ -1,0 +1,22 @@
+# Minimal Supabase CLI config for this project (run `supabase init` merges defaults).
+project_id = "maazan"
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["https://localhost:5173"]
+
+[auth.email]
+enable_signup = true
+# The app signs in with a 6-digit code typed into the PWA (magic links would
+# open Safari instead of the installed app). Put {{ .Token }} in the template.
+otp_length = 6
+otp_expiry = 3600
+
+[functions.analyze-food]
+verify_jwt = false   # the function verifies the user itself (supports new API keys)
+
+[functions.health-ingest]
+verify_jwt = false   # authenticated with the personal Shortcuts token
+
+[functions.send-reminders]
+verify_jwt = false   # authenticated with x-cron-secret
