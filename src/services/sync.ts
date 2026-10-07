@@ -1,5 +1,5 @@
 import { getSupabase } from './supabase'
-import { hasSupabase } from './config'
+import { hasSupabase, OWNER_ID } from './config'
 import {
   exercisesForDate, foodForDate, getState, markClean, onLocalChange, setSteps, updateSettings, upsertExercise, upsertFood,
 } from '../data/store'
@@ -16,9 +16,10 @@ import { isValidProfile } from '../domain/energy'
  * Triggers: startup, coming online, tab visible, and 1.5 s after any local change.
  */
 
-type Status = 'off' | 'signed_out' | 'idle' | 'syncing' | 'error'
-let status: Status = hasSupabase ? 'signed_out' : 'off'
-let userId: string | null = null
+type Status = 'off' | 'idle' | 'syncing' | 'error'
+let status: Status = hasSupabase ? 'idle' : 'off'
+/** single-owner mode: no login, every device syncs the same owner's data */
+const userId: string | null = hasSupabase ? OWNER_ID : null
 const statusListeners = new Set<(s: Status) => void>()
 let running: Promise<void> | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -258,64 +259,20 @@ export function scheduleSync(delay = 1500) {
   timer = setTimeout(() => void syncNow(), delay)
 }
 
+let started = false
+
 export async function startSync() {
-  const sb = await getSupabase()
-  if (!sb) return
-  const { data } = await sb.auth.getSession()
-  userId = data.session?.user.id ?? null
-  setStatus(userId ? 'idle' : 'signed_out')
-  sb.auth.onAuthStateChange((_evt, session) => {
-    const next = session?.user.id ?? null
-    if (next !== userId) {
-      userId = next
-      setStatus(userId ? 'idle' : 'signed_out')
-      if (userId) void syncProfile().then(syncNow)
-    }
-  })
+  if (!hasSupabase || started) return
+  started = true
   onLocalChange(() => scheduleSync())
   window.addEventListener('online', () => void syncNow())
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void syncNow()
   })
-  if (userId) {
-    await syncProfile()
-    await syncNow()
-  }
+  await syncProfile().catch(() => {})
+  await syncNow()
 }
 
 export async function pushProfile() {
-  await syncProfile()
-}
-
-export async function sendLoginCode(email: string): Promise<string | null> {
-  const sb = await getSupabase()
-  if (!sb) return 'הסנכרון לא מוגדר'
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: true, emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
-  })
-  return error ? 'לא הצלחנו לשלוח קוד. בדוק את הכתובת ונסה שוב.' : null
-}
-
-export async function verifyLoginCode(email: string, token: string): Promise<string | null> {
-  const sb = await getSupabase()
-  if (!sb) return 'הסנכרון לא מוגדר'
-  const { error } = await sb.auth.verifyOtp({ email, token: token.trim(), type: 'email' })
-  return error ? 'הקוד לא נכון או שפג תוקפו.' : null
-}
-
-export async function signOut() {
-  const sb = await getSupabase()
-  await sb?.auth.signOut()
-}
-
-export async function currentEmail(): Promise<string | null> {
-  const sb = await getSupabase()
-  if (!sb) return null
-  const { data } = await sb.auth.getSession()
-  return data.session?.user.email ?? null
-}
-
-export function isSignedIn() {
-  return Boolean(userId)
+  await syncProfile().catch(() => {})
 }

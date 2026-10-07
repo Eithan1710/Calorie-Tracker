@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "npm:@supabase/supabase-js@^2.50.0": "2.117.2",
+    "npm:jose@^6.1.0": "6.2.12",
     "npm:web-push@^3.6.7": "3.6.7",
     "npm:zod@^4.1.0": "4.6.5"
   },
@@ -97,6 +98,9 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
+    "jose@6.2.12": {
+      "integrity": "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw=="
+    },
     "jwa@2.0.1": {
       "integrity": "sha512-hRF04fqJIP8Abbkq5NKGN0Bbr3JxlQ+qhZufXVr0DvujKy93ZCbXZMHDL4EOtodSbCWxOqR8MS1tXA5hwqCXDg==",
       "dependencies": [
@@ -148,6 +152,7 @@
   "workspace": {
     "dependencies": [
       "npm:@supabase/supabase-js@^2.50.0",
+      "npm:jose@^6.1.0",
       "npm:web-push@^3.6.7",
       "npm:zod@^4.1.0"
     ]

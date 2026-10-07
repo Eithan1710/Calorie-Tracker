@@ -1,0 +1,44 @@
+# Copies the AI keys from this repo's GitHub secrets into Supabase Vault.
+#
+# Only GEMINI_API_KEY is needed (optional: GROQ_API_KEY, OPENROUTER_API_KEY,
+# USDA_FDC_API_KEY). No Supabase token: the mz-config edge function verifies
+# GitHub's signed OIDC token and only accepts this repository's main branch.
+name: Sync AI keys to Supabase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *' # daily, so a rotated key is picked up without a push
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send keys to Supabase Vault
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+          ENDPOINT: https://kjfihzskaqcboeejnkak.supabase.co/functions/v1/mz-config
+        run: |
+          if [ -z "$GEMINI_API_KEY$GROQ_API_KEY$OPENROUTER_API_KEY$USDA_FDC_API_KEY" ]; then
+            echo "::warning::No AI key secrets set yet — add GEMINI_API_KEY under Settings → Secrets and variables → Actions, then re-run this workflow."
+            exit 0
+          fi
+          oidc=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=maazan-supabase" | jq -r .value)
+          body=$(jq -n '{GEMINI_API_KEY: env.GEMINI_API_KEY, GROQ_API_KEY: env.GROQ_API_KEY,
+                         OPENROUTER_API_KEY: env.OPENROUTER_API_KEY, USDA_FDC_API_KEY: env.USDA_FDC_API_KEY}
+                        | with_entries(select(.value != null and .value != ""))')
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST "$ENDPOINT" \
+            -H "x-github-oidc: $oidc" -H 'content-type: application/json' --data "$body")
+          cat response.json; echo
+          rm -f response.json
+          [ "$status" = "200" ] || { echo "::error::Supabase rejected the keys (HTTP $status)"; exit 1; }

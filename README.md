@@ -51,34 +51,26 @@ Requires Node ≥ 22.18 (the dev API imports the shared TypeScript pipeline dire
 
 ## Deployment
 
-**Live setup:** app on GitHub Pages → <https://eithan1710.github.io/Calorie-Tracker/>, backend in the Supabase
-project `kjfihzskaqcboeejnkak` (shared with another app — every מאזן table, policy, function and Vault secret
-is prefixed `mz_`, and anonymous sessions from the other app are excluded from מאזן data and the AI endpoint).
+**Live:** <https://eithan1710.github.io/Calorie-Tracker/> — backend in the Supabase project `kjfihzskaqcboeejnkak`
+(shared with another app; every מאזן table, function and Vault secret is prefixed `mz_`).
+
+**Single-owner mode (current):** the app has one user and **no login**. All data belongs to a fixed owner id,
+the `mz_` tables are open to the app's public key, and the AI endpoint is open. Every device you open the app on
+shows the same data (sync), push reminders and the Apple Health Shortcut work without an account.
+To go multi-user later: restore per-user RLS policies (`auth.uid() = user_id`), set `REQUIRE_AUTH=true` on
+`analyze-food`, and add sign-in to the app.
 
 | Piece | How it's deployed |
 |---|---|
-| Database schema + RLS, Vault helpers, reminder cron | `supabase/migrations/*` (applied) |
-| Web Push keys, cron secret | generated inside Supabase and kept in Vault — never in the repo or CI |
-| Edge functions + AI keys | [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) on push to `main` (or run it manually) |
+| Database schema, policies, Vault helpers, reminder cron | `supabase/migrations/*` (applied) |
+| Web Push keys, cron secret | generated inside Supabase, kept in Vault |
+| AI keys | GitHub secret → [`sync-ai-keys.yml`](.github/workflows/sync-ai-keys.yml) → `mz-config` function → Vault. No Supabase token needed: the function verifies GitHub's signed OIDC token and only accepts this repo's `main` branch |
+| Edge functions | deployed; [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`) redeploys after code changes |
 | PWA | [`pages.yml`](.github/workflows/pages.yml) on push to `main`: tests → build → GitHub Pages |
 
-**Repository secrets** (Settings → Secrets and variables → Actions):
-
-| Secret | Required | |
-|---|---|---|
-| `SUPABASE_ACCESS_TOKEN` | yes | <https://supabase.com/dashboard/account/tokens> — lets the workflow deploy functions and set their secrets |
-| `GEMINI_API_KEY` | yes | <https://aistudio.google.com/apikey> (free tier) |
-| `ALLOWED_EMAILS` | recommended | comma-separated; only these accounts may use the AI endpoint |
-| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `USDA_FDC_API_KEY` | optional | fallback providers / USDA lookups |
-
-**One-time Supabase dashboard setting:** Authentication → Email Templates → *Magic Link*: add `{{ .Token }}`
-(e.g. `קוד הכניסה שלך: {{ .Token }}`). The PWA signs in with that 6-digit code — a magic link would open
-Safari instead of the installed app. Supabase's built-in mailer only delivers to the project's team members
-and is rate-limited, which is fine for a personal app; add custom SMTP for anything more.
-
-**Deploying your own copy elsewhere:** apply `supabase/migrations`, then
-`select public.mz_set_secret('mz_project_url', 'https://<ref>.supabase.co');`, change the project ref in the two
-workflows, and build with `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` (+ `VITE_BASE` for a sub-path).
+**Repository secrets** (Settings → Secrets and variables → Actions): `GEMINI_API_KEY` (required for AI/photos);
+optional `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `USDA_FDC_API_KEY`. After adding or changing one, run
+**Actions → Sync AI keys to Supabase → Run workflow** (it also runs on every push and daily).
 
 ## Environment variables
 
@@ -91,7 +83,7 @@ All documented in [`.env.example`](.env.example). Summary:
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | server | Fallback AI #2 |
 | `AI_PROVIDER_ORDER`, `AI_TIMEOUT_MS` | server | Chain order / timeout |
 | `USDA_FDC_API_KEY`, `USDA_FDC_DISABLED` | server | USDA FoodData Central lookups for foods outside the table |
-| `REQUIRE_AUTH`, `ALLOWED_EMAILS` | server | Protect the free AI quota (signed-in users / allow-list) |
+| `REQUIRE_AUTH` | server | `true` = require a Supabase session on the AI endpoint (off in single-owner mode) |
 | `VAPID_*`, `CRON_SECRET` | server (optional) | Override the Web Push keys / cron secret that otherwise live in Vault |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | client (public) | Optional sync + hosted functions |
 | `VITE_BASE` | build | Sub-path for hosting, e.g. `/Calorie-Tracker/` on GitHub Pages |
@@ -201,11 +193,12 @@ plugin (a small native companion) — the energy model and data layer don't chan
   soft deletes so removals propagate.
 - Supabase schema in [`supabase/migrations`](supabase/migrations) (all prefixed `mz_`): `profiles`, `food_entries` (items as validated
   JSONB — always read/written with their entry, which keeps offline sync atomic), `exercises`, `health_data`,
-  `daily_summaries`, `ai_analysis_logs`, `push_subscriptions`, `health_ingest_tokens`. **RLS on every table**,
-  owner-only; the ingest-token hash isn't readable even by its owner. Minimal personal data (age, not birth date;
-  no names; no photos stored).
-- The analyze function requires a signed-in user by default (protects the free quota), validates the request with
-  zod, and validates every model reply with zod; the client validates the server reply again before saving.
+  `daily_summaries`, `ai_analysis_logs`, `push_subscriptions`, `health_ingest_tokens`. In single-owner mode the
+  RLS policies are open to the app (see Deployment); the Shortcuts token is stored only as a SHA-256 hash that
+  the app can set (via `mz_set_ingest_token`) but not read. Minimal personal data (age, not birth date; no names;
+  no photos stored).
+- The analyze function validates the request with zod and every model reply with zod; the client validates the
+  server reply again before saving. AI keys live only in Vault / function env, never in the app bundle.
 
 ## Project structure
 

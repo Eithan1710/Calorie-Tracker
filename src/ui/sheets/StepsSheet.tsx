@@ -4,7 +4,6 @@ import { Sheet, PrimaryButton, NumberField, GhostButton } from '../primitives'
 import { setSteps, useStore } from '../../data/store'
 import { createIngestToken, HEALTH_INGEST_URL } from '../../services/health'
 import { hasSupabase } from '../../services/config'
-import { isSignedIn } from '../../services/sync'
 import { fmt, haptic } from '../format'
 import { showToast } from '../toast'
 
@@ -53,7 +52,7 @@ export function HealthConnect() {
   const [token, setToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const appUrl = typeof window !== 'undefined' ? `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/$/, '') : ''
-  const canBackground = hasSupabase && isSignedIn()
+  const canBackground = hasSupabase
 
   const copy = async (s: string) => {
     try {
@@ -121,7 +120,7 @@ export function HealthConnect() {
                 </li>
               </ol>
               <p className="text-sm text-ink-3">
-                שים לב: באייפון הקישור נפתח בספארי, שמחזיק נתונים נפרדים מהאפליקציה שהותקנה למסך הבית. לסנכרון אמין לאפליקציה המותקנת — התחבר לסנכרון בהגדרות ותופיע כאן אפשרות הרקע.
+                שים לב: באייפון הקישור נפתח בספארי, שמחזיק נתונים נפרדים מהאפליקציה שהותקנה למסך הבית.
               </p>
             </>
           )}

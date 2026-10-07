@@ -21,7 +21,7 @@ export interface LocalParseResult {
 
 export function normalizeHebrew(s: string): string {
   return s
-    .replace(/[֑-ׇ]/g, '') // niqqud & cantillation
+    .replace(/[\u0591-\u05C7]/g, '') // niqqud & cantillation
     .replace(/[׳`´‘’]/g, "'")
     .replace(/[״“”]/g, '"')
     .replace(/\s+/g, ' ')

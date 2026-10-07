@@ -53,11 +53,8 @@ async function sha256Hex(s: string): Promise<string> {
 export async function createIngestToken(): Promise<string | null> {
   const sb = await getSupabase()
   if (!sb) return null
-  const { data } = await sb.auth.getSession()
-  const uid = data.session?.user.id
-  if (!uid) return null
   const bytes = crypto.getRandomValues(new Uint8Array(24))
   const token = 'mz_' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-  const { error } = await sb.from('mz_health_ingest_tokens').upsert({ user_id: uid, token_hash: await sha256Hex(token), created_at: new Date().toISOString() })
+  const { error } = await sb.rpc('mz_set_ingest_token', { token_hash: await sha256Hex(token) })
   return error ? null : token
 }

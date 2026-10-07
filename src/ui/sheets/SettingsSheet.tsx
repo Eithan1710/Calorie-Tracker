@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Cloud, CloudOff, LogOut, Loader2 } from 'lucide-react'
-import { Sheet, NumberField, Segmented, PrimaryButton, GhostButton } from '../primitives'
+import { ChevronDown, Cloud, CloudOff, Loader2 } from 'lucide-react'
+import { Sheet, NumberField, Segmented } from '../primitives'
 import { updateSettings, useStore } from '../../data/store'
 import { isValidProfile, type Profile, type Sex } from '../../domain/energy'
 import { hasSupabase } from '../../services/config'
-import { currentEmail, getSyncStatus, onSyncStatus, pushProfile, sendLoginCode, signOut, syncNow, verifyLoginCode } from '../../services/sync'
+import { getSyncStatus, onSyncStatus, pushProfile, syncNow } from '../../services/sync'
 import { disableReminders, enableReminders, isIOS, isStandalone, notificationSupport } from '../../services/notifications'
 import { HealthConnect } from './StepsSheet'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
 import { fmt, KCAL } from '../format'
-import { showToast } from '../toast'
 
 export function ProfileFields({ value, onChange }: { value: Partial<Profile>; onChange: (p: Partial<Profile>) => void }) {
   return (
@@ -64,7 +63,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     }
     const r = await enableReminders()
     if (!r.ok) setNotifyMsg(r.message ?? null)
-    else setNotifyMsg(r.push ? 'מעולה — תזכורת אחת ביום ב-21:30, גם כשהאפליקציה סגורה.' : 'התזכורת תופיע כשהאפליקציה פתוחה ברקע. לתזכורת גם כשהיא סגורה — התחבר לסנכרון.')
+    else setNotifyMsg(r.push ? 'מעולה — תזכורת אחת ביום ב-21:30, גם כשהאפליקציה סגורה.' : 'התזכורת תופיע כשהאפליקציה פתוחה ברקע (התראות כשהיא סגורה לא זמינות בדפדפן הזה).')
   }
 
   const support = typeof window !== 'undefined' ? notificationSupport() : 'unsupported'
@@ -145,102 +144,32 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
 function SyncSection() {
   const [status, setStatus] = useState(getSyncStatus())
-  const [email, setEmail] = useState('')
-  const [signedEmail, setSignedEmail] = useState<string | null>(null)
-  const [code, setCode] = useState('')
-  const [step, setStep] = useState<'email' | 'code'>('email')
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
-
   useEffect(() => {
     const off = onSyncStatus(setStatus)
     return () => {
       off()
     }
   }, [])
-  useEffect(() => {
-    void currentEmail().then(setSignedEmail)
-  }, [status])
 
   if (!hasSupabase) {
     return (
       <section className="flex items-start gap-3 rounded-2xl bg-surface-2 p-4">
         <CloudOff className="mt-0.5 size-5 shrink-0 text-ink-3" aria-hidden />
-        <p className="text-sm text-ink-2">הנתונים נשמרים במכשיר הזה. לגיבוי וסנכרון בין מכשירים יש לחבר Supabase (ראה README).</p>
-      </section>
-    )
-  }
-
-  if (signedEmail) {
-    return (
-      <section className="flex items-center gap-3 rounded-2xl bg-surface-2 p-4">
-        <Cloud className="size-5 shrink-0 text-good" aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">מסונכרן</p>
-          <p className="ltr truncate text-end text-sm text-ink-3">{signedEmail}</p>
-          {status === 'error' && <p className="text-sm text-surplus">הסנכרון נכשל — ננסה שוב אוטומטית.</p>}
-        </div>
-        <button type="button" onClick={() => void syncNow()} className="pressable min-h-10 rounded-xl px-3 text-sm font-medium" aria-label="סנכרן עכשיו">
-          {status === 'syncing' ? <Loader2 className="size-4 animate-spin" /> : 'סנכרן'}
-        </button>
-        <button type="button" onClick={() => void signOut().then(() => setSignedEmail(null))} className="pressable grid size-10 place-items-center rounded-xl text-ink-3" aria-label="התנתקות">
-          <LogOut className="size-4 -scale-x-100" />
-        </button>
+        <p className="text-sm text-ink-2">הנתונים נשמרים במכשיר הזה בלבד.</p>
       </section>
     )
   }
 
   return (
-    <section className="flex flex-col gap-3">
-      <div>
-        <h3 className="font-semibold">גיבוי וסנכרון</h3>
-        <p className="text-sm text-ink-3">התחברות עם קוד למייל — בלי סיסמה. מאפשר גם ניתוח AI ותזכורות כשהאפליקציה סגורה.</p>
+    <section className="flex items-center gap-3 rounded-2xl bg-surface-2 p-4">
+      <Cloud className={`size-5 shrink-0 ${status === 'error' ? 'text-surplus' : 'text-good'}`} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{status === 'error' ? 'הסנכרון נכשל — ננסה שוב אוטומטית' : 'מסונכרן לענן'}</p>
+        <p className="text-sm text-ink-3">אותם נתונים בכל מכשיר שבו תפתח את האפליקציה</p>
       </div>
-      {step === 'email' ? (
-        <form
-          className="flex gap-2"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            setBusy(true)
-            const err = await sendLoginCode(email.trim())
-            setBusy(false)
-            if (err) setMsg(err)
-            else {
-              setStep('code')
-              setMsg('שלחנו קוד למייל.')
-            }
-          }}
-        >
-          <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@email.com" aria-label="אימייל" className="ltr min-h-12 w-full min-w-0 rounded-2xl bg-surface-2 px-4 outline-none focus:ring-2 focus:ring-info" />
-          <PrimaryButton type="submit" className="min-h-12 px-5 text-base" disabled={busy}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : 'שלח קוד'}
-          </PrimaryButton>
-        </form>
-      ) : (
-        <form
-          className="flex gap-2"
-          onSubmit={async (e) => {
-            e.preventDefault()
-            setBusy(true)
-            const err = await verifyLoginCode(email.trim(), code)
-            setBusy(false)
-            if (err) setMsg(err)
-            else {
-              showToast('מחובר ✓')
-              setMsg(null)
-            }
-          }}
-        >
-          <input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" aria-label="קוד" className="ltr num min-h-12 w-full min-w-0 rounded-2xl bg-surface-2 px-4 text-center text-xl tracking-[0.3em] outline-none focus:ring-2 focus:ring-info" />
-          <PrimaryButton type="submit" className="min-h-12 px-5 text-base" disabled={busy || code.trim().length < 6}>
-            אישור
-          </PrimaryButton>
-          <GhostButton onClick={() => setStep('email')} className="min-h-12 px-3 text-sm">
-            חזרה
-          </GhostButton>
-        </form>
-      )}
-      {msg && <p className="text-sm text-ink-2" role="status">{msg}</p>}
+      <button type="button" onClick={() => void syncNow()} className="pressable min-h-11 rounded-xl px-3 text-sm font-medium" aria-label="סנכרן עכשיו">
+        {status === 'syncing' ? <Loader2 className="size-4 animate-spin" /> : 'סנכרן'}
+      </button>
     </section>
   )
 }

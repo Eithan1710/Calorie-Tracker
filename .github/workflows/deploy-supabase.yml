@@ -1,18 +1,11 @@
-# Deploys the Supabase Edge Functions and syncs AI keys from GitHub secrets.
+# OPTIONAL, manual: redeploys the edge-function *code* after you change it.
+# (AI keys don't need this — see sync-ai-keys.yml.)
 #
-# Required repository secrets (Settings → Secrets and variables → Actions):
-#   SUPABASE_ACCESS_TOKEN  — https://supabase.com/dashboard/account/tokens
-#   GEMINI_API_KEY         — https://aistudio.google.com/apikey (free tier)
-# Optional: GROQ_API_KEY, OPENROUTER_API_KEY, USDA_FDC_API_KEY, ALLOWED_EMAILS
-#
-# Database migrations live in supabase/migrations and are applied separately
-# (they need DB credentials); everything else server-side is here.
-name: Deploy Supabase functions
+# Needs the SUPABASE_ACCESS_TOKEN repository secret
+# (https://supabase.com/dashboard/account/tokens). Run it from the Actions tab.
+name: Deploy Supabase functions (manual)
 
 on:
-  push:
-    branches: [main]
-    paths: ['supabase/functions/**', 'skills/**', '.github/workflows/deploy-supabase.yml']
   workflow_dispatch:
 
 concurrency:
@@ -28,15 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check required secrets
+      - name: Check required secret
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          missing=0
-          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret"; missing=1; }
-          [ -n "$GEMINI_API_KEY" ] || echo "::warning::GEMINI_API_KEY is not set — the app will use the offline parser only"
-          exit $missing
+        run: '[ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret"; exit 1; }'
 
       - uses: actions/setup-node@v4
         with:
@@ -49,31 +37,11 @@ jobs:
         with:
           version: latest
 
-      - name: Sync AI secrets
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
-          ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
-        run: |
-          # write only the secrets that are set; values never appear in the log
-          : > secrets.env
-          for k in GEMINI_API_KEY GROQ_API_KEY OPENROUTER_API_KEY USDA_FDC_API_KEY ALLOWED_EMAILS; do
-            v="${!k}"
-            [ -n "$v" ] && printf '%s=%s\n' "$k" "$v" >> secrets.env
-          done
-          if [ -s secrets.env ]; then
-            supabase secrets set --env-file secrets.env --project-ref "$SUPABASE_PROJECT_REF"
-          fi
-          rm -f secrets.env
-
       - name: Deploy functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # all three authenticate themselves (user JWT / Shortcuts token / cron secret)
-          for fn in analyze-food health-ingest send-reminders; do
+          # all of these authenticate themselves (owner mode / Shortcuts token / cron secret / GitHub OIDC)
+          for fn in analyze-food health-ingest send-reminders mz-config; do
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
           done

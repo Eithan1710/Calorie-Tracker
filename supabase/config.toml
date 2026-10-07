@@ -14,7 +14,7 @@ otp_expiry = 3600
 
 [functions.analyze-food]
 import_map = "./functions/deno.json"
-verify_jwt = false   # the function verifies the user itself (supports new API keys)
+verify_jwt = false   # single-owner mode: open (set REQUIRE_AUTH=true to require a session)
 
 [functions.health-ingest]
 import_map = "./functions/deno.json"
@@ -23,3 +23,7 @@ verify_jwt = false   # authenticated with the personal Shortcuts token
 [functions.send-reminders]
 import_map = "./functions/deno.json"
 verify_jwt = false   # authenticated with x-cron-secret
+
+[functions.mz-config]
+import_map = "./functions/deno.json"
+verify_jwt = false   # authenticated with the GitHub Actions OIDC token

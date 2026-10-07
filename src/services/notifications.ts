@@ -1,6 +1,6 @@
 import { getState, foodForDate, updateSettings } from '../data/store'
 import { toDateKey } from '../domain/goal'
-import { API_BASE, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY, hasSupabase } from './config'
+import { API_BASE, OWNER_ID, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY, hasSupabase } from './config'
 import { getSupabase } from './supabase'
 
 /**
@@ -54,20 +54,19 @@ async function vapidPublicKey(): Promise<string | null> {
   }
 }
 
-/** Subscribe to server push if the backend is configured and the user is signed in. */
+/** Subscribe to server push (needs the Supabase backend). */
 async function subscribePush(): Promise<boolean> {
   if (!hasSupabase || !('PushManager' in window)) return false
   const publicKey = await vapidPublicKey()
   if (!publicKey) return false
   const sb = await getSupabase()
-  const { data } = (await sb?.auth.getSession()) ?? { data: { session: null } }
-  if (!sb || !data.session) return false
+  if (!sb) return false
   const reg = await navigator.serviceWorker.ready
   const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) }))
   const j = sub.toJSON()
   const { error } = await sb.from('mz_push_subscriptions').upsert(
     {
-      user_id: data.session.user.id,
+      user_id: OWNER_ID,
       endpoint: sub.endpoint,
       p256dh: j.keys?.p256dh,
       auth: j.keys?.auth,

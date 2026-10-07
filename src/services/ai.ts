@@ -1,7 +1,6 @@
 import { AnalysisSchema, type Analysis, type AnalyzeRequest } from '../../supabase/functions/_shared/schema.ts'
 import { parseLocally } from '../../supabase/functions/_shared/localParser.ts'
 import { API_BASE, SUPABASE_ANON_KEY } from './config'
-import { getAccessToken } from './supabase'
 
 export type AnalyzeOutcome =
   | { ok: true; analysis: Analysis; offline?: boolean }
@@ -26,10 +25,10 @@ function localFallback(text: string, reason: 'offline' | 'unavailable'): Analyze
 
 async function post(body: AnalyzeRequest, timeoutMs = 35000): Promise<Response> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  const token = await getAccessToken()
-  if (token) headers.authorization = `Bearer ${token}`
-  else if (SUPABASE_ANON_KEY) headers.authorization = `Bearer ${SUPABASE_ANON_KEY}`
-  if (SUPABASE_ANON_KEY) headers.apikey = SUPABASE_ANON_KEY
+  if (SUPABASE_ANON_KEY) {
+    headers.authorization = `Bearer ${SUPABASE_ANON_KEY}`
+    headers.apikey = SUPABASE_ANON_KEY
+  }
   return fetch(`${API_BASE}/analyze-food`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
 }
 
@@ -69,7 +68,7 @@ async function call(body: AnalyzeRequest): Promise<AnalyzeOutcome> {
   return {
     ok: false,
     code: err.error ?? 'unavailable',
-    message: err.message ?? (res.status === 401 ? 'צריך להתחבר (בהגדרות) כדי להשתמש בניתוח החכם.' : MSG.unavailable),
+    message: err.message ?? MSG.unavailable,
     clarification: err.clarification ?? null,
   }
 }

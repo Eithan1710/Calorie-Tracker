@@ -4,29 +4,50 @@ import { createClient } from '@supabase/supabase-js'
 import { analyzeFood } from '../_shared/pipeline.ts'
 import { AnalyzeRequestSchema } from '../_shared/schema.ts'
 import { corsHeaders, json } from '../_shared/http.ts'
+import { getSecret } from '../_shared/secrets.ts'
 
-const env = (k: string) => Deno.env.get(k)
+// AI keys: function env vars first, else Vault (synced from GitHub secrets by
+// .github/workflows/sync-ai-keys.yml through the mz-config function).
+const VAULT_KEYS: Record<string, string> = {
+  GEMINI_API_KEY: 'mz_gemini_api_key',
+  GROQ_API_KEY: 'mz_groq_api_key',
+  OPENROUTER_API_KEY: 'mz_openrouter_api_key',
+  USDA_FDC_API_KEY: 'mz_usda_fdc_api_key',
+}
+let vaultCache: { at: number; values: Record<string, string> } | null = null
+
+// deno-lint-ignore no-explicit-any
+async function loadKeys(admin: any): Promise<Record<string, string>> {
+  if (vaultCache && Date.now() - vaultCache.at < 5 * 60_000) return vaultCache.values
+  const values: Record<string, string> = {}
+  await Promise.all(
+    Object.entries(VAULT_KEYS).map(async ([k, vaultName]) => {
+      const v = await getSecret(admin, k, vaultName)
+      if (v) values[k] = v
+    }),
+  )
+  vaultCache = { at: Date.now(), values }
+  return values
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'bad_request', message: 'POST only' }, 405)
 
-  const url = env('SUPABASE_URL')!
-  const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY')!
+  const url = Deno.env.get('SUPABASE_URL')!
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
+  const keys = await loadKeys(admin)
+  const env = (k: string) => keys[k] ?? Deno.env.get(k)
 
-  // Auth: a signed-in user is required (protects the free AI quota from abuse).
-  // Set REQUIRE_AUTH=false only for a private deployment you control.
-  let userId: string | null = null
-  if (env('REQUIRE_AUTH') !== 'false') {
+  // Single-owner mode (default): the app has one user and no login, so the
+  // endpoint is open and everything is attributed to MZ_OWNER_ID.
+  // Set REQUIRE_AUTH=true later to require a Supabase session instead.
+  let userId: string | null = env('MZ_OWNER_ID') ?? '00000000-0000-4000-8000-000000000001'
+  if (env('REQUIRE_AUTH') === 'true') {
     const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
     const { data, error } = await admin.auth.getUser(token)
-    // anonymous sessions (allowed in a shared project for other apps) don't get the AI quota
-    if (error || !data.user || data.user.is_anonymous) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
-    const allowed = (env('ALLOWED_EMAILS') ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-    if (allowed.length && !allowed.includes((data.user.email ?? '').toLowerCase())) {
-      return json({ error: 'unauthorized', message: 'החשבון הזה לא מורשה.' }, 403)
-    }
+    if (error || !data.user) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
     userId = data.user.id
   }
 
