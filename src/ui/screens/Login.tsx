@@ -18,6 +18,7 @@ export function Login() {
   const userId = useId()
   const passId = useId()
   const errId = useId()
+  const hintId = useId()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -92,7 +93,7 @@ export function Login() {
                 dir="ltr"
                 enterKeyHint="go"
                 aria-invalid={error?.field === 'password' || undefined}
-                aria-describedby={error ? errId : undefined}
+                aria-describedby={[error ? errId : '', mode === 'register' ? hintId : ''].filter(Boolean).join(' ') || undefined}
                 className="w-full min-w-0 bg-transparent text-lg outline-none"
               />
               <button
@@ -105,8 +106,12 @@ export function Login() {
                 {show ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
               </button>
             </span>
-            {mode === 'register' && <span className="text-sm text-ink-3">לפחות {PASSWORD_MIN} תווים</span>}
           </label>
+          {mode === 'register' && (
+            <p id={hintId} className="-mt-2 text-sm text-ink-3">
+              לפחות {PASSWORD_MIN} תווים
+            </p>
+          )}
 
           {error && (
             <p id={errId} role="alert" className="rounded-2xl bg-surplus-soft px-4 py-3 text-[15px] text-surplus">

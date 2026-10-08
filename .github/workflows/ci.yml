@@ -41,4 +41,9 @@ jobs:
       - name: End-to-end tests
         run: |
           set -o pipefail
-          npx playwright test 2>&1 | tee e2e.log || { scripts/annotate-failure.sh e2e e2e.log '^  [0-9]+\) '; exit 1; }
+          npx playwright test 2>&1 | tee e2e.log || {
+            scripts/annotate-failure.sh e2e e2e.log '^  [0-9]+\) '
+            # page snapshots of the failing tests (ARIA tree at the moment of failure)
+            for f in $(ls test-results/*/error-context.md 2>/dev/null | head -4); do head -c 6000 "$f" > ctx.log; scripts/annotate-failure.sh "snapshot $(basename $(dirname $f))" ctx.log; done
+            exit 1
+          }
