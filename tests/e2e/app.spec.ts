@@ -330,10 +330,13 @@ test.describe('resilience', () => {
     const diag = await page.evaluate(() => {
       const b = [...document.querySelectorAll('nav button')].find((x) => x.textContent?.includes('הוסף אוכל'))!
       const r = b.getBoundingClientRect()
-      const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-      return JSON.stringify({ sy: scrollY, ih: innerHeight, dh: document.documentElement.scrollHeight, bo: document.body.style.overflow, vv: [visualViewport?.offsetTop, visualViewport?.height, visualViewport?.scale], r: [r.x, r.y, r.width, r.height], at: at?.outerHTML.slice(0, 120), active: document.activeElement?.outerHTML.slice(0, 120) })
+      const at0 = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      b.scrollIntoView({ block: 'end', inline: 'end' })
+      const r2 = b.getBoundingClientRect()
+      const at = document.elementFromPoint(r2.x + r2.width / 2, r2.y + r2.height / 2)
+      return JSON.stringify({ at0: at0?.tagName, r2: [r2.x, r2.y], sy2: scrollY, vv2: [visualViewport?.offsetTop, visualViewport?.pageTop, visualViewport?.height],  sy: scrollY, ih: innerHeight, dh: document.documentElement.scrollHeight, bo: document.body.style.overflow, vv: [visualViewport?.offsetTop, visualViewport?.height, visualViewport?.scale], r: [r.x, r.y, r.width, r.height], at: at?.outerHTML.slice(0, 120), active: document.activeElement?.outerHTML.slice(0, 120) })
     })
-    if (!diag.includes('"at":"<button')) throw new Error('DIAG ' + diag)
+    throw new Error('DIAG ' + diag)
 
     await addText(page, 'פשטידה של סבתא')
     await expect(page.getByRole('alert')).toContainText('אין חיבור')
