@@ -73,7 +73,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
       )}
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr] lg:items-start">
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <BalanceHero s={summary} />
           <ProteinCard s={summary} />
           <div className="grid grid-cols-2 gap-3">
@@ -142,11 +142,12 @@ function BalanceHero({ s }: { s: DaySummary }) {
   return (
     <section aria-label="מאזן קלורי" className="card animate-rise overflow-hidden p-5 pb-4 sm:p-6">
       {s.hasFood ? (
-        <div className="flex items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="min-w-0">
             <p className="text-sm font-medium text-ink-3">מאזן היום</p>
             <p className="mt-0.5 flex items-baseline gap-2" aria-live="polite">
-              <AnimatedNumber value={balance} format={(n) => fmtBalance(-n)} className="ltr text-[64px] leading-none font-semibold tracking-tight sm:text-[72px]" />
+              {/* clamp: a 4-digit balance ("−1,838") must still fit a 360–390 px phone next to the status pill */}
+              <AnimatedNumber value={balance} format={(n) => fmtBalance(-n)} className="ltr text-[clamp(44px,14vw,64px)] leading-none font-semibold tracking-tight sm:text-[72px]" />
               <span className="text-lg text-ink-3">{KCAL}</span>
             </p>
           </div>
