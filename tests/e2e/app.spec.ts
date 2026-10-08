@@ -334,7 +334,7 @@ test.describe('resilience', () => {
       b.scrollIntoView({ block: 'end', inline: 'end' })
       const r2 = b.getBoundingClientRect()
       const at = document.elementFromPoint(r2.x + r2.width / 2, r2.y + r2.height / 2)
-      const wide = [...document.querySelectorAll('body *')].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && (q.right > 392 || q.left < -2) }).slice(0, 6).map((e) => `${e.tagName}.${String(e.className).slice(0, 60)} [${Math.round(e.getBoundingClientRect().left)},${Math.round(e.getBoundingClientRect().right)}] ${e.textContent?.slice(0, 30)}`)
+      const wide = [...document.querySelectorAll('body *')].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.left < 55 }).slice(0, 8).map((e) => `${e.tagName}.${String(e.className).slice(0, 60)} [${Math.round(e.getBoundingClientRect().left)},${Math.round(e.getBoundingClientRect().right)}] ${e.textContent?.slice(0, 30)}`)
       return JSON.stringify({ wide, sw: document.documentElement.scrollWidth, at0: at0?.tagName, r2: [r2.x, r2.y], sy2: scrollY, vv2: [visualViewport?.offsetTop, visualViewport?.pageTop, visualViewport?.height],  sy: scrollY, ih: innerHeight, dh: document.documentElement.scrollHeight, bo: document.body.style.overflow, vv: [visualViewport?.offsetTop, visualViewport?.height, visualViewport?.scale], r: [r.x, r.y, r.width, r.height], at: at?.outerHTML.slice(0, 120), active: document.activeElement?.outerHTML.slice(0, 120) })
     })
     throw new Error('DIAG ' + diag)
