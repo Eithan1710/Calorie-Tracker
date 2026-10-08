@@ -57,7 +57,8 @@ begin
 
   update public.mz_food_entries set title = 'hacked' where id = '11111111-0000-4000-8000-000000000001';
   delete from public.mz_exercises where id = '11111111-0000-4000-8000-000000000002';
-  delete from storage.objects where bucket_id = 'mz-food-photos';
+  -- (photo deletes can't be tested here: Supabase blocks any direct SQL delete on storage.objects;
+  --  the mz_photos_delete_own policy guards deletes made through the Storage API)
 end $$;
 
 -- ── anonymous session (another app in this project) sees nothing ──
