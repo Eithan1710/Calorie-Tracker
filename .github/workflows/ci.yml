@@ -28,12 +28,12 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
-          npm test 2>&1 | tee unit.log || { tail -c 30000 unit.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' | sed 's/^/::error title=unit tests::/'; echo; exit 1; }
+          npm test 2>&1 | tee unit.log || { scripts/annotate-failure.sh 'unit tests' unit.log 'FAIL|Failed Tests'; exit 1; }
 
       - name: Typecheck + build
         run: |
           set -o pipefail
-          npm run build 2>&1 | tee build.log || { tail -c 30000 build.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' | sed 's/^/::error title=build::/'; echo; exit 1; }
+          npm run build 2>&1 | tee build.log || { scripts/annotate-failure.sh build build.log 'error TS|error'; exit 1; }
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
@@ -41,4 +41,4 @@ jobs:
       - name: End-to-end tests
         run: |
           set -o pipefail
-          npx playwright test 2>&1 | tee e2e.log || { grep -v '^\s*$' e2e.log | tail -c 30000 | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"}{print}' | sed 's/^/::error title=e2e::/'; echo; exit 1; }
+          npx playwright test 2>&1 | tee e2e.log || { scripts/annotate-failure.sh e2e e2e.log '^  [0-9]+\) '; exit 1; }
