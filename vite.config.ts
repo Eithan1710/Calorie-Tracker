@@ -13,6 +13,8 @@ const base = process.env.VITE_BASE || '/'
 
 export default defineConfig({
   base,
+  // separate dep caches when two dev servers run side by side (e2e: local mode + accounts mode)
+  cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   plugins: [
     react(),
     tailwindcss(),

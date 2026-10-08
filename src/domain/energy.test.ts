@@ -5,16 +5,22 @@ import {
   estimateWorkoutSteps,
   exerciseNetKcal,
   isValidProfile,
+  metKcalPerMin,
   paceSecPerKm,
+  restingKcalPerMin,
   runMetForSpeed,
   stepsNetKcal,
   strideMeters,
+  workoutDisplay,
   workoutDisplayKcal,
+  workoutEstimate,
+  type ExerciseInput,
   type Profile,
 } from './energy'
 
 const man: Profile = { sex: 'male', age: 30, heightCm: 180, weightKg: 80 }
 const woman: Profile = { sex: 'female', age: 35, heightCm: 165, weightKg: 62 }
+const restMan = 1780 / 1440 // kcal/min
 
 describe('BMR — Mifflin-St Jeor', () => {
   it('matches the published equation for men', () => {
@@ -24,6 +30,16 @@ describe('BMR — Mifflin-St Jeor', () => {
   it('matches the published equation for women', () => {
     // 10·62 + 6.25·165 − 5·35 − 161 = 1315.25
     expect(bmrMifflinStJeor(woman)).toBeCloseTo(1315.25, 2)
+  })
+  it('resting kcal/min is BMR / 1440', () => {
+    expect(restingKcalPerMin(man)).toBeCloseTo(restMan, 6)
+  })
+})
+
+describe('MET equation', () => {
+  it('kcal/min = MET × 3.5 × kg / 200', () => {
+    expect(metKcalPerMin(5, 80)).toBeCloseTo(7, 6)
+    expect(metKcalPerMin(1, 70)).toBeCloseTo(1.225, 6)
   })
 })
 
@@ -43,8 +59,9 @@ describe('steps', () => {
 })
 
 describe('running', () => {
-  it('uses distance when available (≈0.95 kcal/kg/km net)', () => {
-    expect(exerciseNetKcal({ type: 'run', distanceKm: 5, durationMin: 25 }, man)).toBeCloseTo(380, 0)
+  it('with a distance: ~1 kcal/kg/km gross minus this person’s resting energy', () => {
+    // 5 km × 80 kg = 400 gross; rest 25 min × 1.236 = 30.9 → 369.1
+    expect(exerciseNetKcal({ type: 'run', distanceKm: 5, durationMin: 25 }, man)).toBeCloseTo(400 - 25 * restMan, 1)
   })
   it('a 5 km run for a 65 kg runner is ~300 kcal', () => {
     const k = workoutDisplayKcal({ type: 'run', distanceKm: 5, durationMin: 25 }, { ...man, weightKg: 65 })
@@ -52,8 +69,8 @@ describe('running', () => {
     expect(k).toBeLessThanOrEqual(320)
   })
   it('falls back to MET when only time is given', () => {
-    // moderate MET 9.8 → net 8.8 × 80 × 0.5 h = 352
-    expect(exerciseNetKcal({ type: 'run', durationMin: 30 }, man)).toBeCloseTo(352, 0)
+    // moderate MET 9.8 → 9.8 × 3.5 × 80 / 200 = 13.72 kcal/min × 30 − rest
+    expect(exerciseNetKcal({ type: 'run', durationMin: 30 }, man)).toBeCloseTo(13.72 * 30 - 30 * restMan, 1)
   })
   it('computes pace', () => {
     expect(paceSecPerKm({ type: 'run', distanceKm: 5, durationMin: 25 })).toBe(300)
@@ -65,27 +82,96 @@ describe('running', () => {
     expect(runMetForSpeed(12)).toBeGreaterThan(11)
     expect(runMetForSpeed(30)).toBe(19)
   })
-  it('estimates steps taken during the run', () => {
+  it('estimates steps taken during the run or walk', () => {
     expect(estimateWorkoutSteps({ type: 'run', distanceKm: 5, durationMin: 25 }, man)).toBe(4000)
     expect(estimateWorkoutSteps({ type: 'run', distanceKm: 5 }, man)).toBeGreaterThan(3500)
+    expect(estimateWorkoutSteps({ type: 'walk', durationMin: 30 }, man)).toBe(3300)
     expect(estimateWorkoutSteps({ type: 'strength', durationMin: 60 }, man)).toBe(0)
   })
 })
 
 describe('strength training', () => {
-  it('uses (MET − 1) × kg × h', () => {
-    // high MET 5.0 → 4 × 80 × 1.25 = 400
-    expect(exerciseNetKcal({ type: 'strength', durationMin: 75, intensity: 'high' }, man)).toBeCloseTo(400)
-    // moderate 3.5 → 2.5 × 80 × 1 = 200
-    expect(exerciseNetKcal({ type: 'strength', durationMin: 60, intensity: 'moderate' }, man)).toBeCloseTo(200)
+  const session = (o: Partial<ExerciseInput> = {}): ExerciseInput => ({ type: 'strength', durationMin: 60, intensity: 'moderate', ...o })
+
+  it('uses Compendium session METs: (MET × 3.5 × kg / 200 − resting) × minutes', () => {
+    // moderate, standard rests → 5.0 MET → 7.0 kcal/min gross
+    expect(exerciseNetKcal(session(), man)).toBeCloseTo((7.0 - restMan) * 60, 1)
+    // vigorous → 6.0 MET → 8.4 kcal/min
+    expect(exerciseNetKcal(session({ durationMin: 75, intensity: 'high' }), man)).toBeCloseTo((8.4 - restMan) * 75, 1)
   })
-  it('scales with body weight', () => {
-    const light = exerciseNetKcal({ type: 'strength', durationMin: 60 }, { ...man, weightKg: 60 })
-    const heavy = exerciseNetKcal({ type: 'strength', durationMin: 60 }, { ...man, weightKg: 90 })
-    expect(heavy / light).toBeCloseTo(1.5)
+
+  it('a typical 60–75 min session lands in a realistic range (not "1 workout = X")', () => {
+    const k = exerciseNetKcal(session({ durationMin: 75 }), man)
+    expect(k).toBeGreaterThan(300)
+    expect(k).toBeLessThan(550)
   })
+
+  it('intensity matters: light < moderate < vigorous', () => {
+    const l = exerciseNetKcal(session({ intensity: 'low' }), man)
+    const m = exerciseNetKcal(session({ intensity: 'moderate' }), man)
+    const h = exerciseNetKcal(session({ intensity: 'high' }), man)
+    expect(l).toBeLessThan(m)
+    expect(m).toBeLessThan(h)
+  })
+
+  it('short rests (supersets / circuit) are denser than standard rests', () => {
+    expect(exerciseNetKcal(session({ rest: 'short' }), man)).toBeGreaterThan(exerciseNetKcal(session({ rest: 'standard' }), man))
+    expect(exerciseNetKcal(session({ rest: 'short', intensity: 'high' }), man)).toBeGreaterThan(exerciseNetKcal(session({ intensity: 'high' }), man))
+  })
+
+  it('scales with duration', () => {
+    const a = exerciseNetKcal(session({ durationMin: 30 }), man)
+    const b = exerciseNetKcal(session({ durationMin: 90 }), man)
+    expect(b / a).toBeCloseTo(3, 6)
+  })
+
+  it('scales with the user’s body weight', () => {
+    const light = exerciseNetKcal(session(), { ...man, weightKg: 60 })
+    const heavy = exerciseNetKcal(session(), { ...man, weightKg: 90 })
+    expect(heavy).toBeGreaterThan(light)
+    expect(heavy / light).toBeGreaterThan(1.4)
+    expect(heavy / light).toBeLessThan(1.6)
+  })
+
+  it('uses age and sex through the person’s own resting rate', () => {
+    const young = workoutEstimate(session(), man)
+    const older = workoutEstimate(session(), { ...man, age: 60 })
+    const female = workoutEstimate(session(), { ...man, sex: 'female' })
+    expect(older.gross).toBeCloseTo(young.gross, 6) // same work
+    expect(older.net).toBeGreaterThan(young.net) // lower RMR → more of it is "above rest"
+    expect(female.net).toBeGreaterThan(young.net)
+  })
+
+  it('the load lifted does not change the estimate', () => {
+    const none = exerciseNetKcal(session(), man)
+    const fifty = exerciseNetKcal(session({ lifts: [{ id: 'a', name: 'לחיצת חזה', weight_kg: 50, sets: 4, reps: 10 }] }), man)
+    const hundred = exerciseNetKcal(session({ lifts: [{ id: 'a', name: 'לחיצת חזה', weight_kg: 100, sets: 4, reps: 3 }, { id: 'b', name: 'סקוואט', weight_kg: 140 }] }), man)
+    expect(fifty).toBe(none)
+    expect(hundred).toBe(none)
+  })
+
   it('returns 0 without a duration', () => {
     expect(exerciseNetKcal({ type: 'strength' }, man)).toBe(0)
+  })
+})
+
+describe('uncertainty & display', () => {
+  it('every estimate comes with a range around it', () => {
+    const e = workoutEstimate({ type: 'strength', durationMin: 60 }, man)
+    expect(e.low).toBeLessThan(e.net)
+    expect(e.high).toBeGreaterThan(e.net)
+    const run = workoutEstimate({ type: 'run', distanceKm: 5, durationMin: 25 }, man)
+    expect((run.high - run.low) / run.net).toBeLessThan((e.high - e.low) / e.net) // distance-based running is tighter
+  })
+  it('display values are rounded to 10 kcal (no false precision)', () => {
+    const d = workoutDisplay({ type: 'strength', durationMin: 47, intensity: 'high' }, woman)
+    for (const v of [d.kcal, d.low, d.high, d.gross]) expect(v % 10).toBe(0)
+  })
+  it('other activities use their MET tables', () => {
+    const walk = exerciseNetKcal({ type: 'walk', durationMin: 60, intensity: 'moderate' }, man)
+    const bike = exerciseNetKcal({ type: 'cycling', durationMin: 60, intensity: 'moderate' }, man)
+    expect(walk).toBeGreaterThan(100)
+    expect(bike).toBeGreaterThan(walk)
   })
 })
 
@@ -103,6 +189,11 @@ describe('daily burn', () => {
   it('breakdown adds up', () => {
     const b = dailyBurn(man, 8000, [{ type: 'strength', durationMin: 60, intensity: 'moderate' }])
     expect(Math.abs(b.bmr + b.baseline + b.steps + b.exercise + b.tef - b.total)).toBeLessThanOrEqual(2)
+  })
+  it('changing body weight changes the daily total', () => {
+    const a = dailyBurn(man, 8000, [{ type: 'strength', durationMin: 60 }])
+    const b = dailyBurn({ ...man, weightKg: 90 }, 8000, [{ type: 'strength', durationMin: 60 }])
+    expect(b.total - a.total).toBeGreaterThan(150)
   })
   it('does not double count steps taken during a run', () => {
     const run = { type: 'run' as const, distanceKm: 5, durationMin: 25 }

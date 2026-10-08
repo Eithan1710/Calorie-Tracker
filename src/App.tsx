@@ -5,6 +5,10 @@ import { isValidProfile } from './domain/energy'
 import { toDateKey } from './domain/goal'
 import { Today } from './ui/screens/Today'
 import { Onboarding } from './ui/screens/Onboarding'
+import { Login } from './ui/screens/Login'
+import { LegacyImportSheet } from './ui/sheets/LegacyImportSheet'
+import { useAuth } from './services/auth'
+import { useProfileChecked } from './services/sync'
 import { AddFoodSheet, EntrySheet } from './ui/sheets/FoodSheet'
 import { ExerciseSheet } from './ui/sheets/ExerciseSheet'
 import { StepsSheet } from './ui/sheets/StepsSheet'
@@ -35,8 +39,11 @@ async function processPending() {
 }
 
 export default function App() {
+  const auth = useAuth()
   const ready = useStore((s) => s.ready)
+  const userId = useStore((s) => s.userId)
   const profile = useStore((s) => s.settings.profile)
+  const profileChecked = useProfileChecked(userId)
   const [tab, setTab] = useState<Tab>('today')
   const [date, setDate] = useState(() => toDateKey(new Date()))
   const [sheet, setSheet] = useState<SheetName>(null)
@@ -84,8 +91,18 @@ export default function App() {
   }, [])
   const closeSheet = useCallback(() => setSheet(null), [])
 
-  if (!ready) return <div className="min-h-dvh bg-bg" aria-busy="true" />
-  if (!isValidProfile(profile)) return <Onboarding />
+  if (auth.status === 'signedOut') return <Login />
+  if (auth.status === 'loading' || !ready) return <div className="min-h-dvh bg-bg" aria-busy="true" />
+  if (!isValidProfile(profile)) {
+    // signed in on a new device: wait for the profile from the server before asking for it
+    if (!profileChecked) return <div className="min-h-dvh bg-bg" aria-busy="true" aria-label="טוען את החשבון" />
+    return (
+      <>
+        <Onboarding />
+        <LegacyImportSheet />
+      </>
+    )
+  }
 
   return (
     <>
@@ -120,10 +137,10 @@ export default function App() {
         ref={cameraRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         aria-hidden
         tabIndex={-1}
+        data-testid="dock-photo-input"
         onChange={(e) => {
           const f = e.target.files?.[0]
           e.target.value = ''
@@ -142,7 +159,7 @@ export default function App() {
           <button type="button" onClick={openAdd} className="pressable flex min-h-14 flex-1 items-center justify-center gap-2 rounded-[20px] bg-ink text-lg font-semibold text-inverse">
             <Plus className="size-6" strokeWidth={2.6} aria-hidden /> הוסף אוכל
           </button>
-          <button type="button" onClick={() => cameraRef.current?.click()} className="pressable grid size-14 shrink-0 place-items-center rounded-[20px] bg-surface-2 text-ink" aria-label="צלם אוכל">
+          <button type="button" onClick={() => cameraRef.current?.click()} className="pressable grid size-14 shrink-0 place-items-center rounded-[20px] bg-surface-2 text-ink" aria-label="תמונה של אוכל (צילום או מהגלריה)">
             <Camera className="size-6" />
           </button>
           <DockTab active={tab === 'history'} label="היסטוריה" onClick={() => setTab('history')}>
@@ -156,6 +173,7 @@ export default function App() {
       <ExerciseSheet open={sheet === 'exercise'} onClose={closeSheet} date={date} />
       <StepsSheet open={sheet === 'steps'} onClose={closeSheet} date={date} />
       <SettingsSheet open={sheet === 'settings'} onClose={closeSheet} />
+      <LegacyImportSheet />
       <Toaster />
     </>
   )

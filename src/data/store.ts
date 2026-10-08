@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { getAll, putMany, clearAll } from './idb'
+import { getAll, putMany, clearAll, dbNameFor, dropDatabase, LEGACY_DB, useDatabase } from './idb'
 import { DEFAULT_SETTINGS, type Exercise, type FoodEntry, type HealthDay, type Settings } from './types'
 
 /**
@@ -7,29 +7,41 @@ import { DEFAULT_SETTINGS, type Exercise, type FoodEntry, type HealthDay, type S
  * records, localStorage persists the tiny settings object (synchronous, so
  * the first paint already knows the profile). The sync engine (sync.ts)
  * pushes `dirty` records to Supabase when configured and online.
+ *
+ * Each account has its own IndexedDB database and settings key, so accounts
+ * sharing a device are isolated locally as well (the server enforces it with
+ * RLS). Local mode (no backend configured) uses the original unsuffixed keys.
  */
 
 export interface State {
   ready: boolean
+  /** the signed-in account, or null in local mode */
+  userId: string | null
   settings: Settings
   food: Record<string, FoodEntry>
   exercise: Record<string, Exercise>
   health: Record<string, HealthDay>
 }
 
-const SETTINGS_KEY = 'maazan:settings'
+const LEGACY_SETTINGS_KEY = 'maazan:settings'
+const settingsKeyFor = (userId: string | null) => (userId ? `maazan:settings:${userId}` : LEGACY_SETTINGS_KEY)
+let settingsKey = LEGACY_SETTINGS_KEY
 
-function loadSettings(): Settings {
+function readSettings(key: string): Settings | null {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
+    const raw = localStorage.getItem(key)
     if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
   } catch {
     /* private mode etc. */
   }
-  return { ...DEFAULT_SETTINGS }
+  return null
 }
 
-let state: State = { ready: false, settings: loadSettings(), food: {}, exercise: {}, health: {} }
+function loadSettings(key: string): Settings {
+  return readSettings(key) ?? { ...DEFAULT_SETTINGS }
+}
+
+let state: State = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {} }
 const listeners = new Set<() => void>()
 const changeHooks = new Set<() => void>()
 
@@ -56,18 +68,30 @@ function localChanged() {
   for (const h of changeHooks) h()
 }
 
+/** Ask the sync engine to push soon (e.g. a photo was queued for upload). */
+export function notifyLocalChange() {
+  localChanged()
+}
+
 export function useStore<T>(selector: (s: State) => T): T {
   return useSyncExternalStore(subscribe, () => selector(state), () => selector(state))
 }
 
 const byId = <T extends { id: string }>(arr: T[]) => Object.fromEntries(arr.map((x) => [x.id, x]))
 
-export async function initStore(): Promise<void> {
+/** Load the local copy for an account (or local mode when userId is null). */
+export async function initStore(userId: string | null = null): Promise<void> {
+  settingsKey = settingsKeyFor(userId)
+  useDatabase(dbNameFor(userId))
+  // render settings immediately; records follow from IndexedDB
+  state = { ready: false, userId, settings: loadSettings(settingsKey), food: {}, exercise: {}, health: {} }
+  emit()
   const [food, exercise, health] = await Promise.all([
     getAll<FoodEntry>('food'),
     getAll<Exercise>('exercise'),
     getAll<HealthDay>('health'),
   ])
+  if (state.userId !== userId) return // account switched meanwhile
   state = {
     ...state,
     ready: true,
@@ -78,6 +102,100 @@ export async function initStore(): Promise<void> {
   emit()
 }
 
+/** Forget the in-memory account (logout). */
+export function resetStore() {
+  state = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {} }
+  settingsKey = LEGACY_SETTINGS_KEY
+  useDatabase(LEGACY_DB)
+  emit()
+}
+
+/** True when the account's local copy has changes the server hasn't received. */
+export function hasUnsyncedChanges(s: State = state): boolean {
+  return [...Object.values(s.food), ...Object.values(s.exercise), ...Object.values(s.health)].some((r) => r.dirty)
+}
+
+/** Delete an account's local copy from this device (after logout, once everything is synced). */
+export async function dropLocalAccount(userId: string) {
+  await dropDatabase(dbNameFor(userId))
+  try {
+    localStorage.removeItem(settingsKeyFor(userId))
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── one-time import of data saved before accounts existed ─────────────────
+
+const LEGACY_DECIDED_KEY = 'maazan:legacy-decided'
+
+export interface LegacySummary {
+  food: number
+  exercise: number
+  days: number
+  hasProfile: boolean
+}
+
+/** Data from the single-owner era still on this device, if the user hasn't decided about it yet. */
+export async function legacyDataSummary(): Promise<LegacySummary | null> {
+  try {
+    if (localStorage.getItem(LEGACY_DECIDED_KEY)) return null
+  } catch {
+    return null
+  }
+  const [food, exercise, health] = await Promise.all([
+    getAll<FoodEntry>('food', LEGACY_DB),
+    getAll<Exercise>('exercise', LEGACY_DB),
+    getAll<HealthDay>('health', LEGACY_DB),
+  ])
+  const legacySettings = readSettings(LEGACY_SETTINGS_KEY)
+  const summary = {
+    food: food.filter((f) => !f.deleted).length,
+    exercise: exercise.filter((e) => !e.deleted).length,
+    days: health.length,
+    hasProfile: Boolean(legacySettings?.profile),
+  }
+  if (!summary.food && !summary.exercise && !summary.days && !summary.hasProfile) return null
+  return summary
+}
+
+export function decideLegacy() {
+  try {
+    localStorage.setItem(LEGACY_DECIDED_KEY, new Date().toISOString())
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Copy the pre-account data into the signed-in account (marked dirty so it syncs). */
+export async function importLegacyData(): Promise<number> {
+  const [food, exercise, health] = await Promise.all([
+    getAll<FoodEntry>('food', LEGACY_DB),
+    getAll<Exercise>('exercise', LEGACY_DB),
+    getAll<HealthDay>('health', LEGACY_DB),
+  ])
+  const t = now()
+  const f = food.map((r) => ({ ...r, updated_at: t, dirty: true }))
+  const e = exercise.map((r) => ({ ...r, updated_at: t, dirty: true }))
+  // keep the newer copy of a day's steps if the account already has one
+  const h = health.filter((r) => !state.health[r.date] || state.health[r.date].updated_at < r.updated_at).map((r) => ({ ...r, dirty: true }))
+  await Promise.all([putMany('food', f), putMany('exercise', e), putMany('health', h)])
+  state = {
+    ...state,
+    food: { ...state.food, ...byId(f) },
+    exercise: { ...state.exercise, ...byId(e) },
+    health: { ...state.health, ...Object.fromEntries(h.map((r) => [r.date, r])) },
+  }
+  const legacySettings = readSettings(LEGACY_SETTINGS_KEY)
+  if (legacySettings?.profile && !state.settings.profile) {
+    updateSettings({ profile: legacySettings.profile, proteinTarget: legacySettings.proteinTarget, profileUpdatedAt: t })
+  }
+  decideLegacy()
+  emit()
+  localChanged()
+  return f.length + e.length + h.length
+}
+
 const now = () => new Date().toISOString()
 
 // ── settings ──────────────────────────────────────────────────────────────
@@ -85,7 +203,7 @@ const now = () => new Date().toISOString()
 export function updateSettings(patch: Partial<Settings>) {
   state = { ...state, settings: { ...state.settings, ...patch } }
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings))
+    localStorage.setItem(settingsKey, JSON.stringify(state.settings))
   } catch {
     /* ignore */
   }
@@ -167,20 +285,20 @@ export async function wipeLocalData() {
 
 // ── selectors ─────────────────────────────────────────────────────────────
 
-export function foodForDate(s: State, date: string): FoodEntry[] {
+export function foodForDate(s: Pick<State, 'food'>, date: string): FoodEntry[] {
   return Object.values(s.food)
     .filter((f) => f.date === date && !f.deleted)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 
-export function exercisesForDate(s: State, date: string): Exercise[] {
+export function exercisesForDate(s: Pick<State, 'exercise'>, date: string): Exercise[] {
   return Object.values(s.exercise)
     .filter((e) => e.date === date && !e.deleted)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 
 /** Most recent distinct meals (by title) for one-tap re-logging. */
-export function recentMeals(s: State, limit = 6): FoodEntry[] {
+export function recentMeals(s: Pick<State, 'food'>, limit = 6): FoodEntry[] {
   const seen = new Set<string>()
   const out: FoodEntry[] = []
   const all = Object.values(s.food)

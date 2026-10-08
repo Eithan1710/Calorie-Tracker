@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { updateSettings } from '../../data/store'
+import { updateSettings, useStore } from '../../data/store'
+import { pushProfile } from '../../services/sync'
+import { useAuth } from '../../services/auth'
 import { bmrMifflinStJeor, isValidProfile, type Profile } from '../../domain/energy'
 import { PrimaryButton, NumberField } from '../primitives'
 import { ProfileFields } from '../sheets/SettingsSheet'
@@ -18,6 +20,8 @@ export function Logo({ className = 'size-12' }: { className?: string }) {
 }
 
 export function Onboarding() {
+  const auth = useAuth()
+  const signedIn = useStore((s) => s.userId) !== null
   const [p, setP] = useState<Partial<Profile>>({ sex: 'male' })
   const [protein, setProtein] = useState<number | ''>(120)
   const valid = isValidProfile(p) && protein !== '' && protein >= 40
@@ -28,7 +32,7 @@ export function Onboarding() {
         <div className="flex flex-col gap-4">
           <Logo className="size-14" />
           <div>
-            <h1 className="text-[34px] leading-tight font-bold tracking-tight">מאזן</h1>
+            <h1 className="text-[34px] leading-tight font-bold tracking-tight">{auth.username ? `שלום, ${auth.username}` : 'מאזן'}</h1>
             <p className="mt-1 text-lg text-ink-2">כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.</p>
           </div>
         </div>
@@ -47,12 +51,17 @@ export function Onboarding() {
         <PrimaryButton
           disabled={!valid}
           onClick={() => {
-            if (isValidProfile(p) && protein !== '') updateSettings({ profile: p, proteinTarget: protein })
+            if (isValidProfile(p) && protein !== '') {
+              updateSettings({ profile: p, proteinTarget: protein })
+              void pushProfile()
+            }
           }}
         >
           בוא נתחיל
         </PrimaryButton>
-        <p className="text-center text-sm text-ink-3">הכל נשמר במכשיר שלך. אפשר לשנות בכל רגע בהגדרות.</p>
+        <p className="text-center text-sm text-ink-3">
+          {signedIn ? 'נשמר בחשבון שלך ומשמש רק לחישובים שלך.' : 'הכל נשמר במכשיר שלך.'} אפשר לשנות בכל רגע בהגדרות.
+        </p>
       </div>
     </main>
   )

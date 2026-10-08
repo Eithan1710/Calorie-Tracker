@@ -1,7 +1,8 @@
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
-import type { ExerciseType, Intensity, Profile } from '../domain/energy'
+import type { ExerciseType, Intensity, Lift, Profile, RestStyle } from '../domain/energy'
+import type { DeficitTarget } from '../domain/goal'
 
-export type { Analysis, FoodItem, Totals }
+export type { Analysis, FoodItem, Totals, Lift }
 
 export type Meal = 'breakfast' | 'lunch' | 'snack' | 'dinner'
 
@@ -32,6 +33,8 @@ export interface FoodEntry extends Syncable {
   raw_text?: string
   /** 'pending' = saved offline, waiting for AI analysis */
   status: 'ok' | 'pending'
+  /** Storage object path "<user_id>/<entry_id>/<photo_id>.jpg" (or a local-only path in local mode) */
+  photo_path?: string
   created_at: string
 }
 
@@ -41,6 +44,10 @@ export interface Exercise extends Syncable {
   duration_min?: number
   distance_km?: number
   intensity?: Intensity
+  /** strength only: training density (rest between sets) */
+  rest?: RestStyle
+  /** strength only, optional: exercises with their load — tracking only, not used for calories */
+  lifts?: Lift[]
   created_at: string
 }
 
@@ -56,6 +63,10 @@ export interface HealthDay {
 export interface Settings {
   profile: Profile | null
   proteinTarget: number
+  /** personal daily target: deficit band (burned − eaten), kcal */
+  deficitTarget: DeficitTarget
+  /** when profile/targets last changed on this device (for cross-device sync) */
+  profileUpdatedAt?: string
   remindersEnabled: boolean
   reminderTime: string
   /** server Web Push is active → the local timer stays quiet (no duplicates) */
@@ -69,6 +80,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   profile: null,
   proteinTarget: 120,
+  deficitTarget: { min: 100, max: 300 },
   remindersEnabled: false,
   reminderTime: '21:30',
 }

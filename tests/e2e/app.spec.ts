@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test'
 import { addText, analysis, at, BURN_NO_STEPS, item, mockAnalyze, seedProfile } from './helpers'
 
 const hero = (page: import('@playwright/test').Page) => page.getByRole('region', { name: 'מאזן קלורי' })
+// a tiny valid PNG
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const shot = (name: string, project: string) => `docs/screenshots/${project}-${name}.png`
 
 test.describe('first run', () => {
@@ -87,7 +89,7 @@ test.describe('daily logging', () => {
     await page.goto('/')
     // a tiny valid PNG
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
-    await page.locator('input[type=file][capture]').first().setInputFiles({ name: 'food.png', mimeType: 'image/png', buffer: png })
+    await page.getByTestId('dock-photo-input').setInputFiles({ name: 'food.png', mimeType: 'image/png', buffer: png })
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('עוף, אורז וסלט')).toBeVisible()
     await expect(dialog.getByText('הערכה סבירה')).toBeVisible()
@@ -102,6 +104,53 @@ test.describe('daily logging', () => {
     await expect(dialog.getByTestId('analysis-total')).toHaveText(new RegExp(String(before + 65)))
     await dialog.getByRole('button', { name: 'אישור' }).click()
     await expect(hero(page)).toContainText(String(before + 65))
+    // the photo stays with the entry: thumbnail in the log, and after a reload
+    const log = page.getByRole('region', { name: 'מה אכלתי' })
+    await expect(log.locator('img')).toHaveCount(1)
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'מה אכלתי' }).locator('img')).toHaveCount(1)
+  })
+
+  test('attach a photo from the gallery inside the sheet (no camera needed), then edit it later', async ({ page }) => {
+    let sentImage = false
+    await page.route('**/api/analyze-food', async (route) => {
+      sentImage = Boolean(route.request().postDataJSON()?.image)
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(analysis([item('o', 'אומלט', 150, { kcal: 154, protein_g: 10.6, fat_g: 11.7, carbs_g: 0.6 })], { title: 'אומלט', emoji: '🍳' })) })
+    })
+    await page.goto('/')
+    await page.getByRole('button', { name: 'הוסף אוכל' }).first().click()
+    const dialog = page.getByRole('dialog')
+    // the gallery input has no `capture` attribute → iOS offers the photo library
+    const input = dialog.getByTestId('food-photo-input')
+    await expect(input).not.toHaveAttribute('capture', /.*/)
+    await expect(dialog.getByRole('button', { name: /הוסף תמונה/ }).first()).toBeVisible()
+    await input.setInputFiles({ name: 'IMG_0042.png', mimeType: 'image/png', buffer: PNG })
+    await expect(dialog.getByAltText('התמונה של הארוחה')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'נתח את התמונה' })).toBeEnabled()
+    await dialog.getByLabel('תיאור האוכל').fill('אומלט משתי ביצים')
+    await dialog.getByRole('button', { name: 'חשב' }).click()
+    await expect(dialog.getByText('אומלט').first()).toBeVisible()
+    expect(sentImage).toBe(true)
+    await dialog.getByRole('button', { name: 'אישור' }).click()
+    const log = page.getByRole('region', { name: 'מה אכלתי' })
+    await expect(log.locator('img')).toHaveCount(1)
+
+    // open the entry: photo shown; remove it → the log falls back to the emoji
+    await log.getByRole('button', { name: /אומלט/ }).click()
+    const edit = page.getByRole('dialog')
+    await expect(edit.getByAltText('התמונה של הארוחה')).toBeVisible()
+    await edit.getByRole('button', { name: 'הסר תמונה' }).click()
+    await expect(edit.getByRole('button', { name: 'הוסף תמונה' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(log.locator('img')).toHaveCount(0)
+  })
+
+  test('food logging without a photo is unchanged', async ({ page }) => {
+    await page.goto('/')
+    await addText(page, '2 פרוסות לחם')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('160')
+    await expect(page.getByRole('region', { name: 'מה אכלתי' }).locator('img')).toHaveCount(0)
   })
 
   test('delete food, then undo', async ({ page }) => {
@@ -141,22 +190,75 @@ test.describe('energy & goal', () => {
     await d.getByLabel('מרחק').fill('5')
     await d.getByLabel('זמן בדקות או דקות:שניות').fill('25:00')
     await expect(d.getByText('5:00')).toBeVisible() // pace
-    await expect(d.getByTestId('exercise-estimate')).toHaveText(/~390/) // 0.95 × 82 kg × 5 km
-    await d.getByRole('button', { name: /הוסף · ~390/ }).click()
+    // 1 kcal × 82 kg × 5 km = 410 gross − 25 min × BMR/1440 (1.23) ≈ 380
+    await expect(d.getByTestId('exercise-estimate')).toHaveText(/~380/)
+    await d.getByRole('button', { name: /הוסף · ~380/ }).click()
     await expect(page.getByRole('button', { name: /אימון/ })).toContainText('5 ק״מ')
   })
 
-  test('strength: duration × intensity × weight', async ({ page }) => {
+  test('strength: duration × intensity (Compendium session METs) × body weight', async ({ page }) => {
     await at(page, '2026-10-06T13:00:00')
     await page.goto('/')
     await page.getByRole('button', { name: /אימון/ }).click()
     const d = page.getByRole('dialog')
     await d.getByRole('radio', { name: /כוח/ }).click()
     await d.getByRole('button', { name: '75' }).click()
+    const est = d.getByTestId('exercise-estimate')
+    // moderate 5.0 MET: 5 × 3.5 × 82 / 200 = 7.18 kcal/min − 1.23 resting = 5.94 × 75 ≈ 450
+    await expect(est).toHaveText(/~450/)
+    await expect(d.getByTestId('exercise-range')).toBeVisible()
+    await d.getByRole('radio', { name: 'קלה' }).click()
+    await expect(est).toHaveText(/~280/) // 3.5 MET
     await d.getByRole('radio', { name: 'גבוהה' }).click()
-    await expect(d.getByTestId('exercise-estimate')).toHaveText(/~410/) // (5.0 − 1) × 82 × 1.25 = 410
+    await expect(est).toHaveText(/~550/) // 6.0 MET
+    await d.getByRole('radio', { name: /קצרות/ }).click()
+    await expect(est).toHaveText(/~710/) // 7.5 MET, supersets / circuit
+    await d.getByRole('radio', { name: /רגילות/ }).click()
+    // shorter session → proportionally less
+    await d.getByRole('button', { name: '45' }).click()
+    await expect(est).toHaveText(/~330/)
+    await d.getByRole('button', { name: '75' }).click()
     await d.getByRole('button', { name: /הוסף/ }).click()
-    await expect(page.getByRole('button', { name: /אימון/ })).toContainText('410')
+    await expect(page.getByRole('button', { name: /אימון/ })).toContainText('550')
+  })
+
+  test('strength: optional per-exercise weights are saved but do not change calories', async ({ page }) => {
+    await at(page, '2026-10-06T13:00:00')
+    await page.goto('/')
+    await page.getByRole('button', { name: /אימון/ }).click()
+    const d = page.getByRole('dialog')
+    await d.getByRole('button', { name: '60' }).click()
+    const est = d.getByTestId('exercise-estimate')
+    const before = await est.textContent()
+    await d.getByRole('button', { name: /משקלים/ }).click()
+    await d.getByLabel('שם תרגיל 1').fill('לחיצת חזה')
+    await d.getByLabel('משקל בתרגיל 1').fill('68')
+    await d.getByLabel('סטים בתרגיל 1').fill('4')
+    await d.getByLabel('חזרות בתרגיל 1').fill('8')
+    await d.getByRole('button', { name: 'תרגיל נוסף' }).click()
+    await d.getByLabel('שם תרגיל 2').fill('סקוואט')
+    await d.getByLabel('משקל בתרגיל 2').fill('140')
+    await expect(est).toHaveText(before!)
+    await d.getByLabel('משקל בתרגיל 2').fill('40')
+    await expect(est).toHaveText(before!)
+    await d.getByRole('button', { name: /הוסף/ }).click()
+    await page.getByRole('button', { name: /אימון/ }).click()
+    const list = page.getByRole('dialog').getByRole('list', { name: 'אימונים היום' })
+    await expect(list).toContainText('לחיצת חזה 68 ק״ג · 4×8')
+    await expect(list).toContainText('סקוואט 40 ק״ג')
+  })
+
+  test('changing body weight changes the workout estimate', async ({ page }) => {
+    await at(page, '2026-10-06T13:00:00')
+    await page.goto('/')
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    await page.getByRole('dialog').getByLabel('משקל').fill('100')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: /אימון/ }).click()
+    const d = page.getByRole('dialog')
+    await d.getByRole('button', { name: '75' }).click()
+    // 5 × 3.5 × 100 / 200 = 8.75 − (BMR 1957.5 / 1440 = 1.36) = 7.39 × 75 ≈ 550 (vs ~450 at 82 kg)
+    await expect(d.getByTestId('exercise-estimate')).toHaveText(/~550/)
   })
 
   test('manual steps raise calories burned', async ({ page }) => {
@@ -265,7 +367,7 @@ test.describe('resilience', () => {
     await mockAnalyze(page, { error: 'unclear_image', message: 'התמונה קצת לא ברורה לי. אפשר לנסות תמונה נוספת או לכתוב מה אכלת.' }, 422)
     await page.goto('/')
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
-    await page.locator('input[type=file][capture]').first().setInputFiles({ name: 'blur.png', mimeType: 'image/png', buffer: png })
+    await page.getByTestId('dock-photo-input').setInputFiles({ name: 'blur.png', mimeType: 'image/png', buffer: png })
     await expect(page.getByRole('alert')).toContainText('התמונה קצת לא ברורה לי')
   })
 })
@@ -359,7 +461,8 @@ test.describe('layout & a11y', () => {
     const d = page.getByRole('dialog')
     await expect(d.getByLabel('יעד חלבון יומי')).toHaveValue('120')
     await d.getByRole('button', { name: 'איך מחושבת השריפה?' }).click()
-    await expect(d.getByText('Mifflin-St Jeor')).toBeVisible()
+    await expect(d.getByText(/Mifflin-St Jeor/)).toBeVisible()
+    await expect(d.getByRole('radiogroup', { name: 'היעד היומי' })).toBeVisible()
     await page.screenshot({ path: shot('settings', info.project.name) })
   })
 })

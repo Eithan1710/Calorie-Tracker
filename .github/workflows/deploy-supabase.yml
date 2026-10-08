@@ -41,7 +41,8 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # all of these authenticate themselves (owner mode / Shortcuts token / cron secret / GitHub OIDC)
-          for fn in analyze-food health-ingest send-reminders mz-config; do
+          # all of these authenticate themselves (user session / Shortcuts token / cron secret / GitHub OIDC);
+          # mz-register is the public sign-up endpoint
+          for fn in analyze-food mz-register health-ingest send-reminders mz-config; do
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
           done

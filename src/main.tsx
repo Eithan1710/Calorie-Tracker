@@ -2,8 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-import { initStore } from './data/store'
-import { startSync } from './services/sync'
+import { startSession } from './services/session'
 
 const root = createRoot(document.getElementById('root')!)
 root.render(
@@ -12,7 +11,8 @@ root.render(
   </StrictMode>,
 )
 
-void initStore().then(() => startSync())
+// auth → per-account local store → sync
+startSession()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   void import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }))

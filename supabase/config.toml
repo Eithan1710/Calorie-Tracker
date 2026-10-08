@@ -7,14 +7,17 @@ additional_redirect_urls = ["http://localhost:5173"]
 
 [auth.email]
 enable_signup = true
-# The app signs in with a 6-digit code typed into the PWA (magic links would
-# open Safari instead of the installed app). Put {{ .Token }} in the template.
-otp_length = 6
-otp_expiry = 3600
+# מאזן accounts are username + password. Usernames map to synthetic addresses
+# (u<hash>@users.maazan.app, see functions/_shared/account.ts) that are created
+# already-confirmed by the mz-register function, so no email is ever sent.
 
 [functions.analyze-food]
 import_map = "./functions/deno.json"
-verify_jwt = false   # single-owner mode: open (set REQUIRE_AUTH=true to require a session)
+verify_jwt = false   # checks the user's session itself (and refuses anonymous sessions)
+
+[functions.mz-register]
+import_map = "./functions/deno.json"
+verify_jwt = false   # public sign-up endpoint (validates input, rate-limited)
 
 [functions.health-ingest]
 import_map = "./functions/deno.json"

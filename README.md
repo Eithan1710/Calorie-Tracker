@@ -17,18 +17,24 @@ Open → see the balance → `+ הוסף אוכל` → type or photograph → `�
   **100–300 kcal deficit** target band, a plain-language status (`היעד הושג` / `כמעט שם` / `עודף קלורי` /
   `הגירעון גדול מהיעד`), **protein vs. 120 g** with emphasis, fat, carbs, steps, workouts, and the food log.
   Mid-day it doesn't scare you with a "huge deficit" — it says how much is left to eat.
-- **Food entry** — free Hebrew text (`אכלתי 3 ביצים, 2 פרוסות לחם, קוטג' וסלט`) or a photo (one tap on the
-  camera button in the dock). Every estimate is shown as `≈`, with a range for photos, a confidence label,
+- **Accounts** — username + password (Hebrew usernames welcome), one screen to log in or register, stays signed in.
+  Every account has its own profile, targets, food log, workouts, steps and photos; isolation is enforced by
+  Postgres RLS and Storage policies, not by the UI.
+- **Food entry** — free Hebrew text (`אכלתי 3 ביצים, 2 פרוסות לחם, קוטג' וסלט`) or a photo — taken with the camera
+  *or picked from the photo library* (`הוסף תמונה`). The photo is compressed on the device and stays attached to
+  the meal (thumbnail in the log, viewable/replaceable later). Every estimate is shown as `≈`, with a range for photos, a confidence label,
   per-item sources, and the assumptions. Edit grams with ± or by typing, remove items, or type a correction
   (`זה היה 250 גרם אורז`) — simple corrections are applied instantly on-device, anything else goes to the AI.
 - **One-tap re-log** of recent meals, **undo** on every add/delete.
-- **Workouts** — run (distance + time → pace + burn), strength (duration + intensity), cycling, swimming, other.
+- **Workouts** — strength (duration + intensity + rest style, optional per-exercise weights/sets/reps), run
+  (distance + time → pace + burn), walk, cycling, swimming, cardio/other. Every estimate is shown with a range.
 - **Steps** — manual, or from Apple Health through an Apple Shortcuts bridge (see below).
 - **History** — week / month: days in target, average balance, protein, steps, three small charts, day list.
 - **Daily 21:30 reminder** — `לא שכחת לעדכן את היום? 🥗`, once a day, skipped if the evening is logged.
 - **Offline-first** — data lives in IndexedDB; common foods are computed offline by a deterministic Hebrew
   parser; anything else is queued and analysed when the connection returns. Optional Supabase sync.
-- Minimal settings: sex, age, height, weight, protein target (default **120 g**), reminder, sync.
+- Minimal settings (per account): sex, age, height, weight, protein target (default **120 g**), daily target
+  (recomp 100–300 deficit · weight loss 300–500 · maintenance · gain), reminder, logout.
 
 ## Quick start
 
@@ -54,19 +60,21 @@ Requires Node ≥ 22.18 (the dev API imports the shared TypeScript pipeline dire
 **Live:** <https://eithan1710.github.io/Calorie-Tracker/> — backend in the Supabase project `kjfihzskaqcboeejnkak`
 (shared with another app; every מאזן table, function and Vault secret is prefixed `mz_`).
 
-**Single-owner mode (current):** the app has one user and **no login**. All data belongs to a fixed owner id,
-the `mz_` tables are open to the app's public key, and the AI endpoint is open. Every device you open the app on
-shows the same data (sync), push reminders and the Apple Health Shortcut work without an account.
-To go multi-user later: restore per-user RLS policies (`auth.uid() = user_id`), set `REQUIRE_AUTH=true` on
-`analyze-food`, and add sign-in to the app.
+**Accounts (current):** username + password on Supabase Auth. A username maps deterministically to a synthetic,
+never-mailed login address (`u<sha-256>@users.maazan.app`, see
+[`_shared/account.ts`](supabase/functions/_shared/account.ts)); the
+[`mz-register`](supabase/functions/mz-register/index.ts) function creates the user already confirmed (the Auth
+settings are shared with another app, and these addresses can't receive a confirmation mail). Passwords are only
+ever handled by Supabase Auth (bcrypt). Sessions persist in the browser and refresh automatically.
 
 | Piece | How it's deployed |
 |---|---|
 | Database schema, policies, Vault helpers, reminder cron | `supabase/migrations/*` (applied) |
 | Web Push keys, cron secret | generated inside Supabase, kept in Vault |
 | AI keys | GitHub secret → [`sync-ai-keys.yml`](.github/workflows/sync-ai-keys.yml) → `mz-config` function → Vault. No Supabase token needed: the function verifies GitHub's signed OIDC token and only accepts this repo's `main` branch |
-| Edge functions | deployed; [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`) redeploys after code changes |
+| Edge functions | [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`) redeploys after code changes |
 | PWA | [`pages.yml`](.github/workflows/pages.yml) on push to `main`: tests → build → GitHub Pages |
+| Checks | [`ci.yml`](.github/workflows/ci.yml) on every other branch / PR: unit tests, typecheck + build, Playwright (mobile, desktop, accounts) |
 
 **Repository secrets** (Settings → Secrets and variables → Actions): `GEMINI_API_KEY` (required for AI/photos);
 optional `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `USDA_FDC_API_KEY`. After adding or changing one, run
@@ -83,7 +91,7 @@ All documented in [`.env.example`](.env.example). Summary:
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | server | Fallback AI #2 |
 | `AI_PROVIDER_ORDER`, `AI_TIMEOUT_MS` | server | Chain order / timeout |
 | `USDA_FDC_API_KEY`, `USDA_FDC_DISABLED` | server | USDA FoodData Central lookups for foods outside the table |
-| `REQUIRE_AUTH` | server | `true` = require a Supabase session on the AI endpoint (off in single-owner mode) |
+| `REQUIRE_AUTH` | server | the AI endpoint requires a signed-in (non-anonymous) session; `false` disables that for local experiments only |
 | `VAPID_*`, `CRON_SECRET` | server (optional) | Override the Web Push keys / cron secret that otherwise live in Vault |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | client (public) | Optional sync + hosted functions |
 | `VITE_BASE` | build | Sub-path for hosting, e.g. `/Calorie-Tracker/` on GitHub Pages |
@@ -96,8 +104,8 @@ AI keys are **never** bundled into the frontend — only `VITE_*` values are, an
 
 ## Calorie expenditure algorithm (deterministic — no AI)
 
-Implemented and documented in [`src/domain/energy.ts`](src/domain/energy.ts), unit-tested in
-[`energy.test.ts`](src/domain/energy.test.ts).
+One module computes every "burned" number: [`src/domain/energy.ts`](src/domain/energy.ts) (unit-tested in
+[`energy.test.ts`](src/domain/energy.test.ts)). UI components only call into it.
 
 ```
 TOTAL = (BMR + BASELINE + STEPS_NET + EXERCISE_NET) × 1.10
@@ -106,20 +114,40 @@ TOTAL = (BMR + BASELINE + STEPS_NET + EXERCISE_NET) × 1.10
 | Term | Model |
 |---|---|
 | **BMR** | Mifflin-St Jeor: `10·kg + 6.25·cm − 5·age + 5` (♂) / `− 161` (♀). Energy for 24 h at rest. |
-| **BASELINE** | 5 % of BMR — non-walking daily life a step counter can't see (standing, posture, chores). Small on purpose: the classic "× 1.2 sedentary" factor already implies a few thousand steps, which are counted explicitly here. |
-| **STEPS_NET** | `steps × stride × kg × 0.5 kcal/kg/km`, stride = height × 0.415 (♂) / 0.413 (♀). 0.5 is the *net* walking cost (gross ≈ 0.75–0.8 minus the resting share already in BMR). |
-| **EXERCISE_NET** | Running with a distance: `0.95 kcal × kg × km` (running's net cost is ~speed-independent). Otherwise `(MET − 1) × kg × hours`, METs from the Compendium of Physical Activities (strength 3.0 / 3.5 / 5.0 by intensity; conservative session averages). The "− 1" removes the resting MET already in BMR. Walks are not a workout type — they're steps. |
-| **× 1.10** | Thermic effect of food ≈ 10 %. Modelled on expenditure rather than on what you logged (at a near-maintenance intake they're equal), so "burned" doesn't rise just because you ate more. |
+| **BASELINE** | 5 % of BMR — non-walking daily life a step counter can't see (standing, posture, chores). |
+| **STEPS_NET** | `steps × stride × kg × 0.5 kcal/kg/km`, stride = height × 0.415 (♂) / 0.413 (♀). 0.5 is the *net* walking cost. |
+| **EXERCISE_NET** | per workout: `(MET × 3.5 × kg / 200 − BMR/1440) × minutes` — the standard MET equation minus *this person's own* resting rate (which BMR already counts). Running with a distance: `1.0 kcal × kg × km − resting`. |
+| **× 1.10** | Thermic effect of food ≈ 10 %, modelled on expenditure so "burned" doesn't rise because you ate more. |
 
-**Double-counting guards:** resting energy is counted once (BMR); steps your phone/watch records *during a
-logged run* (`minutes × 160` cadence, or distance ÷ running stride) are subtracted before step energy is
-computed; walking is only counted via steps.
+**MET values** — 2024 Adult Compendium of Physical Activities. Strength training is costed as a *session*
+(the Compendium resistance codes are session averages including rest between sets), never as continuous work:
+
+| Strength | light | moderate | vigorous |
+|---|---|---|---|
+| standard rests (1–3 min) | 3.5 (02054) | 5.0 (02052) | 6.0 (02050) |
+| short rests / supersets / circuit | 3.5 (02034) | 5.8 (02055) | 7.5 (02040) |
+
+Walking, cycling, swimming and cardio use their Compendium tables by intensity; running without a distance uses
+pace-based running METs.
+
+**Weights lifted are not a calorie input.** They're stored per exercise (name, kg, sets × reps) for progress
+tracking only — external load is a poor stand-alone predictor of energy cost (heavier sets → fewer reps, longer
+rests). A test asserts that changing the load leaves the estimate unchanged, while body weight, age/sex
+(through BMR), duration, intensity and rest style all move it.
+
+**No false precision:** individual MET predictions are typically off by 20–30 %, so every workout shows a rounded
+(10 kcal) estimate plus a range (±30 % strength/cardio, ±25 % cycling/swimming, ±20 % walking, ±10 % running with a
+distance).
+
+**Double-counting guards:** resting energy is counted once (BMR); steps recorded during a logged run or walk are
+subtracted before step energy is computed.
 
 Sanity checks (tested): 3k steps ≈ BMR × 1.2, 12k steps ≈ BMR × 1.375; 5 km run for 65 kg ≈ 300 kcal;
-75 min heavy lifting for 80 kg ≈ 400 kcal.
+75 min moderate lifting for 80 kg ≈ 430 kcal above rest (range ≈ 300–560).
 
-**Daily goal** ([`src/domain/goal.ts`](src/domain/goal.ts)): deficit = burned − eaten.
-`100–300` → success · `0–99` → almost (`חסרות עוד X קלוריות ליעד`) · `< 0` → surplus (gentle wording) ·
+**Daily goal** ([`src/domain/goal.ts`](src/domain/goal.ts)): deficit = burned − eaten, checked against the
+account's target band (default `100–300`; presets for weight loss 300–500, maintenance ±100, gain 200–400 surplus).
+Default band: `100–300` → success · `0–99` → almost (`חסרות עוד X קלוריות ליעד`) · `< 0` → surplus (gentle wording) ·
 `> 300` → "deficit larger than target" — **only once the day is over (after 20:00 or a past day)**; before that
 it shows how many calories are still available. The app never recommends aggressive restriction.
 
@@ -189,14 +217,21 @@ plugin (a small native companion) — the energy model and data layer don't chan
 
 ## Data & security
 
-- Local-first: IndexedDB (records) + localStorage (settings). Sync is optional, last-write-wins on `updated_at`,
-  soft deletes so removals propagate.
-- Supabase schema in [`supabase/migrations`](supabase/migrations) (all prefixed `mz_`): `profiles`, `food_entries` (items as validated
-  JSONB — always read/written with their entry, which keeps offline sync atomic), `exercises`, `health_data`,
-  `daily_summaries`, `ai_analysis_logs`, `push_subscriptions`, `health_ingest_tokens`. In single-owner mode the
-  RLS policies are open to the app (see Deployment); the Shortcuts token is stored only as a SHA-256 hash that
-  the app can set (via `mz_set_ingest_token`) but not read. Minimal personal data (age, not birth date; no names;
-  no photos stored).
+- **Per-account, local-first:** each account has its own IndexedDB database (`maazan:<user_id>`) and settings key,
+  so people sharing a device never see each other's data even offline. Sync is last-write-wins on `updated_at`,
+  soft deletes so removals propagate. On logout the local copy is removed once everything is synced.
+- **Server-side isolation** ([`20261008000000_multi_user.sql`](supabase/migrations/20261008000000_multi_user.sql)):
+  every `mz_` table has `user_id → auth.users` (default `auth.uid()`) and owner-only RLS policies for select /
+  insert / update / delete; anonymous sessions (another app in this project uses them) are excluded; the `anon` role
+  (public key without a session) has no table privileges at all. AI logs are read-only for their owner; the
+  Shortcuts token hash is write-only through `mz_set_ingest_token`, which now writes for the caller only.
+  [`supabase/tests/rls_isolation.sql`](supabase/tests/rls_isolation.sql) proves it (two users, rolled back).
+- **Photos:** private bucket `mz-food-photos`, objects at `<user_id>/<entry_id>/<photo_id>.jpg`. Storage policies
+  require the first path segment to be the caller's uid for every operation, and `mz_food_entries.photo_path` has a
+  check that it lives in the owner's folder. Photos are downscaled to ≤1280 px JPEG (~150–300 KB) on the device,
+  which also strips EXIF/location. Shown through 1-hour signed URLs; queued in IndexedDB while offline.
+- **First login on an old device:** data from before accounts existed is never moved silently — the app asks once
+  whether to attach it to the signed-in account.
 - The analyze function validates the request with zod and every model reply with zod; the client validates the
   server reply again before saving. AI keys live only in Vault / function env, never in the app bundle.
 
@@ -206,16 +241,17 @@ plugin (a small native companion) — the energy model and data layer don't chan
 src/
   domain/        energy.ts (burn model) · goal.ts (status logic) · day.ts (daily summary)
   data/          store.ts (local-first store) · idb.ts · types.ts
-  services/      ai.ts · sync.ts · notifications.ts · health.ts · image.ts · supabase.ts · config.ts
-  ui/            screens/ (Today, History, Onboarding) · sheets/ (food, review, exercise, steps, settings)
+  services/      auth.ts · session.ts · sync.ts · photos.ts · image.ts · ai.ts · notifications.ts · health.ts · supabase.ts · config.ts
+  ui/            screens/ (Login, Today, History, Onboarding) · sheets/ (food, review, exercise, steps, settings, legacy import)
   sw.ts          service worker: precache, Web Push, notification click
 supabase/
   functions/_shared/   pipeline · providers · schema (zod) · foodDb · localParser · nutrition · usda · skill
-  functions/{analyze-food,health-ingest,send-reminders}/
-  migrations/          schema + RLS, reminder cron
+  functions/{analyze-food,mz-register,health-ingest,send-reminders,mz-config}/
+  migrations/          schema + RLS, reminder cron, multi-user accounts + photo storage
+  tests/rls_isolation.sql
 skills/nutrition-analysis/SKILL.md
 dev/apiPlugin.ts       local /api/analyze-food for dev & preview
-tests/                 unit/ · e2e/ (Playwright)
+tests/                 unit/ · e2e/ (Playwright; accounts.spec runs against a mocked Supabase)
 ```
 
 ## Testing

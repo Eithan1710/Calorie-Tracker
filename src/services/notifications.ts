@@ -1,6 +1,6 @@
 import { getState, foodForDate, updateSettings } from '../data/store'
 import { toDateKey } from '../domain/goal'
-import { API_BASE, OWNER_ID, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY, hasSupabase } from './config'
+import { API_BASE, SUPABASE_ANON_KEY, VAPID_PUBLIC_KEY, hasSupabase } from './config'
 import { getSupabase } from './supabase'
 
 /**
@@ -56,7 +56,8 @@ async function vapidPublicKey(): Promise<string | null> {
 
 /** Subscribe to server push (needs the Supabase backend). */
 async function subscribePush(): Promise<boolean> {
-  if (!hasSupabase || !('PushManager' in window)) return false
+  const userId = getState().userId
+  if (!hasSupabase || !userId || !('PushManager' in window)) return false
   const publicKey = await vapidPublicKey()
   if (!publicKey) return false
   const sb = await getSupabase()
@@ -66,7 +67,7 @@ async function subscribePush(): Promise<boolean> {
   const j = sub.toJSON()
   const { error } = await sb.from('mz_push_subscriptions').upsert(
     {
-      user_id: OWNER_ID,
+      user_id: userId,
       endpoint: sub.endpoint,
       p256dh: j.keys?.p256dh,
       auth: j.keys?.auth,
@@ -79,14 +80,25 @@ async function subscribePush(): Promise<boolean> {
   return !error
 }
 
+/**
+ * Drop this device's push subscription. The row is deleted (not just disabled):
+ * an endpoint belongs to one browser, and the next account that signs in on
+ * this device must be able to register it as its own.
+ */
 async function unsubscribePush() {
   if (!('serviceWorker' in navigator)) return
   const reg = await navigator.serviceWorker.getRegistration()
   const sub = await reg?.pushManager?.getSubscription()
   if (!sub) return
   const sb = await getSupabase()
-  await sb?.from('mz_push_subscriptions').update({ enabled: false }).eq('endpoint', sub.endpoint)
+  if (getState().userId) await sb?.from('mz_push_subscriptions').delete().eq('endpoint', sub.endpoint)
   await sub.unsubscribe().catch(() => {})
+}
+
+/** Logout: stop this device's reminders for the account that is leaving. */
+export async function releaseRemindersForLogout() {
+  if (localTimer) clearTimeout(localTimer)
+  await unsubscribePush().catch(() => {})
 }
 
 export async function enableReminders(): Promise<{ ok: boolean; push: boolean; message?: string }> {

@@ -1,6 +1,7 @@
 import { AnalysisSchema, type Analysis, type AnalyzeRequest } from '../../supabase/functions/_shared/schema.ts'
 import { parseLocally } from '../../supabase/functions/_shared/localParser.ts'
 import { API_BASE, SUPABASE_ANON_KEY } from './config'
+import { getAccessToken } from './auth'
 
 export type AnalyzeOutcome =
   | { ok: true; analysis: Analysis; offline?: boolean }
@@ -26,7 +27,9 @@ function localFallback(text: string, reason: 'offline' | 'unavailable'): Analyze
 async function post(body: AnalyzeRequest, timeoutMs = 35000): Promise<Response> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (SUPABASE_ANON_KEY) {
-    headers.authorization = `Bearer ${SUPABASE_ANON_KEY}`
+    // the analyze function only serves signed-in users: send the session's access token
+    const token = await getAccessToken().catch(() => null)
+    headers.authorization = `Bearer ${token ?? SUPABASE_ANON_KEY}`
     headers.apikey = SUPABASE_ANON_KEY
   }
   return fetch(`${API_BASE}/analyze-food`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })

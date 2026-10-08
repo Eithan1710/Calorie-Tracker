@@ -69,3 +69,27 @@ describe('date keys', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28')
   })
 })
+
+describe('personal targets', () => {
+  const at = (eaten: number, burned: number, target: { min: number; max: number }, dayFinal = true) => evaluateGoal({ eaten, burned, hasFood: true, dayFinal, target })
+
+  it('a weight-loss target (300–500) moves the success band', () => {
+    expect(at(1800, 2200, { min: 300, max: 500 }).status).toBe('success') // deficit 400
+    expect(at(2000, 2200, { min: 300, max: 500 }).status).toBe('almost') // deficit 200
+    expect(at(2000, 2200, { min: 100, max: 300 }).status).toBe('success') // same day, default target
+  })
+  it('maintenance (−100…100) counts a small surplus as on target', () => {
+    expect(at(2250, 2200, { min: -100, max: 100 }).status).toBe('success')
+    expect(at(2400, 2200, { min: -100, max: 100 }).status).toBe('surplus')
+  })
+  it('a gain target (200–400 surplus) reports a deficit day as room to eat', () => {
+    expect(at(2500, 2200, { min: -400, max: -200 }).status).toBe('success')
+    const r = at(2100, 2200, { min: -400, max: -200 }, false)
+    expect(r.status).toBe('room')
+    expect(r.roomMin).toBe(300)
+    expect(r.roomMax).toBe(500)
+  })
+  it('falls back to 100–300 when the target is invalid', () => {
+    expect(at(2000, 2200, { min: 300, max: 100 }).status).toBe('success')
+  })
+})

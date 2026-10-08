@@ -15,6 +15,26 @@
 export const TARGET_MIN = 100
 export const TARGET_MAX = 300
 
+/** A personal daily target, as a band of deficit (burned − eaten) in kcal. */
+export interface DeficitTarget {
+  min: number
+  max: number
+}
+
+export const DEFAULT_TARGET: DeficitTarget = { min: TARGET_MIN, max: TARGET_MAX }
+
+/** The few targets offered in settings — none of them aggressive. */
+export const TARGET_PRESETS: { id: string; label: string; hint: string; target: DeficitTarget }[] = [
+  { id: 'recomp', label: 'ריקומפ', hint: 'גירעון מתון 100–300', target: { min: 100, max: 300 } },
+  { id: 'cut', label: 'ירידה במשקל', hint: 'גירעון 300–500', target: { min: 300, max: 500 } },
+  { id: 'maintain', label: 'שמירה', hint: 'מאזן אפס, ±100', target: { min: -100, max: 100 } },
+  { id: 'gain', label: 'עלייה', hint: 'עודף 200–400', target: { min: -400, max: -200 } },
+]
+
+export function isValidTarget(t: Partial<DeficitTarget> | null | undefined): t is DeficitTarget {
+  return !!t && Number.isFinite(t.min) && Number.isFinite(t.max) && t.max! > t.min! && t.min! >= -500 && t.max! <= 1000
+}
+
 export type GoalStatus = 'empty' | 'success' | 'almost' | 'surplus' | 'over' | 'room'
 
 export interface GoalResult {
@@ -42,42 +62,45 @@ export function evaluateGoal(opts: {
   hasFood: boolean
   /** true if the day is over (past day) or it's late evening */
   dayFinal: boolean
+  /** personal target band; defaults to the original 100–300 kcal deficit */
+  target?: DeficitTarget
 }): GoalResult {
   const deficit = Math.round(opts.burned - opts.eaten)
+  const { min: TMIN, max: TMAX } = isValidTarget(opts.target) ? opts.target : DEFAULT_TARGET
 
   if (!opts.hasFood) {
     return {
       status: 'empty',
       deficit,
       title: 'עוד לא נרשם אוכל היום',
-      detail: `אפשר לאכול כ-${range(opts.burned - TARGET_MAX, opts.burned - TARGET_MIN)} קק״ל היום`,
-      roomMin: Math.max(0, opts.burned - TARGET_MAX),
-      roomMax: Math.max(0, opts.burned - TARGET_MIN),
+      detail: `אפשר לאכול כ-${range(opts.burned - TMAX, opts.burned - TMIN)} קק״ל היום`,
+      roomMin: Math.max(0, opts.burned - TMAX),
+      roomMax: Math.max(0, opts.burned - TMIN),
     }
   }
 
-  if (deficit >= TARGET_MIN && deficit <= TARGET_MAX) {
-    return { status: 'success', deficit, title: 'היעד הושג', detail: 'גירעון מתון ובריא — בדיוק בטווח' }
+  if (deficit >= TMIN && deficit <= TMAX) {
+    return { status: 'success', deficit, title: 'היעד הושג', detail: TMIN >= 0 ? 'גירעון מתון ובריא — בדיוק בטווח' : 'בדיוק בטווח היעד שלך' }
   }
 
-  if (deficit >= 0 && deficit < TARGET_MIN) {
-    const missing = TARGET_MIN - deficit
+  if (deficit >= 0 && deficit < TMIN) {
+    const missing = TMIN - deficit
     return { status: 'almost', deficit, title: 'כמעט שם', detail: `חסרות עוד ${fmt(missing)} קלוריות ליעד` }
   }
 
-  if (deficit < 0) {
+  if (deficit < TMIN) {
     return {
       status: 'surplus',
       deficit,
-      title: 'עודף קלורי קטן היום',
-      detail: `${fmt(-deficit)} קק״ל מעל השריפה · מחר מאזנים`,
+      title: deficit < 0 ? 'עודף קלורי קטן היום' : 'מעט מעל היעד',
+      detail: deficit < 0 ? `${fmt(-deficit)} קק״ל מעל השריפה · מחר מאזנים` : `${fmt(TMIN - deficit)} קק״ל מעל הטווח · מחר מאזנים`,
     }
   }
 
-  // deficit > TARGET_MAX
+  // deficit > TMAX
   if (!opts.dayFinal) {
-    const roomMin = deficit - TARGET_MAX
-    const roomMax = deficit - TARGET_MIN
+    const roomMin = deficit - TMAX
+    const roomMax = deficit - TMIN
     return {
       status: 'room',
       deficit,
@@ -91,7 +114,7 @@ export function evaluateGoal(opts: {
     status: 'over',
     deficit,
     title: 'הגירעון גדול מהיעד',
-    detail: 'לריקומפ עדיף גירעון מתון — אפשר לאכול עוד קצת',
+    detail: TMIN >= 100 ? 'לריקומפ עדיף גירעון מתון — אפשר לאכול עוד קצת' : 'אפשר לאכול עוד קצת כדי להגיע ליעד',
   }
 }
 

@@ -1,12 +1,14 @@
 /**
- * Daily energy expenditure model — deterministic, no AI.
+ * Energy expenditure engine — the single source of truth for every calorie
+ * *burned* number in the app (BMR, daily activity, workouts, daily total).
+ * Deterministic, no AI. UI components only call into this module.
  *
  * ─────────────────────────────────────────────────────────────────────────
  *  TOTAL = (BMR + BASELINE_NEAT + STEPS_NET + EXERCISE_NET) × (1 + TEF)
  * ─────────────────────────────────────────────────────────────────────────
  *
  * 1. BMR — Mifflin-St Jeor (1990), the equation the Academy of Nutrition and
- *    Dietetics recommends for healthy adults:
+ *    Dietetics recommends for healthy adults (uses sex, age, height, weight):
  *        men:   10·kg + 6.25·cm − 5·age + 5
  *        women: 10·kg + 6.25·cm − 5·age − 161
  *    BMR is energy for 24 h of complete rest. Everything below is *net* of
@@ -22,29 +24,52 @@
  *        kcal = distance_km × kg × 0.5
  *    Gross walking cost is ~0.75–0.8 kcal/kg/km at normal speeds; ~0.3 of
  *    that is resting metabolism already counted in BMR, leaving ≈0.5 net.
+ *    Double-counting guard: steps a phone/watch records *during* a logged run
+ *    or walk are subtracted first, because that workout is costed separately.
  *
- *    Double-counting guard: a watch/phone also counts the steps you take
- *    while running. Steps attributable to a logged run (cadence × minutes, or
- *    distance ÷ running stride) are subtracted before step energy is
- *    computed, because the run is costed separately and more accurately.
+ * 4. EXERCISE_NET — each logged workout (see `workoutEstimate`):
  *
- * 4. EXERCISE_NET — each logged workout, net of resting energy:
- *    • Running with a distance: net ≈ 0.95 kcal/kg/km. The gross cost of
- *      running (~1 kcal/kg/km) is roughly speed-independent; subtracting the
- *      resting share during the run leaves ~0.95.
- *      Without a distance: (MET − 1) × kg × hours, MET from pace/intensity.
- *    • Strength / cycling / swimming / other:
- *        (MET − 1) × kg × hours        (Compendium of Physical Activities)
- *      "−1" removes the 1 MET of rest that BMR already covers.
- *    • Walks are NOT a workout type here — walking is captured by steps.
+ *      gross kcal/min = MET × 3.5 × kg / 200          (standard MET equation:
+ *                                                      1 MET = 3.5 ml O₂/kg/min,
+ *                                                      ≈5 kcal per litre O₂)
+ *      resting kcal/min = BMR / 1440                   (this person's own rest,
+ *                                                      from age/sex/height/weight)
+ *      net = (gross − resting) × minutes
+ *
+ *    Subtracting the person's *own* resting rate (instead of a generic 1 MET)
+ *    is the correction recommended with the Compendium for people whose RMR
+ *    differs from the 3.5 ml/kg/min reference (older, female or larger
+ *    adults usually have a lower RMR per kg).
+ *
+ *    MET values come from the 2024 Adult Compendium of Physical Activities
+ *    (Herrmann et al., J Sport Health Sci 2024; codes noted next to each value).
+ *
+ *    Strength training is costed per *session*, not per minute of lifting:
+ *    the Compendium resistance-training codes are session averages that
+ *    already include rest between sets, so "75 minutes in the gym" is never
+ *    treated as 75 minutes of continuous vigorous work. Training density is
+ *    taken into account through the rest style:
+ *       standard rests (1–3 min):  light 3.5 (02054) · moderate 5.0 (02052) · vigorous 6.0 (02050)
+ *       short rests / supersets / circuit:
+ *                                  light 3.5 (02034) · moderate 5.8 (02055) · vigorous 7.5 (02040)
+ *
+ *    Load lifted (kg on the bar) is deliberately NOT an input. External load
+ *    is a poor predictor of energy cost on its own: heavier sets mean fewer
+ *    reps and longer rests, so total work per session changes far less than
+ *    the load does. Loads are stored for progress tracking only.
+ *
+ *    Running with a distance: gross ≈ 1.0 kcal/kg/km, roughly independent of
+ *    speed (Margaria 1963; ACSM). Net = gross − resting × minutes.
  *
  * 5. TEF — thermic effect of food ≈ 10% of intake. At a near-maintenance
- *    intake (which is the whole goal: a 100–300 kcal deficit), intake ≈
- *    expenditure, so TEF is modelled as +10% of the activity-inclusive total.
- *    This keeps "burned" independent of what you've eaten so the number
- *    doesn't rise just because you logged more food.
+ *    intake intake ≈ expenditure, so TEF is modelled as +10% of the
+ *    activity-inclusive total. This keeps "burned" independent of what you've
+ *    eaten so the number doesn't rise just because you logged more food.
  *
- * All outputs are estimates and are rounded to whole kcal.
+ * Uncertainty: MET-based predictions for an individual are typically off by
+ * 20–30% (Kozey et al. 2010; Compendium guidance). Every workout estimate
+ * therefore carries a range, and display values are rounded to 10 kcal so the
+ * UI never implies more precision than the method has.
  */
 
 export type Sex = 'male' | 'female'
@@ -56,39 +81,70 @@ export interface Profile {
   weightKg: number
 }
 
-export type ExerciseType = 'run' | 'strength' | 'cycling' | 'swimming' | 'other'
+export type ExerciseType = 'run' | 'walk' | 'strength' | 'cycling' | 'swimming' | 'other'
 export type Intensity = 'low' | 'moderate' | 'high'
+/** Training density for strength sessions. */
+export type RestStyle = 'standard' | 'short'
+
+/** One exercise inside a strength workout. Tracking only — never used for calories. */
+export interface Lift {
+  id: string
+  name: string
+  weight_kg?: number
+  sets?: number
+  reps?: number
+}
 
 export interface ExerciseInput {
   type: ExerciseType
   durationMin?: number
   distanceKm?: number
   intensity?: Intensity
+  rest?: RestStyle
+  /** accepted so callers can pass a whole workout; ignored by the energy model on purpose */
+  lifts?: Lift[]
 }
 
 export const BASELINE_NEAT_FRACTION = 0.05
 export const TEF_FRACTION = 0.1
 export const WALK_NET_KCAL_PER_KG_KM = 0.5
-export const RUN_NET_KCAL_PER_KG_KM = 0.95
+export const RUN_GROSS_KCAL_PER_KG_KM = 1.0
 export const RUN_CADENCE_SPM = 160
+export const WALK_CADENCE_SPM = 110
+/** assumed pace when a run has a distance but no time (only used to subtract resting energy) */
+const ASSUMED_RUN_MIN_PER_KM = 6
 
-/**
- * Gross MET values, conservative end of the Compendium of Physical Activities
- * (Ainsworth et al., 2011; Herrmann et al., 2024 update). Strength values are
- * session averages — they already include rest between sets.
- */
-export const METS: Record<Exclude<ExerciseType, 'run'>, Record<Intensity, number>> = {
-  // 02054 multiple exercises 8–15 reps ≈ 3.5; 02052 squats/explosive ≈ 5.0
-  strength: { low: 3.0, moderate: 3.5, high: 5.0 },
-  // 01010 leisure <16 km/h ≈ 4.0; 01030 19–22 km/h ≈ 8.0
+/** Gross MET values — 2024 Adult Compendium of Physical Activities. */
+export const STRENGTH_METS: Record<RestStyle, Record<Intensity, number>> = {
+  // 02054 weight training, multiple exercises 8–15 reps · 02052 squats/deadlifts · 02050 vigorous lifting / bodybuilding
+  standard: { low: 3.5, moderate: 5.0, high: 6.0 },
+  // 02034 circuit training, light · 02055 circuit resistance training, reciprocal supersets · 02040 circuit (kettlebells), vigorous
+  short: { low: 3.5, moderate: 5.8, high: 7.5 },
+}
+
+export const METS: Record<Exclude<ExerciseType, 'run' | 'strength'>, Record<Intensity, number>> = {
+  // Compendium walking codes (17xxx): ~3.2 km/h slow · ~4.5–5 km/h moderate · ~6 km/h brisk
+  walk: { low: 2.8, moderate: 3.5, high: 4.8 },
+  // Compendium bicycling codes (01xxx): leisure <16 km/h ≈ 4.0 · 16–19 km/h ≈ 6.8 · 19–22 km/h ≈ 8.0
   cycling: { low: 4.0, moderate: 6.8, high: 8.0 },
-  // 18310 leisurely ≈ 6.0; 18240 freestyle moderate ≈ 5.8; 18230 vigorous ≈ 9.8
+  // 18310 leisurely ≈ 6.0; 18240 freestyle moderate ≈ 5.8; 18230 vigorous ≈ 9.8 (conservative)
   swimming: { low: 5.0, moderate: 6.0, high: 8.3 },
-  // generic sport / HIIT / classes
+  // generic cardio / classes: 02048 elliptical moderate 5.0 · 02210 HIIT moderate 7.0
   other: { low: 3.5, moderate: 5.0, high: 7.0 },
 }
 
-/** Running MET by speed (Compendium 12xxx codes), used only when no distance is given. */
+/** Relative uncertainty (±) of each method, used for the displayed range. */
+const UNCERTAINTY: Record<ExerciseType, number> = {
+  run: 0.2, // only when costed from time; with a distance → RUN_DISTANCE_UNCERTAINTY
+  walk: 0.2,
+  strength: 0.3,
+  cycling: 0.25,
+  swimming: 0.25,
+  other: 0.3,
+}
+const RUN_DISTANCE_UNCERTAINTY = 0.1
+
+/** Running MET by speed (Compendium 12xxx codes). */
 export function runMetForSpeed(kmh: number): number {
   const table: [number, number][] = [
     [6.4, 6.0],
@@ -113,11 +169,22 @@ export function runMetForSpeed(kmh: number): number {
   return table[table.length - 1][1]
 }
 
+/** Running MET when only time is known, by perceived pace. */
 const RUN_INTENSITY_MET: Record<Intensity, number> = { low: 8.0, moderate: 9.8, high: 11.5 }
 
 export function bmrMifflinStJeor(p: Profile): number {
   const base = 10 * p.weightKg + 6.25 * p.heightCm - 5 * p.age
   return base + (p.sex === 'male' ? 5 : -161)
+}
+
+/** This person's resting energy per minute. */
+export function restingKcalPerMin(p: Profile): number {
+  return bmrMifflinStJeor(p) / 1440
+}
+
+/** Standard MET equation: kcal/min = MET × 3.5 × kg / 200. */
+export function metKcalPerMin(met: number, weightKg: number): number {
+  return (met * 3.5 * weightKg) / 200
 }
 
 export function strideMeters(p: Pick<Profile, 'heightCm' | 'sex'>): number {
@@ -131,9 +198,14 @@ function runStrideMeters(p: Pick<Profile, 'heightCm' | 'sex'>): number {
 
 /** Estimated steps a step counter would register during this workout. */
 export function estimateWorkoutSteps(ex: ExerciseInput, p: Profile): number {
-  if (ex.type !== 'run') return 0
-  if (ex.durationMin && ex.durationMin > 0) return Math.round(ex.durationMin * RUN_CADENCE_SPM)
-  if (ex.distanceKm && ex.distanceKm > 0) return Math.round((ex.distanceKm * 1000) / runStrideMeters(p))
+  if (ex.type === 'run') {
+    if (ex.durationMin && ex.durationMin > 0) return Math.round(ex.durationMin * RUN_CADENCE_SPM)
+    if (ex.distanceKm && ex.distanceKm > 0) return Math.round((ex.distanceKm * 1000) / runStrideMeters(p))
+  }
+  if (ex.type === 'walk') {
+    if (ex.distanceKm && ex.distanceKm > 0) return Math.round((ex.distanceKm * 1000) / strideMeters(p))
+    if (ex.durationMin && ex.durationMin > 0) return Math.round(ex.durationMin * WALK_CADENCE_SPM)
+  }
   return 0
 }
 
@@ -148,22 +220,83 @@ export function paceSecPerKm(ex: ExerciseInput): number | null {
   return (ex.durationMin * 60) / ex.distanceKm
 }
 
-/** Net (above-resting) kcal for a single workout. Returns 0 for incomplete input. */
-export function exerciseNetKcal(ex: ExerciseInput, p: Profile): number {
-  const kg = p.weightKg
-  if (ex.type === 'run') {
-    if (ex.distanceKm && ex.distanceKm > 0) {
-      return ex.distanceKm * kg * RUN_NET_KCAL_PER_KG_KM
-    }
-    if (ex.durationMin && ex.durationMin > 0) {
-      const met = RUN_INTENSITY_MET[ex.intensity ?? 'moderate']
-      return Math.max(0, met - 1) * kg * (ex.durationMin / 60)
-    }
-    return 0
+/** The MET this workout is costed at (null when costed by distance or incomplete). */
+export function workoutMet(ex: ExerciseInput): number | null {
+  const intensity = ex.intensity ?? 'moderate'
+  switch (ex.type) {
+    case 'run':
+      return RUN_INTENSITY_MET[intensity]
+    case 'strength':
+      return STRENGTH_METS[ex.rest ?? 'standard'][intensity]
+    default:
+      return METS[ex.type][intensity]
   }
-  if (!ex.durationMin || ex.durationMin <= 0) return 0
-  const met = METS[ex.type][ex.intensity ?? 'moderate']
-  return Math.max(0, met - 1) * kg * (ex.durationMin / 60)
+}
+
+export interface WorkoutEstimate {
+  /** kcal above rest — what the daily total adds */
+  net: number
+  /** total kcal during the workout, including resting energy */
+  gross: number
+  /** plausible range of `net` */
+  low: number
+  high: number
+  met: number | null
+  method: 'met' | 'run_distance'
+}
+
+const EMPTY: WorkoutEstimate = { net: 0, gross: 0, low: 0, high: 0, met: null, method: 'met' }
+
+/** Full estimate for one workout. Returns zeros for incomplete input. */
+export function workoutEstimate(ex: ExerciseInput, p: Profile): WorkoutEstimate {
+  const kg = p.weightKg
+  const restPerMin = restingKcalPerMin(p)
+  const minutes = ex.durationMin && ex.durationMin > 0 ? ex.durationMin : 0
+
+  let gross = 0
+  let restDuring = 0
+  let method: WorkoutEstimate['method'] = 'met'
+  let met: number | null = null
+  let uncertainty = UNCERTAINTY[ex.type]
+
+  if (ex.type === 'run' && ex.distanceKm && ex.distanceKm > 0) {
+    method = 'run_distance'
+    gross = ex.distanceKm * kg * RUN_GROSS_KCAL_PER_KG_KM
+    restDuring = restPerMin * (minutes || ex.distanceKm * ASSUMED_RUN_MIN_PER_KM)
+    uncertainty = RUN_DISTANCE_UNCERTAINTY
+  } else {
+    if (!minutes) return EMPTY
+    met = workoutMet(ex)!
+    gross = metKcalPerMin(met, kg) * minutes
+    restDuring = restPerMin * minutes
+  }
+
+  const net = Math.max(0, gross - restDuring)
+  return {
+    net,
+    gross,
+    low: net * (1 - uncertainty),
+    high: net * (1 + uncertainty),
+    met,
+    method,
+  }
+}
+
+/** Net (above-resting) kcal for a single workout. */
+export function exerciseNetKcal(ex: ExerciseInput, p: Profile): number {
+  return workoutEstimate(ex, p).net
+}
+
+const round10 = (n: number) => Math.round(n / 10) * 10
+
+/** What a workout card shows: net estimate and range, rounded to 10 kcal (it's an estimate). */
+export function workoutDisplay(ex: ExerciseInput, p: Profile): { kcal: number; low: number; high: number; gross: number } {
+  const e = workoutEstimate(ex, p)
+  return { kcal: round10(e.net), low: round10(e.low), high: round10(e.high), gross: round10(e.gross) }
+}
+
+export function workoutDisplayKcal(ex: ExerciseInput, p: Profile): number {
+  return workoutDisplay(ex, p).kcal
 }
 
 export interface DailyBurnBreakdown {
@@ -195,11 +328,6 @@ export function dailyBurn(p: Profile, steps: number, exercises: ExerciseInput[])
     tef: Math.round(tef),
     total: Math.round(subtotal + tef),
   }
-}
-
-/** Calories shown on a single workout card: net estimate rounded to 5 (it's an estimate). */
-export function workoutDisplayKcal(ex: ExerciseInput, p: Profile): number {
-  return Math.round(exerciseNetKcal(ex, p) / 5) * 5
 }
 
 export function isValidProfile(p: Partial<Profile> | null | undefined): p is Profile {

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Cloud, CloudOff, Loader2 } from 'lucide-react'
+import { ChevronDown, Cloud, CloudOff, Loader2, LogOut, UserRound } from 'lucide-react'
 import { Sheet, NumberField, Segmented } from '../primitives'
-import { updateSettings, useStore } from '../../data/store'
+import { hasUnsyncedChanges, updateSettings, useStore } from '../../data/store'
 import { isValidProfile, type Profile, type Sex } from '../../domain/energy'
+import { TARGET_PRESETS } from '../../domain/goal'
 import { hasSupabase } from '../../services/config'
+import { useAuth } from '../../services/auth'
+import { logout } from '../../services/session'
+import { showToast } from '../toast'
 import { getSyncStatus, onSyncStatus, pushProfile, syncNow } from '../../services/sync'
 import { disableReminders, enableReminders, isIOS, isStandalone, notificationSupport } from '../../services/notifications'
 import { HealthConnect } from './StepsSheet'
@@ -55,6 +59,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
+  const presetId = TARGET_PRESETS.find((t) => t.target.min === settings.deficitTarget.min && t.target.max === settings.deficitTarget.max)?.id ?? 'recomp'
+
   const toggleReminders = async () => {
     if (settings.remindersEnabled) {
       await disableReminders()
@@ -71,6 +77,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <Sheet open={open} onClose={onClose} title="הגדרות">
       <div className="flex flex-col gap-6 pt-1 pb-4">
+        <AccountSection onLoggedOut={onClose} />
+
         <section className="flex flex-col gap-3">
           <h3 className="font-semibold">הפרופיל שלך</h3>
           <ProfileFields value={draft} onChange={changeProfile} />
@@ -98,6 +106,29 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
               {(Number(protein || 0) / draft.weightKg).toFixed(1)} ג׳ לק״ג — לריקומפ מקובל <span className="ltr">1.6–2.2</span> ג׳ לק״ג.
             </p>
           )}
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h3 className="font-semibold">היעד היומי</h3>
+          <div role="radiogroup" aria-label="היעד היומי" className="grid grid-cols-2 gap-2">
+            {TARGET_PRESETS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={presetId === t.id}
+                onClick={() => {
+                  updateSettings({ deficitTarget: t.target })
+                  void pushProfile()
+                }}
+                className={`pressable flex min-h-16 flex-col items-start justify-center rounded-2xl px-4 py-2 text-start transition-colors ${presetId === t.id ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink'}`}
+              >
+                <span className="font-semibold">{t.label}</span>
+                <span className={`text-sm ${presetId === t.id ? 'opacity-80' : 'text-ink-3'}`}>{t.hint}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-sm text-ink-3">המאזן היומי נבדק מול הטווח הזה. אין כאן יעדים קיצוניים.</p>
         </section>
 
         <section className="flex flex-col gap-2">
@@ -165,11 +196,62 @@ function SyncSection() {
       <Cloud className={`size-5 shrink-0 ${status === 'error' ? 'text-surplus' : 'text-good'}`} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-medium">{status === 'error' ? 'הסנכרון נכשל — ננסה שוב אוטומטית' : 'מסונכרן לענן'}</p>
-        <p className="text-sm text-ink-3">אותם נתונים בכל מכשיר שבו תפתח את האפליקציה</p>
+        <p className="text-sm text-ink-3">הנתונים שלך זמינים בכל מכשיר שבו תתחבר לחשבון</p>
       </div>
       <button type="button" onClick={() => void syncNow()} className="pressable min-h-11 rounded-xl px-3 text-sm font-medium" aria-label="סנכרן עכשיו">
         {status === 'syncing' ? <Loader2 className="size-4 animate-spin" /> : 'סנכרן'}
       </button>
+    </section>
+  )
+}
+
+function AccountSection({ onLoggedOut }: { onLoggedOut: () => void }) {
+  const auth = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+  if (auth.status !== 'signedIn') return null
+
+  const doLogout = async () => {
+    setBusy(true)
+    const { keptLocal } = await logout()
+    setBusy(false)
+    onLoggedOut()
+    showToast(keptLocal ? 'התנתקת. שינויים שלא סונכרנו נשמרו במכשיר ויסונכרנו בכניסה הבאה.' : 'התנתקת')
+  }
+
+  return (
+    <section className="flex flex-col gap-2 rounded-2xl bg-surface-2 p-4">
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface text-ink-2" aria-hidden>
+          <UserRound className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-ink-3">מחובר כ־</p>
+          <p className="truncate font-semibold" dir="auto">{auth.username ?? 'משתמש'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => (hasUnsyncedChanges() && !navigator.onLine ? setConfirm(true) : void doLogout())}
+          disabled={busy}
+          className="pressable flex min-h-11 items-center gap-1.5 rounded-xl bg-surface px-3 text-sm font-medium"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <LogOut className="size-4 -scale-x-100" aria-hidden />}
+          התנתקות
+        </button>
+      </div>
+      {confirm && (
+        <div role="alert" className="flex flex-col gap-2 rounded-xl bg-warn-soft p-3 text-sm">
+          <p>אין חיבור, ויש שינויים שעוד לא סונכרנו. הם יישארו במכשיר הזה ויסונכרנו כשתתחבר שוב. להתנתק בכל זאת?</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void doLogout()} className="pressable min-h-10 flex-1 rounded-lg bg-ink font-medium text-inverse">
+              להתנתק
+            </button>
+            <button type="button" onClick={() => setConfirm(false)} className="pressable min-h-10 flex-1 rounded-lg bg-surface font-medium">
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -205,7 +287,10 @@ function HowItWorks() {
             </dl>
           )}
           <p>
-            BMR לפי נוסחת Mifflin-St Jeor. צעדים ואימונים מחושבים <b>מעל</b> המנוחה, כדי שאותה אנרגיה לא תיספר פעמיים, וצעדים שנעשו בזמן ריצה מנוכים. השריפה לא מחושבת ע״י AI. כל המספרים הם הערכות — העקביות חשובה יותר מהדיוק.
+            BMR לפי נוסחת Mifflin-St Jeor (מין, גיל, גובה ומשקל). אימונים לפי ערכי MET מה-Compendium of Physical Activities (2024):
+            ‏MET × 3.5 × משקל ÷ 200 לדקה, פחות המנוחה האישית שלך שכבר נספרת ב-BMR. באימון כוח הערכים הם ממוצע לאימון שלם כולל
+            מנוחות בין סטים, לפי עצימות וקצב — המשקל שהרמת לא משנה את החישוב. צעדים שנעשו בזמן ריצה או הליכה מנוכים. השריפה לא
+            מחושבת ע״י AI. כל המספרים הם הערכות (בדרך כלל ±20–30%) — העקביות חשובה יותר מהדיוק.
           </p>
         </div>
       )}

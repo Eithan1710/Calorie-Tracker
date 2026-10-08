@@ -40,14 +40,14 @@ Deno.serve(async (req) => {
   const keys = await loadKeys(admin)
   const env = (k: string) => keys[k] ?? Deno.env.get(k)
 
-  // Single-owner mode (default): the app has one user and no login, so the
-  // endpoint is open and everything is attributed to MZ_OWNER_ID.
-  // Set REQUIRE_AUTH=true later to require a Supabase session instead.
-  let userId: string | null = env('MZ_OWNER_ID') ?? '00000000-0000-4000-8000-000000000001'
-  if (env('REQUIRE_AUTH') === 'true') {
+  // Signed-in users only: the caller's Supabase access token identifies them
+  // (anonymous sessions from other apps in this project are refused).
+  // REQUIRE_AUTH=false turns this off for local experiments only.
+  let userId: string | null = null
+  if (env('REQUIRE_AUTH') !== 'false') {
     const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
     const { data, error } = await admin.auth.getUser(token)
-    if (error || !data.user) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
+    if (error || !data.user || data.user.is_anonymous) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
     userId = data.user.id
   }
 

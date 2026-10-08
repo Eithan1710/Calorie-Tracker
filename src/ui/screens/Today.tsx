@@ -3,11 +3,12 @@ import { Check, ChevronLeft, ChevronRight, Clock, Dumbbell, Footprints, Plus, Se
 import { exercisesForDate, foodForDate, useStore } from '../../data/store'
 import { MEALS, type Exercise, type FoodEntry } from '../../data/types'
 import { summarizeDay, type DaySummary, toExerciseInput } from '../../domain/day'
-import { addDays, TARGET_MAX, TARGET_MIN, toDateKey, type GoalStatus } from '../../domain/goal'
+import { addDays, toDateKey, type GoalStatus } from '../../domain/goal'
 import { workoutDisplayKcal, isValidProfile } from '../../domain/energy'
 import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { EXERCISE_META } from '../sheets/ExerciseSheet'
+import { usePhotoUrl } from '../../services/photos'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -42,13 +43,13 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
   const health = useStore((s) => s.health)
   const settings = useStore((s) => s.settings)
   return useMemo(() => {
-    const st = { food, exercise, health, settings, ready: true }
+    const st = { food, exercise }
     const f = foodForDate(st, date)
     const ex = exercisesForDate(st, date)
     return {
       food: f,
       exercises: ex,
-      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, profile: settings.profile, proteinTarget: settings.proteinTarget }),
+      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, profile: settings.profile, proteinTarget: settings.proteinTarget, target: settings.deficitTarget }),
     }
   }, [food, exercise, health, settings, date])
 }
@@ -135,6 +136,8 @@ function BalanceHero({ s }: { s: DaySummary }) {
   const balance = -goal.deficit
   const pos = (v: number) => ((Math.max(G_MIN, Math.min(G_MAX, v)) - G_MIN) / (G_MAX - G_MIN)) * 100
   const showMarker = s.hasFood
+  const TARGET_MIN = s.target.min
+  const TARGET_MAX = s.target.max
 
   return (
     <section aria-label="מאזן קלורי" className="card animate-rise overflow-hidden p-5 pb-4 sm:p-6">
@@ -165,7 +168,7 @@ function BalanceHero({ s }: { s: DaySummary }) {
       )}
 
       <div className="mt-3">
-        <p className={`text-lg font-semibold ${goal.status === 'success' ? 'text-good' : ''}`}>{s.hasFood ? goal.title : 'כדי לסיים בגירעון מתון של \u2066100–300\u2069'}</p>
+        <p className={`text-lg font-semibold ${goal.status === 'success' ? 'text-good' : ''}`}>{s.hasFood ? goal.title : TARGET_MIN >= 0 ? `כדי לסיים בגירעון של \u2066${TARGET_MIN}–${TARGET_MAX}\u2069` : 'כדי לסיים בטווח היעד שלך'}</p>
         {s.hasFood && goal.detail && <p className="text-[15px] text-ink-2">{goal.detail}</p>}
       </div>
 
@@ -298,8 +301,21 @@ function ExerciseTile({ exercises, onClick }: { exercises: Exercise[]; onClick: 
 }
 
 export function exerciseSummary(e: Exercise): string {
-  if (e.type === 'run' && e.distance_km) return `${e.distance_km} ק״מ${e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}`
+  if ((e.type === 'run' || e.type === 'walk') && e.distance_km) return `${e.distance_km} ק״מ${e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}`
   return `${EXERCISE_META[e.type].label}${e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}`
+}
+
+/** The entry's photo when it has one, otherwise its emoji. */
+export function EntryThumb({ entry, size = 'size-11' }: { entry: FoodEntry; size?: string }) {
+  const url = usePhotoUrl(entry.photo_path)
+  if (entry.photo_path && url) {
+    return <img src={url} alt="" className={`${size} shrink-0 rounded-xl bg-surface-2 object-cover`} loading="lazy" decoding="async" />
+  }
+  return (
+    <span className={`grid ${size} shrink-0 place-items-center rounded-xl bg-surface-2 text-xl`} aria-hidden>
+      {entry.emoji}
+    </span>
+  )
 }
 
 function FoodLog({ food, total, onAdd, onOpen }: { food: FoodEntry[]; total: number; onAdd: () => void; onOpen: (id: string) => void }) {
@@ -337,9 +353,7 @@ function FoodLog({ food, total, onAdd, onOpen }: { food: FoodEntry[]; total: num
                 {g.entries.map((e) => (
                   <li key={e.id} className="animate-rise">
                     <button type="button" onClick={() => onOpen(e.id)} className="pressable flex min-h-14 w-full items-center gap-3 rounded-2xl px-2 py-2 text-start hover:bg-surface-2">
-                      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-surface-2 text-xl" aria-hidden>
-                        {e.emoji}
-                      </span>
+                      <EntryThumb entry={e} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{e.title}</span>
                         {e.status === 'pending' ? (

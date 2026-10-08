@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore, foodForDate, exercisesForDate } from '../../data/store'
 import { summarizeDay, type DaySummary } from '../../domain/day'
-import { addDays, isDayFinal, TARGET_MAX, TARGET_MIN, toDateKey } from '../../domain/goal'
+import { addDays, isDayFinal, toDateKey } from '../../domain/goal'
 import { Segmented } from '../primitives'
 import { dateLong, dateShort, fmt, fmtBalance, KCAL, weekdayShort } from '../format'
 import { STATUS_STYLE } from './Today'
@@ -17,7 +17,7 @@ export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
   const today = toDateKey(new Date())
 
   const days: DaySummary[] = useMemo(() => {
-    const st = { food, exercise, health, settings, ready: true }
+    const st = { food, exercise }
     return Array.from({ length: range }, (_, i) => {
       const date = addDays(today, -(range - 1 - i))
       return summarizeDay({
@@ -27,10 +27,12 @@ export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
         steps: health[date]?.steps ?? 0,
         profile: settings.profile,
         proteinTarget: settings.proteinTarget,
+        target: settings.deficitTarget,
       })
     })
   }, [food, exercise, health, settings, range, today])
 
+  const { min: TARGET_MIN, max: TARGET_MAX } = settings.deficitTarget
   const logged = days.filter((d) => d.hasFood)
   const finished = logged.filter((d) => isDayFinal(d.date))
   const inTarget = finished.filter((d) => d.goal?.status === 'success').length
@@ -67,7 +69,7 @@ export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ChartCard title="מאזן יומי" subtitle={`נכנסו פחות נשרפו · הפס הירוק = יעד (גירעון \u2066${TARGET_MIN}–${TARGET_MAX}\u2069)`}>
+        <ChartCard title="מאזן יומי" subtitle={`נכנסו פחות נשרפו · הפס הירוק = היעד שלך (גירעון \u2066${TARGET_MIN}–${TARGET_MAX}\u2069)`}>
           <BarChart
             days={days}
             value={(d) => (d.hasFood && d.burn ? d.eaten - d.burned : null)}
