@@ -1,13 +1,43 @@
 # Testing
 
 ```bash
-npm test             # 212 unit tests (vitest + jsdom)
-npm run test:e2e     # 52 Playwright tests = 26 scenarios × (mobile 390×844 touch, desktop 1280×860)
+npm test             # 233 unit tests (vitest + jsdom)
+npm run test:e2e     # 66 Playwright tests: 30 scenarios × (mobile 390×844 touch, desktop 1280×860)
+                     #   + 6 account scenarios against a mocked Supabase (login, isolation, sync, photo upload)
 npm run build        # strict TypeScript + production PWA build
 deno check supabase/functions/*/index.ts   # edge functions in their real runtime
 ```
 
-## Results (latest run, 2026-10-06)
+## Accounts, photos & workouts (2026-10-08, GitHub Actions `ci.yml`)
+
+| Suite | Result |
+|---|---|
+| Unit (vitest) | **233 / 233 passed** |
+| Typecheck + production build | clean |
+| End-to-end (Playwright, Chromium) | **66 / 66 passed**, and no console errors / uncaught exceptions in any scenario |
+
+What the new tests cover:
+
+- **Accounts** (`tests/e2e/accounts.spec.ts`, mocked Supabase that enforces owner-only rows like RLS):
+  Hebrew login screen; wrong password / unknown user → `שם משתמש או סיסמה שגויים.`; register validation
+  (spaces, short password) and taken username; register → onboarding → **still signed in after reload** → logout →
+  login screen; **two users on one device** see only their own food, profile and body weight, and no write ever
+  targets another user's id; a **second device** gets profile + history from the account (no onboarding); the
+  password is never stored locally.
+- **Photos**: gallery input has no `capture` attribute (iOS offers the photo library); attach → preview → analyse →
+  thumbnail in the log, still there after reload; remove/replace from the entry; logging without a photo unchanged;
+  in account mode the file lands at `<user_id>/<entry_id>/…` and `photo_path` points to it.
+- **Workouts**: estimates for light/moderate/vigorous and short rests, 45 vs 75 min, body weight 82 → 100 kg changes
+  the estimate, per-exercise weights are saved and shown but **don't change calories**; unit tests pin the formula
+  (`(MET × 3.5 × kg / 200 − BMR/1440) × min`), age/sex via BMR, ranges and 10-kcal rounding.
+- **Database**: [`supabase/tests/rls_isolation.sql`](../supabase/tests/rls_isolation.sql) — run in the SQL editor after the
+  migration; creates two users inside a rolled-back transaction and checks cross-user read/insert/update/delete,
+  photo folders, `photo_path` ownership, anonymous sessions and the `anon` role.
+- **Bug found and fixed**: on a 390 px phone a 4-digit mid-day balance (`−1,838`) made the page wider than the
+  screen, which pushed the bottom dock below the visible area. The hero number now scales down and a regression check
+  asserts no horizontal overflow.
+
+## Earlier results (2026-10-06)
 
 | Suite | Result |
 |---|---|
