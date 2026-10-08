@@ -49,3 +49,11 @@ jobs:
           for fn in analyze-food health-ingest send-reminders mz-config; do
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
           done
+
+      - name: Remove retired functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # mz-register (public sign-up) was retired: מאזן is members-only
+          supabase functions delete mz-register --project-ref "$SUPABASE_PROJECT_REF" --yes 2>/dev/null \
+            || supabase functions delete mz-register --project-ref "$SUPABASE_PROJECT_REF" || true
