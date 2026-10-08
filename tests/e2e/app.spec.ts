@@ -102,6 +102,9 @@ test.describe('daily logging', () => {
     await page.goto('/')
     // a tiny valid PNG
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+    // the dock camera button opens the camera directly (no file/gallery chooser)
+    await expect(page.getByTestId('dock-photo-input')).toHaveAttribute('capture', 'environment')
+    await expect(page.getByRole('button', { name: 'צלם אוכל' })).toBeVisible()
     await page.getByTestId('dock-photo-input').setInputFiles({ name: 'food.png', mimeType: 'image/png', buffer: png })
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('עוף, אורז וסלט')).toBeVisible()

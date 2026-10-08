@@ -143,6 +143,8 @@ export default function App() {
         ref={cameraRef}
         type="file"
         accept="image/*"
+        /* the dock camera button opens the camera directly; the gallery stays available via "הוסף תמונה" in the food sheet */
+        capture="environment"
         className="hidden"
         aria-hidden
         tabIndex={-1}
@@ -165,7 +167,7 @@ export default function App() {
           <button type="button" onClick={openAdd} className="pressable flex min-h-14 flex-1 items-center justify-center gap-2 rounded-[20px] bg-ink text-lg font-semibold text-inverse">
             <Plus className="size-6" strokeWidth={2.6} aria-hidden /> הוסף אוכל
           </button>
-          <button type="button" onClick={() => cameraRef.current?.click()} className="pressable grid size-14 shrink-0 place-items-center rounded-[20px] bg-surface-2 text-ink" aria-label="תמונה של אוכל (צילום או מהגלריה)">
+          <button type="button" onClick={() => cameraRef.current?.click()} className="pressable grid size-14 shrink-0 place-items-center rounded-[20px] bg-surface-2 text-ink" aria-label="צלם אוכל">
             <Camera className="size-6" />
           </button>
           <DockTab active={tab === 'history'} label="היסטוריה" onClick={() => setTab('history')}>
