@@ -69,14 +69,17 @@ const fromSession = (s: Session): AuthState => ({
 })
 
 let started = false
+/** while signIn() runs it decides the outcome (membership check), not the SDK's SIGNED_IN event */
+let signingIn = false
 export async function initAuth(): Promise<void> {
   if (!hasSupabase || started) return
   started = true
   const sb = await getSupabase()
   if (!sb) return
   sb.auth.onAuthStateChange((event, session) => {
-    if (session) set(fromSession(session))
-    else if (event === 'SIGNED_OUT') set({ status: 'signedOut', userId: null, username: null })
+    if (session) {
+      if (!signingIn) set(fromSession(session))
+    } else if (event === 'SIGNED_OUT' && !signingIn) set({ status: 'signedOut', userId: null, username: null })
   })
   const { data, error } = await sb.auth.getSession()
   if (data.session) {
@@ -138,17 +141,20 @@ export async function signIn(username: string, password: string): Promise<AuthRe
   if (!password) return { ok: false, message: 'צריך סיסמה', field: 'password' }
   const sb = await getSupabase()
   if (!sb) return { ok: false, message: 'השרת לא מוגדר.' }
+  signingIn = true
   try {
     const { data, error } = await sb.auth.signInWithPassword({ email: await usernameToEmail(username), password: authPassword(password) })
     if (error || !data.session) return { ok: false, message: authMessage(error) }
     if ((await isMember(data.session.user.id)) === false) {
-      await signOutSession()
+      await sb.auth.signOut({ scope: 'local' }).catch(() => {})
       return { ok: false, message: NOT_MEMBER }
     }
     set(fromSession(data.session))
     return { ok: true }
   } catch (e) {
     return { ok: false, message: authMessage(e as Error) }
+  } finally {
+    signingIn = false
   }
 }
 
