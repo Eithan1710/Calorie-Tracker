@@ -326,6 +326,14 @@ test.describe('resilience', () => {
     await expect(page.getByRole('dialog').getByText('חושב מהמאגר בלי AI')).toBeVisible()
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
     await expect(hero(page)).toContainText('215')
+    await page.waitForTimeout(1500)
+    const diag = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('nav button')].find((x) => x.textContent?.includes('הוסף אוכל'))!
+      const r = b.getBoundingClientRect()
+      const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      return JSON.stringify({ sy: scrollY, ih: innerHeight, dh: document.documentElement.scrollHeight, bo: document.body.style.overflow, vv: [visualViewport?.offsetTop, visualViewport?.height, visualViewport?.scale], r: [r.x, r.y, r.width, r.height], at: at?.outerHTML.slice(0, 120), active: document.activeElement?.outerHTML.slice(0, 120) })
+    })
+    if (!diag.includes('"at":"<button')) throw new Error('DIAG ' + diag)
 
     await addText(page, 'פשטידה של סבתא')
     await expect(page.getByRole('alert')).toContainText('אין חיבור')
