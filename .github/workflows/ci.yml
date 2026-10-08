@@ -29,6 +29,7 @@ jobs:
         run: |
           set -o pipefail
           npm test 2>&1 | tee unit.log || { scripts/annotate-failure.sh 'unit tests' unit.log 'FAIL|Failed Tests'; exit 1; }
+          echo "::notice title=unit tests::$(sed -e 's/\x1b\[[0-9;]*m//g' unit.log | grep -E '^\s+(Test Files|Tests) ' | tr -s ' ' | tr '\n' ' ')"
 
       - name: Typecheck + build
         run: |
@@ -47,3 +48,4 @@ jobs:
             for f in $(ls test-results/*/error-context.md 2>/dev/null | head -4); do head -c 6000 "$f" > ctx.log; scripts/annotate-failure.sh "snapshot $(basename $(dirname $f))" ctx.log; done
             exit 1
           }
+          echo "::notice title=e2e::$(sed -e 's/\x1b\[[0-9;]*m//g' e2e.log | grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped)' | tr -s ' ' | tr '\n' ' ')"

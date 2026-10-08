@@ -45,6 +45,19 @@ async function logFood(page: Page, text: string) {
   await expect(page.getByRole('dialog')).toHaveCount(0)
 }
 
+// no uncaught exceptions or console errors in any scenario (network 4xx from mocked endpoints aside)
+let consoleErrors: string[] = []
+test.beforeEach(async ({ page }) => {
+  consoleErrors = []
+  page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`))
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) consoleErrors.push(m.text())
+  })
+})
+test.afterEach(async () => {
+  expect(consoleErrors).toEqual([])
+})
+
 let sb: MockSupabase
 
 test.beforeEach(async ({ context, page }) => {

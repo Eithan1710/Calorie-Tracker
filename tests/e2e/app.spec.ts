@@ -6,6 +6,19 @@ const hero = (page: import('@playwright/test').Page) => page.getByRole('region',
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 const shot = (name: string, project: string) => `docs/screenshots/${project}-${name}.png`
 
+// no uncaught exceptions or console errors in any scenario (network 4xx from mocked endpoints aside)
+let consoleErrors: string[] = []
+test.beforeEach(async ({ page }) => {
+  consoleErrors = []
+  page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`))
+  page.on('console', (m) => {
+    if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) consoleErrors.push(m.text())
+  })
+})
+test.afterEach(async () => {
+  expect(consoleErrors).toEqual([])
+})
+
 test.describe('first run', () => {
   test('onboarding asks only for the profile, then shows today', async ({ page }) => {
     await page.goto('/')
