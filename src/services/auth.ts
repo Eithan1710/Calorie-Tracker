@@ -1,13 +1,14 @@
 import { useSyncExternalStore } from 'react'
 import type { AuthError, Session } from '@supabase/supabase-js'
 import { AUTH_STORAGE_KEY, getSupabase } from './supabase'
-import { hasSupabase, SUPABASE_ANON_KEY, SUPABASE_URL } from './config'
-import { cleanUsername, passwordError, usernameError, usernameToEmail } from '../../supabase/functions/_shared/account.ts'
+import { hasSupabase } from './config'
+import { authPassword, usernameError, usernameToEmail } from '../../supabase/functions/_shared/account.ts'
 
 /**
  * Accounts: username + password on Supabase Auth.
  *
- *  - 'local'     no backend configured (dev/tests): one local profile, no login
+ *  - 'local'     no backend configured, development/tests only: one local profile, no login
+ *  - 'unconfigured' a production build without a backend: nothing is shown (never an open app)
  *  - 'loading'   checking for a stored session
  *  - 'signedOut' show the login / register screen
  *  - 'signedIn'  userId is the auth uid; every row and photo is scoped to it
@@ -17,7 +18,7 @@ import { cleanUsername, passwordError, usernameError, usernameToEmail } from '..
  * app (and its offline data) opens instantly — also without a connection.
  */
 
-export type AuthStatus = 'local' | 'loading' | 'signedOut' | 'signedIn'
+export type AuthStatus = 'local' | 'unconfigured' | 'loading' | 'signedOut' | 'signedIn'
 export interface AuthState {
   status: AuthStatus
   userId: string | null
@@ -38,7 +39,7 @@ function peekStoredSession(): { userId: string; username: string | null } | null
 
 const peeked = hasSupabase ? peekStoredSession() : null
 let state: AuthState = !hasSupabase
-  ? { status: 'local', userId: null, username: null }
+  ? { status: import.meta.env.DEV ? 'local' : 'unconfigured', userId: null, username: null }
   : peeked
     ? { status: 'signedIn', ...peeked }
     : { status: 'loading', userId: null, username: null }
@@ -78,8 +79,10 @@ export async function initAuth(): Promise<void> {
     else if (event === 'SIGNED_OUT') set({ status: 'signedOut', userId: null, username: null })
   })
   const { data, error } = await sb.auth.getSession()
-  if (data.session) set(fromSession(data.session))
-  else {
+  if (data.session) {
+    if ((await isMember(data.session.user.id)) === false) return signOutSession()
+    set(fromSession(data.session))
+  } else {
     // an expired token that can't be refreshed *because we're offline* keeps the user in (offline-first);
     // a revoked / invalid session, or none at all, means "signed out"
     const offline = typeof navigator !== 'undefined' && !navigator.onLine
@@ -96,11 +99,12 @@ export async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null
 }
 
-// ── sign in / register / sign out ─────────────────────────────────────────
+// ── sign in / sign out (closed app: accounts are created by the owner, no sign-up) ──
 
 export type AuthResult = { ok: true } | { ok: false; message: string; field?: 'username' | 'password' }
 
 const OFFLINE = 'אין חיבור לאינטרנט. התחברות דורשת חיבור — נסה שוב כשתהיה מחובר.'
+const NOT_MEMBER = 'לחשבון הזה אין גישה למאזן.'
 
 function authMessage(e: AuthError | Error | null | undefined): string {
   if (!e) return 'משהו השתבש. נסה שוב.'
@@ -109,11 +113,23 @@ function authMessage(e: AuthError | Error | null | undefined): string {
   const msg = (e.message ?? '').toLowerCase()
   if (typeof navigator !== 'undefined' && !navigator.onLine) return OFFLINE
   if (code === 'invalid_credentials' || msg.includes('invalid login')) return 'שם משתמש או סיסמה שגויים.'
-  if (code === 'email_not_confirmed') return 'החשבון עדיין לא אושר. פנה למנהל האפליקציה.'
   if (code === 'over_request_rate_limit' || status === 429) return 'יותר מדי ניסיונות. נסה שוב בעוד כמה דקות.'
   if (code === 'user_banned') return 'החשבון הזה חסום.'
   if (e.name === 'AuthRetryableFetchError' || msg.includes('fetch') || msg.includes('network')) return OFFLINE
   return 'ההתחברות נכשלה. נסה שוב בעוד רגע.'
+}
+
+/**
+ * Only accounts listed in mz_members may use the app (the database enforces
+ * this too, for every table and photo). An Auth account created any other way
+ * is signed straight out again.
+ */
+async function isMember(userId: string): Promise<boolean | null> {
+  const sb = await getSupabase()
+  if (!sb) return null
+  const { data, error } = await sb.from('mz_members').select('user_id').eq('user_id', userId).maybeSingle()
+  if (error) return null // unknown (offline etc.) — the database still protects the data
+  return Boolean(data)
 }
 
 export async function signIn(username: string, password: string): Promise<AuthResult> {
@@ -123,61 +139,17 @@ export async function signIn(username: string, password: string): Promise<AuthRe
   const sb = await getSupabase()
   if (!sb) return { ok: false, message: 'השרת לא מוגדר.' }
   try {
-    const { data, error } = await sb.auth.signInWithPassword({ email: await usernameToEmail(username), password })
+    const { data, error } = await sb.auth.signInWithPassword({ email: await usernameToEmail(username), password: authPassword(password) })
     if (error || !data.session) return { ok: false, message: authMessage(error) }
+    if ((await isMember(data.session.user.id)) === false) {
+      await signOutSession()
+      return { ok: false, message: NOT_MEMBER }
+    }
     set(fromSession(data.session))
     return { ok: true }
   } catch (e) {
     return { ok: false, message: authMessage(e as Error) }
   }
-}
-
-export async function register(username: string, password: string): Promise<AuthResult> {
-  const uErr = usernameError(username)
-  if (uErr) return { ok: false, message: uErr, field: 'username' }
-  const pErr = passwordError(password)
-  if (pErr) return { ok: false, message: pErr, field: 'password' }
-  if (typeof navigator !== 'undefined' && !navigator.onLine) return { ok: false, message: OFFLINE }
-
-  let res: Response
-  try {
-    res = await fetch(`${SUPABASE_URL}/functions/v1/mz-register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY!, authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ username: cleanUsername(username), password }),
-      signal: AbortSignal.timeout(20000),
-    })
-  } catch {
-    return { ok: false, message: OFFLINE }
-  }
-
-  if (res.status === 404) return registerWithSignUp(username, password) // function not deployed yet
-  const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
-  if (!res.ok) {
-    const field = body.error === 'username_taken' || body.error === 'invalid_username' ? 'username' : body.error === 'weak_password' ? 'password' : undefined
-    return { ok: false, message: body.message ?? 'ההרשמה נכשלה. נסה שוב בעוד רגע.', field }
-  }
-  return signIn(username, password)
-}
-
-/** Fallback when the register function isn't deployed: works only if email confirmation is off. */
-async function registerWithSignUp(username: string, password: string): Promise<AuthResult> {
-  const sb = await getSupabase()
-  if (!sb) return { ok: false, message: 'השרת לא מוגדר.' }
-  const { data, error } = await sb.auth.signUp({
-    email: await usernameToEmail(username),
-    password,
-    options: { data: { username: cleanUsername(username), app: 'maazan' } },
-  })
-  if (error) {
-    const code = (error as AuthError & { code?: string }).code
-    if (code === 'user_already_exists' || code === 'email_exists') return { ok: false, message: 'שם המשתמש הזה כבר תפוס. בחר שם אחר.', field: 'username' }
-    if (code === 'weak_password') return { ok: false, message: 'הסיסמה חלשה מדי. נסה סיסמה ארוכה יותר.', field: 'password' }
-    return { ok: false, message: authMessage(error) }
-  }
-  if (!data.session) return { ok: false, message: 'ההרשמה עוד לא הופעלה בשרת. נסה שוב מאוחר יותר.' }
-  set(fromSession(data.session))
-  return { ok: true }
 }
 
 /** Ends the session on this device only (other devices stay signed in). */

@@ -5,7 +5,10 @@ import {
   estimateWorkoutSteps,
   exerciseNetKcal,
   isValidProfile,
+  KCAL_PER_KG_LIFTED,
   metKcalPerMin,
+  muscleMassFactor,
+  volumeKcal,
   paceSecPerKm,
   restingKcalPerMin,
   runMetForSpeed,
@@ -142,12 +145,42 @@ describe('strength training', () => {
     expect(female.net).toBeGreaterThan(young.net)
   })
 
-  it('the load lifted does not change the estimate', () => {
-    const none = exerciseNetKcal(session(), man)
-    const fifty = exerciseNetKcal(session({ lifts: [{ id: 'a', name: 'לחיצת חזה', weight_kg: 50, sets: 4, reps: 10 }] }), man)
-    const hundred = exerciseNetKcal(session({ lifts: [{ id: 'a', name: 'לחיצת חזה', weight_kg: 100, sets: 4, reps: 3 }, { id: 'b', name: 'סקוואט', weight_kg: 140 }] }), man)
-    expect(fifty).toBe(none)
-    expect(hundred).toBe(none)
+  it('muscle groups scale the session by active muscle mass (bounded ±10%)', () => {
+    const base = exerciseNetKcal(session(), man)
+    const legs = exerciseNetKcal(session({ muscles: ['legs', 'shoulders'] }), man)
+    const upper = exerciseNetKcal(session({ muscles: ['chest', 'back'] }), man)
+    const small = exerciseNetKcal(session({ muscles: ['arms', 'core'] }), man)
+    expect(muscleMassFactor(['legs'])).toBe(1.1)
+    expect(muscleMassFactor(['arms', 'shoulders'])).toBe(0.9)
+    expect(upper).toBeCloseTo(base, 6)
+    expect(legs).toBeGreaterThan(base)
+    expect(small).toBeLessThan(base)
+    expect(legs / base).toBeLessThan(1.15)
+    expect(small / base).toBeGreaterThan(0.85)
+  })
+
+  it('total volume adds its mechanical work: ≈0.0059 kcal per kg lifted', () => {
+    expect(KCAL_PER_KG_LIFTED).toBeCloseTo((9.81 * 0.5) / 0.2 / 4184, 9)
+    const base = exerciseNetKcal(session(), man)
+    const v8 = workoutEstimate(session({ volumeKg: 8000 }), man)
+    expect(v8.fromVolume).toBeCloseTo(8000 * KCAL_PER_KG_LIFTED, 6)
+    expect(v8.fromVolume).toBeGreaterThan(40)
+    expect(v8.fromVolume).toBeLessThan(55)
+    expect(v8.net - base).toBeCloseTo(v8.fromVolume, 6)
+    // doubling the load lifted does not double the workout — it's an add-on to the session estimate
+    const v16 = exerciseNetKcal(session({ volumeKg: 16000 }), man)
+    expect(v16 / v8.net).toBeLessThan(1.15)
+  })
+
+  it('volume is ignored for non-strength workouts and nonsense values', () => {
+    expect(exerciseNetKcal({ type: 'cycling', durationMin: 60, volumeKg: 8000 }, man)).toBe(exerciseNetKcal({ type: 'cycling', durationMin: 60 }, man))
+    expect(volumeKcal(-5)).toBe(0)
+    expect(volumeKcal(Number.NaN)).toBe(0)
+    expect(volumeKcal(10_000_000)).toBeCloseTo(volumeKcal(200_000), 6)
+  })
+
+  it('older per-exercise entries (lifts) do not change the estimate', () => {
+    expect(exerciseNetKcal(session({ lifts: [{ id: 'a', name: 'bench', weight_kg: 100, sets: 4, reps: 3 }] }), man)).toBe(exerciseNetKcal(session(), man))
   })
 
   it('returns 0 without a duration', () => {

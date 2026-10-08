@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeUsername, passwordError, usernameError, usernameToEmail } from './account.ts'
+import { authPassword, normalizeUsername, usernameError, usernameToEmail } from './account.ts'
 
 describe('username accounts', () => {
   it('accepts Hebrew and Latin usernames', () => {
@@ -13,10 +13,12 @@ describe('username accounts', () => {
     expect(usernameError('דנה כהן')).toContain('בלי רווחים')
     expect(usernameError('a@b')).toContain('בלי רווחים')
   })
-  it('passwords: at least 6 characters ("123456" is allowed)', () => {
-    expect(passwordError('123456')).toBeNull()
-    expect(passwordError('12345')).toContain('6')
-    expect(passwordError('')).toContain('סיסמה')
+  it('short passwords are fine: Auth sees a prefixed form (same rule as mz_create_member)', () => {
+    expect(authPassword('ליין')).toBe('maazan:ליין')
+    expect(authPassword('123456')).toBe('maazan:123456')
+  })
+  it('accepts the three member usernames', () => {
+    for (const u of ['זובקוב', 'אמא', 'איתן']) expect(usernameError(u)).toBeNull()
   })
   it('maps a username to one stable, ASCII-only login address', async () => {
     const a = await usernameToEmail('זובקוב')

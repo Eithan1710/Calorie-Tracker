@@ -1,8 +1,8 @@
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
-import type { ExerciseType, Intensity, Lift, Profile, RestStyle } from '../domain/energy'
+import type { ExerciseType, Intensity, Lift, MuscleGroup, Profile, RestStyle } from '../domain/energy'
 import type { DeficitTarget } from '../domain/goal'
 
-export type { Analysis, FoodItem, Totals, Lift }
+export type { Analysis, FoodItem, Totals, Lift, MuscleGroup }
 
 export type Meal = 'breakfast' | 'lunch' | 'snack' | 'dinner'
 
@@ -46,7 +46,11 @@ export interface Exercise extends Syncable {
   intensity?: Intensity
   /** strength only: training density (rest between sets) */
   rest?: RestStyle
-  /** strength only, optional: exercises with their load — tracking only, not used for calories */
+  /** strength only, optional: muscle groups worked */
+  muscles?: MuscleGroup[]
+  /** strength only, optional: total volume lifted in the session (kg) */
+  volume_kg?: number
+  /** older entries only: per-exercise loads (no longer entered) */
   lifts?: Lift[]
   created_at: string
 }

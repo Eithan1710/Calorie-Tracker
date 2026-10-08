@@ -1,5 +1,6 @@
 -- מאזן — RLS / Storage isolation check.
--- Run in the Supabase SQL editor (or psql) AFTER applying 20261008000000_multi_user.sql.
+-- Run in the Supabase SQL editor (or psql) AFTER applying 20261008000000_multi_user.sql
+-- and 20261009000000_members_and_volume.sql.
 -- Everything happens inside one transaction that is rolled back: no data is kept.
 -- Expected output: a single row "all isolation checks passed". Any failure raises an error.
 
@@ -9,7 +10,12 @@ begin;
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
   ('00000000-0000-0000-0000-000000000000', 'aaaaaaaa-0000-4000-8000-00000000000a', 'authenticated', 'authenticated', 'rls-test-a@users.maazan.app', '', now(), '{}', '{}', now(), now()),
-  ('00000000-0000-0000-0000-000000000000', 'bbbbbbbb-0000-4000-8000-00000000000b', 'authenticated', 'authenticated', 'rls-test-b@users.maazan.app', '', now(), '{}', '{}', now(), now());
+  ('00000000-0000-0000-0000-000000000000', 'bbbbbbbb-0000-4000-8000-00000000000b', 'authenticated', 'authenticated', 'rls-test-b@users.maazan.app', '', now(), '{}', '{}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', 'cccccccc-0000-4000-8000-00000000000c', 'authenticated', 'authenticated', 'rls-test-c@users.maazan.app', '', now(), '{}', '{}', now(), now());
+-- A and B are members; C is an Auth account that is NOT a מאזן member
+insert into public.mz_members (user_id, username) values
+  ('aaaaaaaa-0000-4000-8000-00000000000a', 'rls-test-a'),
+  ('bbbbbbbb-0000-4000-8000-00000000000b', 'rls-test-b');
 
 -- ── act as user A ──
 set local role authenticated;
@@ -59,6 +65,29 @@ begin
   delete from public.mz_exercises where id = '11111111-0000-4000-8000-000000000002';
   -- (photo deletes can't be tested here: Supabase blocks any direct SQL delete on storage.objects;
   --  the mz_photos_delete_own policy guards deletes made through the Storage API)
+end $$;
+
+-- ── a signed-in account that is not a member gets nothing and can write nothing ──
+select set_config('request.jwt.claims', '{"sub":"cccccccc-0000-4000-8000-00000000000c","role":"authenticated","is_anonymous":false}', true);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.mz_members;      if n <> 0 then raise exception 'FAIL: non-member sees members'; end if;
+  begin
+    insert into public.mz_food_entries (id, date, meal, title) values ('11111111-0000-4000-8000-000000000005', '2026-10-08', 'lunch', 'outsider');
+    raise exception 'FAIL: a non-member could insert food';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into storage.objects (bucket_id, name, owner) values ('mz-food-photos', 'cccccccc-0000-4000-8000-00000000000c/x/p.jpg', 'cccccccc-0000-4000-8000-00000000000c');
+    raise exception 'FAIL: a non-member could upload a photo';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.mz_members (user_id, username) values ('cccccccc-0000-4000-8000-00000000000c', 'self-added');
+    raise exception 'FAIL: an account could make itself a member';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 
 -- ── anonymous session (another app in this project) sees nothing ──

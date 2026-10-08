@@ -3,7 +3,7 @@ import type { BrowserContext, Route } from '@playwright/test'
 
 /**
  * A tiny in-memory stand-in for the Supabase endpoints the app uses
- * (Auth password sign-in, the mz-register function, PostgREST tables and
+ * (Auth password sign-in, PostgREST tables incl. mz_members, and
  * Storage), mounted with Playwright routing. Like the real database it
  * enforces row ownership: every read returns only the caller's rows and a
  * write with someone else's user_id is rejected, so the UI can be tested for
@@ -34,9 +34,11 @@ export class MockSupabase {
   objects = new Map<string, { owner: string; size: number }>()
   rejectedWrites = 0
 
-  addUser(username: string, password: string): User {
-    const u = { id: randomUUID(), email: emailFor(username), username, password }
+  /** Like public.mz_create_member: an Auth user + a mz_members row. Auth stores "maazan:" + password. */
+  addUser(username: string, password: string, { member = true } = {}): User {
+    const u = { id: randomUUID(), email: emailFor(username), username, password: `maazan:${password}` }
     this.users.push(u)
+    if (member) (this.tables.mz_members ??= []).push({ user_id: u.id, username })
     return u
   }
 
@@ -85,12 +87,6 @@ export class MockSupabase {
     }
 
     // ── functions ──
-    if (path === '/functions/v1/mz-register') {
-      const { username, password } = req.postDataJSON() as { username: string; password: string }
-      if (this.users.some((u) => u.email === emailFor(username))) return this.json(route, 409, { error: 'username_taken', message: 'שם המשתמש הזה כבר תפוס. בחר שם אחר.' })
-      this.addUser(username.trim(), password)
-      return this.json(route, 201, { ok: true })
-    }
     if (path.startsWith('/functions/v1/')) return this.json(route, 404, { error: 'not found' })
 
     // ── auth ──
@@ -136,6 +132,13 @@ export class MockSupabase {
       const u = this.caller(route)
       if (!u) return this.json(route, 401, { code: '42501', message: 'permission denied' })
       const method = req.method()
+      // like the real policies: non-members get nothing from any mz_ table
+      const member = this.rows('mz_members', u.id).length > 0
+      if (!member && table !== 'mz_members') {
+        if (method === 'GET' || method === 'HEAD') return this.json(route, 200, [])
+        this.rejectedWrites++
+        return this.json(route, 403, { code: '42501', message: 'new row violates row-level security policy' })
+      }
       if (method === 'GET' || method === 'HEAD') {
         const rows = this.rows(table, u.id)
         const accept = req.headers()['accept'] ?? ''

@@ -17,7 +17,8 @@ Open → see the balance → `+ הוסף אוכל` → type or photograph → `�
   **100–300 kcal deficit** target band, a plain-language status (`היעד הושג` / `כמעט שם` / `עודף קלורי` /
   `הגירעון גדול מהיעד`), **protein vs. 120 g** with emphasis, fat, carbs, steps, workouts, and the food log.
   Mid-day it doesn't scare you with a "huge deficit" — it says how much is left to eat.
-- **Accounts** — username + password (Hebrew usernames welcome), one screen to log in or register, stays signed in.
+- **Accounts** — closed app: username + password login only (no sign-up), stays signed in; nothing is reachable
+  without logging in.
   Every account has its own profile, targets, food log, workouts, steps and photos; isolation is enforced by
   Postgres RLS and Storage policies, not by the UI.
 - **Food entry** — free Hebrew text (`אכלתי 3 ביצים, 2 פרוסות לחם, קוטג' וסלט`) or a photo — taken with the camera
@@ -26,7 +27,7 @@ Open → see the balance → `+ הוסף אוכל` → type or photograph → `�
   per-item sources, and the assumptions. Edit grams with ± or by typing, remove items, or type a correction
   (`זה היה 250 גרם אורז`) — simple corrections are applied instantly on-device, anything else goes to the AI.
 - **One-tap re-log** of recent meals, **undo** on every add/delete.
-- **Workouts** — strength (duration + intensity + rest style, optional per-exercise weights/sets/reps), run
+- **Workouts** — strength (duration + intensity + rest style, optional muscle groups and total volume lifted), run
   (distance + time → pace + burn), walk, cycling, swimming, cardio/other. Every estimate is shown with a range.
 - **Steps** — manual, or from Apple Health through an Apple Shortcuts bridge (see below).
 - **History** — week / month: days in target, average balance, protein, steps, three small charts, day list.
@@ -60,12 +61,19 @@ Requires Node ≥ 22.18 (the dev API imports the shared TypeScript pipeline dire
 **Live:** <https://eithan1710.github.io/Calorie-Tracker/> — backend in the Supabase project `kjfihzskaqcboeejnkak`
 (shared with another app; every מאזן table, function and Vault secret is prefixed `mz_`).
 
-**Accounts (current):** username + password on Supabase Auth. A username maps deterministically to a synthetic,
-never-mailed login address (`u<sha-256>@users.maazan.app`, see
-[`_shared/account.ts`](supabase/functions/_shared/account.ts)); the
-[`mz-register`](supabase/functions/mz-register/index.ts) function creates the user already confirmed (the Auth
-settings are shared with another app, and these addresses can't receive a confirmation mail). Passwords are only
-ever handled by Supabase Auth (bcrypt). Sessions persist in the browser and refresh automatically.
+**Accounts (current): closed membership.** Only accounts listed in `public.mz_members` can use the app — every
+RLS policy, the photo Storage policies and the `analyze-food` function check membership, so an Auth account created
+any other way (the Auth project is shared with another app, so sign-up can't be switched off project-wide) gets
+nothing. There is no sign-up screen. Create or reset members in the SQL editor:
+
+```sql
+select public.mz_create_member('username', 'password');        -- new member
+select public.mz_set_member_password('username', 'new password');
+```
+
+Usernames map deterministically to a synthetic, never-mailed login address (`u<sha-256>@users.maazan.app`, see
+[`_shared/account.ts`](supabase/functions/_shared/account.ts)). Short passwords are allowed: Supabase Auth stores a
+bcrypt hash of `"maazan:" + password`, so the shared project's minimum length never applies to members.
 
 | Piece | How it's deployed |
 |---|---|
@@ -130,10 +138,13 @@ TOTAL = (BMR + BASELINE + STEPS_NET + EXERCISE_NET) × 1.10
 Walking, cycling, swimming and cardio use their Compendium tables by intensity; running without a distance uses
 pace-based running METs.
 
-**Weights lifted are not a calorie input.** They're stored per exercise (name, kg, sets × reps) for progress
-tracking only — external load is a poor stand-alone predictor of energy cost (heavier sets → fewer reps, longer
-rests). A test asserts that changing the load leaves the estimate unchanged, while body weight, age/sex
-(through BMR), duration, intensity and rest style all move it.
+**Optional strength inputs (bounded):**
+- *Muscle groups worked* scale the MET by active muscle mass: legs or full body ×1.10, back/chest ×1.00,
+  only shoulders/arms/core ×0.90.
+- *Total volume lifted* (Σ kg × reps, e.g. 8,000 kg) adds its mechanical work: `volume × 9.81 × 0.5 m ÷ 0.20
+  efficiency ÷ 4184` ≈ 0.0059 kcal per kg → 8,000 kg ≈ +47 kcal. Load alone is a poor predictor of energy cost, so
+  it's an add-on to the time-based session estimate, never its basis (doubling the volume of a 60-min session adds
+  ~12 %).
 
 **No false precision:** individual MET predictions are typically off by 20–30 %, so every workout shows a rounded
 (10 kcal) estimate plus a range (±30 % strength/cardio, ±25 % cycling/swimming, ±20 % walking, ±10 % running with a
@@ -246,7 +257,7 @@ src/
   sw.ts          service worker: precache, Web Push, notification click
 supabase/
   functions/_shared/   pipeline · providers · schema (zod) · foodDb · localParser · nutrition · usda · skill
-  functions/{analyze-food,mz-register,health-ingest,send-reminders,mz-config}/
+  functions/{analyze-food,health-ingest,send-reminders,mz-config}/
   migrations/          schema + RLS, reminder cron, multi-user accounts + photo storage
   tests/rls_isolation.sql
 skills/nutrition-analysis/SKILL.md

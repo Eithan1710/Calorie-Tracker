@@ -6,18 +6,15 @@ site_url = "https://eithan1710.github.io/Calorie-Tracker/"
 additional_redirect_urls = ["http://localhost:5173"]
 
 [auth.email]
+# Shared Auth project (another app signs users up), so sign-up stays enabled at
+# project level. מאזן itself is closed: only accounts in public.mz_members can
+# use it (enforced by RLS, Storage policies and the analyze-food function).
+# Members are created in the SQL editor with public.mz_create_member().
 enable_signup = true
-# מאזן accounts are username + password. Usernames map to synthetic addresses
-# (u<hash>@users.maazan.app, see functions/_shared/account.ts) that are created
-# already-confirmed by the mz-register function, so no email is ever sent.
 
 [functions.analyze-food]
 import_map = "./functions/deno.json"
-verify_jwt = false   # checks the user's session itself (and refuses anonymous sessions)
-
-[functions.mz-register]
-import_map = "./functions/deno.json"
-verify_jwt = false   # public sign-up endpoint (validates input, rate-limited)
+verify_jwt = false   # checks the session itself: members only, never anonymous
 
 [functions.health-ingest]
 import_map = "./functions/deno.json"

@@ -1,9 +1,9 @@
-import { useEffect, useId, useMemo, useState } from 'react'
-import { ChevronDown, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { Sheet, PrimaryButton, NumberField, Segmented } from '../primitives'
 import { deleteExercise, exercisesForDate, getState, upsertExercise, useStore } from '../../data/store'
 import type { Exercise } from '../../data/types'
-import { isValidProfile, paceSecPerKm, workoutDisplay, type ExerciseInput, type ExerciseType, type Intensity, type Lift, type RestStyle } from '../../domain/energy'
+import { isValidProfile, paceSecPerKm, workoutDisplay, type ExerciseInput, type ExerciseType, type Intensity, type Lift, type MuscleGroup, type RestStyle } from '../../domain/energy'
 import { toExerciseInput } from '../../domain/day'
 import { newId } from '../../../supabase/functions/_shared/nutrition.ts'
 import { fmt, fmtPace, haptic, KCAL } from '../format'
@@ -42,17 +42,16 @@ const REST: { value: RestStyle; label: string }[] = [
   { value: 'short', label: 'קצרות / סופרסטים' },
 ]
 
-const LIFT_SUGGESTIONS = ['לחיצת חזה', 'סקוואט', 'דדליפט', 'לחיצת כתפיים', 'חתירה', 'מתח', 'מקבילים', 'פשיטת ברכיים', 'כפיפת ברכיים', 'לחיצת רגליים', 'כפיפת מרפקים', 'פשיטת מרפקים', 'פולי עליון', 'היפ טראסט', 'לאנג׳ים']
-
-interface LiftDraft {
-  id: string
-  name: string
-  weight: number | ''
-  sets: number | ''
-  reps: number | ''
-}
-
-const emptyLift = (): LiftDraft => ({ id: newId(), name: '', weight: '', sets: '', reps: '' })
+export const MUSCLES: { value: MuscleGroup; label: string }[] = [
+  { value: 'legs', label: 'רגליים' },
+  { value: 'back', label: 'גב' },
+  { value: 'chest', label: 'חזה' },
+  { value: 'shoulders', label: 'כתפיים' },
+  { value: 'arms', label: 'ידיים' },
+  { value: 'core', label: 'בטן' },
+  { value: 'full_body', label: 'כל הגוף' },
+]
+const MUSCLE_LABEL = Object.fromEntries(MUSCLES.map((m) => [m.value, m.label])) as Record<MuscleGroup, string>
 
 /** "25", "25:30", "1:05:00" → minutes */
 export function parseDuration(s: string): number | null {
@@ -66,19 +65,20 @@ export function parseDuration(s: string): number | null {
   return null
 }
 
-/** Draft rows → stored lifts (rows without a name or a weight are dropped). */
-export function liftsFromDrafts(rows: LiftDraft[]): Lift[] {
-  const pos = (v: number | '', max: number) => (v !== '' && Number.isFinite(v) && v > 0 && v <= max ? v : undefined)
-  return rows
-    .map((r) => ({ id: r.id, name: r.name.trim().slice(0, 60), weight_kg: pos(r.weight, 1000), sets: pos(r.sets, 50), reps: pos(r.reps, 500) }))
-    .filter((l) => l.name || l.weight_kg !== undefined)
-    .map((l) => ({ ...l, name: l.name || 'תרגיל' }))
-    .map((l) => Object.fromEntries(Object.entries(l).filter(([, v]) => v !== undefined)) as unknown as Lift)
-}
-
-export function liftLabel(l: Lift): string {
+/** Older entries recorded per-exercise loads; still shown in the list. */
+function liftLabel(l: Lift): string {
   const sr = l.sets && l.reps ? ` · ${l.sets}×${l.reps}` : l.sets ? ` · ${l.sets} סטים` : ''
   return `${l.name}${l.weight_kg ? ` ${l.weight_kg} ק״ג` : ''}${sr}`
+}
+
+/** "רגליים, כתפיים · 8,000 ק״ג" */
+export function strengthDetails(e: Pick<Exercise, 'muscles' | 'volume_kg' | 'lifts'>): string {
+  const parts = [
+    e.muscles?.length ? e.muscles.map((m) => MUSCLE_LABEL[m]).join(', ') : '',
+    e.volume_kg ? `${fmt(e.volume_kg)} ק״ג` : '',
+    e.lifts?.length ? e.lifts.map(liftLabel).join(' · ') : '',
+  ]
+  return parts.filter(Boolean).join(' · ')
 }
 
 export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose: () => void; date: string }) {
@@ -90,8 +90,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
   const [time, setTime] = useState('')
   const [intensity, setIntensity] = useState<Intensity>('moderate')
   const [rest, setRest] = useState<RestStyle>('standard')
-  const [lifts, setLifts] = useState<LiftDraft[]>([])
-  const [showLifts, setShowLifts] = useState(false)
+  const [muscles, setMuscles] = useState<MuscleGroup[]>([])
+  const [volume, setVolume] = useState<number | ''>('')
 
   useEffect(() => {
     if (open) {
@@ -99,8 +99,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       setTime('')
       setIntensity('moderate')
       setRest('standard')
-      setLifts([])
-      setShowLifts(false)
+      setMuscles([])
+      setVolume('')
     }
   }, [open])
 
@@ -112,6 +112,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
     durationMin: minutes,
     intensity,
     rest: type === 'strength' ? rest : undefined,
+    muscles: type === 'strength' ? muscles : undefined,
+    volumeKg: type === 'strength' && volume !== '' && volume > 0 ? volume : undefined,
   }
   const est = isValidProfile(profile) ? workoutDisplay(input, profile) : null
   const kcal = est?.kcal ?? 0
@@ -122,7 +124,6 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
   const save = () => {
     if (!valid) return
     const now = new Date().toISOString()
-    const storedLifts = type === 'strength' ? liftsFromDrafts(lifts) : []
     const ex: Exercise = {
       id: newId(),
       date,
@@ -131,7 +132,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       duration_min: minutes ? Math.round(minutes * 10) / 10 : undefined,
       intensity: type === 'run' && input.distanceKm ? undefined : intensity,
       rest: type === 'strength' ? rest : undefined,
-      lifts: storedLifts.length ? storedLifts : undefined,
+      muscles: type === 'strength' && muscles.length ? muscles : undefined,
+      volume_kg: input.volumeKg ? Math.round(input.volumeKg) : undefined,
       created_at: now,
       updated_at: now,
     }
@@ -141,7 +143,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
     showToast(`${EXERCISE_META[type].emoji} נוסף · ~${fmt(kcal)} ${KCAL}`, { label: 'ביטול', run: () => deleteExercise(ex.id) })
   }
 
-  const setLift = (id: string, patch: Partial<LiftDraft>) => setLifts((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  const toggleMuscle = (m: MuscleGroup) => setMuscles((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))
 
   return (
     <Sheet
@@ -167,7 +169,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
                     {e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}
                     {isValidProfile(profile) && <span className="text-ink-3"> · ~{fmt(workoutDisplay(toExerciseInput(e), profile).kcal)}</span>}
                   </span>
-                  {e.lifts?.length ? <span className="block truncate text-sm text-ink-3">{e.lifts.map(liftLabel).join(' · ')}</span> : null}
+                  {e.type === 'strength' && strengthDetails(e) ? <span className="block truncate text-sm text-ink-3">{strengthDetails(e)}</span> : null}
                 </span>
                 <button type="button" onClick={() => deleteExercise(e.id)} className="pressable grid size-10 shrink-0 place-items-center rounded-xl text-ink-3 hover:text-surplus" aria-label={`מחק ${EXERCISE_META[e.type].label}`}>
                   <Trash2 className="size-4" />
@@ -233,38 +235,29 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
               <Segmented label="מנוחות בין סטים" size="sm" value={rest} onChange={setRest} options={REST} />
             </div>
 
-            <div className="rounded-3xl border border-line">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLifts((v) => !v)
-                  if (!lifts.length) setLifts([emptyLift()])
-                }}
-                className="flex min-h-13 w-full items-center justify-between px-4 text-start"
-                aria-expanded={showLifts}
-              >
-                <span className="font-medium">
-                  משקלים <span className="font-normal text-ink-3">(לא חובה)</span>
-                </span>
-                <ChevronDown className={`size-5 text-ink-3 transition-transform ${showLifts ? 'rotate-180' : ''}`} aria-hidden />
-              </button>
-              {showLifts && (
-                <div className="flex flex-col gap-2 px-3 pb-3">
-                  <datalist id="lift-suggestions">
-                    {LIFT_SUGGESTIONS.map((n) => (
-                      <option key={n} value={n} />
-                    ))}
-                  </datalist>
-                  {lifts.map((r, i) => (
-                    <LiftRow key={r.id} row={r} index={i} onChange={(p) => setLift(r.id, p)} onRemove={() => setLifts((rows) => rows.filter((x) => x.id !== r.id))} />
-                  ))}
-                  <button type="button" onClick={() => setLifts((rows) => [...rows, emptyLift()])} className="pressable flex min-h-11 items-center justify-center gap-1.5 rounded-2xl bg-surface-2 text-sm font-medium text-ink-2">
-                    <Plus className="size-4" aria-hidden /> תרגיל נוסף
-                  </button>
-                  <p className="text-xs leading-relaxed text-ink-3">למעקב התקדמות בלבד. המשקל על המוט לא משנה את חישוב הקלוריות — הוא לא מנבא אמין של אנרגיה.</p>
-                </div>
-              )}
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-ink-2">
+                שרירים שעבדו <span className="font-normal text-ink-3">(לא חובה)</span>
+              </p>
+              <div role="group" aria-label="שרירים שעבדו" className="flex flex-wrap gap-2">
+                {MUSCLES.map((m) => {
+                  const on = muscles.includes(m.value)
+                  return (
+                    <button
+                      key={m.value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleMuscle(m.value)}
+                      className={`pressable min-h-11 rounded-full px-4 text-[15px] font-medium transition-colors ${on ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink-2'}`}
+                    >
+                      {m.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
+
+            <NumberField label="משקל כולל שהורם באימון (לא חובה)" unit="ק״ג" value={volume} onChange={setVolume} inputMode="numeric" min={0} max={200000} step={100} placeholder="8000" />
           </>
         )}
 
@@ -280,56 +273,22 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
               טווח סביר <span className="ltr num">{fmt(est.low)}–{fmt(est.high)}</span> · מעל המנוחה
             </p>
           )}
+          {valid && est && est.fromVolume > 0 && (
+            <p className="mt-0.5 text-sm text-ink-3" data-testid="exercise-volume-part">
+              כולל ~{fmt(est.fromVolume)} {KCAL} מהמשקל הכולל שהורם
+            </p>
+          )}
           {pace && <p className="mt-1 text-sm text-ink-3">קצב <span className="ltr num">{fmtPace(pace)}</span> לק״מ</p>}
           <p className="mt-2 text-xs leading-relaxed text-ink-3">
             {type === 'run' && input.distanceKm
               ? 'לפי מרחק ומשקל (~1 קק״ל לק״ג לק״מ), פחות המנוחה האישית שלך. צעדי הריצה מנוכים מהצעדים כדי לא לספור פעמיים.'
               : type === 'strength'
-                ? 'MET של אימון כוח שלם (כולל מנוחות בין סטים) לפי עצימות וקצב, × משקל הגוף × זמן, פחות המנוחה האישית שלך (כבר ב-BMR).'
+                ? 'MET של אימון כוח שלם (כולל מנוחות בין סטים) לפי עצימות, קצב והשרירים שעבדו (רגליים/כל הגוף מעלים, ידיים/בטן בלבד מורידים), × משקל הגוף × זמן, פחות המנוחה האישית שלך. המשקל הכולל שהורם מוסיף את העבודה המכנית שלו (~0.006 קק״ל לכל ק״ג).'
                 : `לפי ערכי MET מקובלים, משקל הגוף ומשך, פחות המנוחה האישית שלך (כבר ב-BMR).${type === 'walk' ? ' צעדי ההליכה מנוכים מהצעדים.' : ''}`}
           </p>
         </div>
       </div>
     </Sheet>
-  )
-}
-
-function LiftRow({ row, index, onChange, onRemove }: { row: LiftDraft; index: number; onChange: (p: Partial<LiftDraft>) => void; onRemove: () => void }) {
-  const id = useId()
-  const num = (v: string): number | '' => (v === '' ? '' : Number(v.replace(',', '.')))
-  const small = 'num min-h-11 w-full min-w-0 rounded-xl bg-surface-2 px-2 text-center font-semibold outline-none focus:ring-2 focus:ring-info'
-  return (
-    <div className="flex flex-col gap-1.5 rounded-2xl bg-surface p-2 ring-1 ring-line" role="group" aria-label={`תרגיל ${index + 1}`}>
-      <div className="flex items-center gap-1.5">
-        <input
-          id={id}
-          value={row.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          list="lift-suggestions"
-          placeholder="תרגיל, למשל לחיצת חזה"
-          aria-label={`שם תרגיל ${index + 1}`}
-          className="min-h-11 w-full min-w-0 rounded-xl bg-surface-2 px-3 outline-none focus:ring-2 focus:ring-info"
-          enterKeyHint="next"
-        />
-        <button type="button" onClick={onRemove} className="pressable grid size-11 shrink-0 place-items-center rounded-xl text-ink-3" aria-label={`הסר תרגיל ${index + 1}`}>
-          <X className="size-4" />
-        </button>
-      </div>
-      <div className="grid grid-cols-[1.3fr_1fr_1fr] items-center gap-1.5 text-sm">
-        <label className="flex items-center gap-1">
-          <input inputMode="decimal" type="number" min={0} step={0.5} value={row.weight} onChange={(e) => onChange({ weight: num(e.target.value) })} className={small} aria-label={`משקל בתרגיל ${index + 1}`} placeholder="68" />
-          <span className="shrink-0 text-ink-3">ק״ג</span>
-        </label>
-        <label className="flex items-center gap-1">
-          <input inputMode="numeric" type="number" min={0} value={row.sets} onChange={(e) => onChange({ sets: num(e.target.value) })} className={small} aria-label={`סטים בתרגיל ${index + 1}`} placeholder="3" />
-          <span className="shrink-0 text-ink-3">סטים</span>
-        </label>
-        <label className="flex items-center gap-1">
-          <input inputMode="numeric" type="number" min={0} value={row.reps} onChange={(e) => onChange({ reps: num(e.target.value) })} className={small} aria-label={`חזרות בתרגיל ${index + 1}`} placeholder="10" />
-          <span className="shrink-0 text-ink-3">חז׳</span>
-        </label>
-      </div>
-    </div>
   )
 }
 

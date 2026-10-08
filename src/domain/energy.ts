@@ -53,10 +53,21 @@
  *       short rests / supersets / circuit:
  *                                  light 3.5 (02034) · moderate 5.8 (02055) · vigorous 7.5 (02040)
  *
- *    Load lifted (kg on the bar) is deliberately NOT an input. External load
- *    is a poor predictor of energy cost on its own: heavier sets mean fewer
- *    reps and longer rests, so total work per session changes far less than
- *    the load does. Loads are stored for progress tracking only.
+ *    Two optional strength inputs refine this, each deliberately bounded so
+ *    neither can dominate the time-based estimate:
+ *    • Muscle groups worked → active-muscle-mass factor on the MET.
+ *      Oxygen uptake in resistance exercise scales with the muscle mass
+ *      involved (lower-body / multi-joint work costs markedly more than
+ *      arm or core work at the same effort):
+ *        legs or full body → ×1.10 · back or chest → ×1.00
+ *        only shoulders / arms / core → ×0.90 · not given → ×1.00
+ *    • Total volume lifted (Σ kg × reps) → the external mechanical work:
+ *        work = volume × g × 0.5 m (average vertical travel per rep)
+ *        metabolic cost = work ÷ 0.20 (gross muscular efficiency) ÷ 4184 J/kcal
+ *        ≈ 0.0059 kcal per kg lifted  → 8,000 kg ≈ +47 kcal
+ *      Load on its own is a poor predictor of energy cost (heavier sets mean
+ *      fewer reps and longer rests), which is why it is an add-on to the
+ *      session estimate and not its basis.
  *
  *    Running with a distance: gross ≈ 1.0 kcal/kg/km, roughly independent of
  *    speed (Margaria 1963; ACSM). Net = gross − resting × minutes.
@@ -86,7 +97,10 @@ export type Intensity = 'low' | 'moderate' | 'high'
 /** Training density for strength sessions. */
 export type RestStyle = 'standard' | 'short'
 
-/** One exercise inside a strength workout. Tracking only — never used for calories. */
+/** Muscle groups for a strength session. */
+export type MuscleGroup = 'legs' | 'back' | 'chest' | 'shoulders' | 'arms' | 'core' | 'full_body'
+
+/** One exercise inside a strength workout (older entries; tracking only). */
 export interface Lift {
   id: string
   name: string
@@ -101,8 +115,29 @@ export interface ExerciseInput {
   distanceKm?: number
   intensity?: Intensity
   rest?: RestStyle
-  /** accepted so callers can pass a whole workout; ignored by the energy model on purpose */
+  /** strength: muscle groups worked (active-muscle-mass factor) */
+  muscles?: MuscleGroup[]
+  /** strength: total volume lifted in the session, kg (Σ weight × reps) */
+  volumeKg?: number
+  /** older per-exercise entries; not used by the energy model */
   lifts?: Lift[]
+}
+
+/** Active-muscle-mass factor applied to the strength MET (see header). */
+export function muscleMassFactor(muscles: MuscleGroup[] | undefined): number {
+  if (!muscles?.length) return 1
+  if (muscles.includes('legs') || muscles.includes('full_body')) return 1.1
+  if (muscles.includes('back') || muscles.includes('chest')) return 1.0
+  return 0.9
+}
+
+/** Mechanical work of lifting 1 kg once, as metabolic kcal: 9.81 × 0.5 m ÷ 0.20 efficiency ÷ 4184. */
+export const KCAL_PER_KG_LIFTED = (9.81 * 0.5) / 0.2 / 4184
+export const MAX_VOLUME_KG = 200_000
+
+export function volumeKcal(volumeKg: number | undefined): number {
+  if (!volumeKg || !Number.isFinite(volumeKg) || volumeKg <= 0) return 0
+  return Math.min(volumeKg, MAX_VOLUME_KG) * KCAL_PER_KG_LIFTED
 }
 
 export const BASELINE_NEAT_FRACTION = 0.05
@@ -227,7 +262,7 @@ export function workoutMet(ex: ExerciseInput): number | null {
     case 'run':
       return RUN_INTENSITY_MET[intensity]
     case 'strength':
-      return STRENGTH_METS[ex.rest ?? 'standard'][intensity]
+      return STRENGTH_METS[ex.rest ?? 'standard'][intensity] * muscleMassFactor(ex.muscles)
     default:
       return METS[ex.type][intensity]
   }
@@ -243,9 +278,11 @@ export interface WorkoutEstimate {
   high: number
   met: number | null
   method: 'met' | 'run_distance'
+  /** part of `net` that comes from the total volume lifted (strength only) */
+  fromVolume: number
 }
 
-const EMPTY: WorkoutEstimate = { net: 0, gross: 0, low: 0, high: 0, met: null, method: 'met' }
+const EMPTY: WorkoutEstimate = { net: 0, gross: 0, low: 0, high: 0, met: null, method: 'met', fromVolume: 0 }
 
 /** Full estimate for one workout. Returns zeros for incomplete input. */
 export function workoutEstimate(ex: ExerciseInput, p: Profile): WorkoutEstimate {
@@ -271,14 +308,16 @@ export function workoutEstimate(ex: ExerciseInput, p: Profile): WorkoutEstimate 
     restDuring = restPerMin * minutes
   }
 
-  const net = Math.max(0, gross - restDuring)
+  const fromVolume = ex.type === 'strength' ? volumeKcal(ex.volumeKg) : 0
+  const net = Math.max(0, gross - restDuring) + fromVolume
   return {
     net,
-    gross,
+    gross: gross + fromVolume,
     low: net * (1 - uncertainty),
     high: net * (1 + uncertainty),
     met,
     method,
+    fromVolume,
   }
 }
 
@@ -290,9 +329,9 @@ export function exerciseNetKcal(ex: ExerciseInput, p: Profile): number {
 const round10 = (n: number) => Math.round(n / 10) * 10
 
 /** What a workout card shows: net estimate and range, rounded to 10 kcal (it's an estimate). */
-export function workoutDisplay(ex: ExerciseInput, p: Profile): { kcal: number; low: number; high: number; gross: number } {
+export function workoutDisplay(ex: ExerciseInput, p: Profile): { kcal: number; low: number; high: number; gross: number; fromVolume: number } {
   const e = workoutEstimate(ex, p)
-  return { kcal: round10(e.net), low: round10(e.low), high: round10(e.high), gross: round10(e.gross) }
+  return { kcal: round10(e.net), low: round10(e.low), high: round10(e.high), gross: round10(e.gross), fromVolume: Math.round(e.fromVolume / 5) * 5 }
 }
 
 export function workoutDisplayKcal(ex: ExerciseInput, p: Profile): number {

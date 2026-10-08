@@ -20,7 +20,7 @@ export interface DaySummary {
 }
 
 export function toExerciseInput(e: Exercise): ExerciseInput {
-  return { type: e.type, durationMin: e.duration_min, distanceKm: e.distance_km, intensity: e.intensity, rest: e.rest, lifts: e.lifts }
+  return { type: e.type, durationMin: e.duration_min, distanceKm: e.distance_km, intensity: e.intensity, rest: e.rest, muscles: e.muscles, volumeKg: e.volume_kg, lifts: e.lifts }
 }
 
 export function summarizeDay(opts: {

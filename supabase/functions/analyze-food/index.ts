@@ -40,14 +40,16 @@ Deno.serve(async (req) => {
   const keys = await loadKeys(admin)
   const env = (k: string) => keys[k] ?? Deno.env.get(k)
 
-  // Signed-in users only: the caller's Supabase access token identifies them
-  // (anonymous sessions from other apps in this project are refused).
+  // Members only: the caller's access token identifies them, and the account
+  // must be listed in mz_members (anonymous / other-app accounts are refused).
   // REQUIRE_AUTH=false turns this off for local experiments only.
   let userId: string | null = null
   if (env('REQUIRE_AUTH') !== 'false') {
     const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
     const { data, error } = await admin.auth.getUser(token)
     if (error || !data.user || data.user.is_anonymous) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
+    const { data: member } = await admin.from('mz_members').select('user_id').eq('user_id', data.user.id).maybeSingle()
+    if (!member) return json({ error: 'unauthorized', message: 'לחשבון הזה אין גישה למאזן.' }, 403)
     userId = data.user.id
   }
 

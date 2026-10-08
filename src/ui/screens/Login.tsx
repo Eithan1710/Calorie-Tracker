@@ -1,15 +1,14 @@
 import { useId, useState } from 'react'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
-import { PrimaryButton, Segmented } from '../primitives'
+import { PrimaryButton } from '../primitives'
 import { Logo } from './Onboarding'
-import { register, signIn } from '../../services/auth'
-import { PASSWORD_MIN } from '../../../supabase/functions/_shared/account.ts'
+import { signIn } from '../../services/auth'
 
-type Mode = 'login' | 'register'
-
-/** Login / register with a username and password. Hebrew, RTL, one screen. */
+/**
+ * Login with a username and password. Hebrew, RTL, one screen.
+ * Closed app: there is no sign-up — accounts are created by the owner.
+ */
 export function Login() {
-  const [mode, setMode] = useState<Mode>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
@@ -18,14 +17,13 @@ export function Login() {
   const userId = useId()
   const passId = useId()
   const errId = useId()
-  const hintId = useId()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (busy) return
     setBusy(true)
     setError(null)
-    const res = mode === 'login' ? await signIn(username, password) : await register(username, password)
+    const res = await signIn(username, password)
     setBusy(false)
     if (!res.ok) setError({ message: res.message, field: res.field })
   }
@@ -45,18 +43,7 @@ export function Login() {
         </div>
 
         <form onSubmit={(e) => void submit(e)} className="card flex flex-col gap-4 p-5" noValidate>
-          <Segmented<Mode>
-            label="כניסה או הרשמה"
-            value={mode}
-            onChange={(m) => {
-              setMode(m)
-              setError(null)
-            }}
-            options={[
-              { value: 'login', label: 'התחברות' },
-              { value: 'register', label: 'משתמש חדש' },
-            ]}
-          />
+          <h2 className="text-xl font-semibold">התחברות</h2>
 
           <label htmlFor={userId} className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-ink-2">שם משתמש</span>
@@ -74,8 +61,7 @@ export function Login() {
                 enterKeyHint="next"
                 aria-invalid={error?.field === 'username' || undefined}
                 aria-describedby={error ? errId : undefined}
-                className="w-full min-w-0 bg-transparent text-lg outline-none placeholder:text-ink-3/60"
-                placeholder="למשל: זובקוב"
+                className="w-full min-w-0 bg-transparent text-lg outline-none"
               />
             </span>
           </label>
@@ -89,11 +75,11 @@ export function Login() {
                 type={show ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                dir="ltr"
+                autoComplete="current-password"
+                dir="auto"
                 enterKeyHint="go"
                 aria-invalid={error?.field === 'password' || undefined}
-                aria-describedby={[error ? errId : '', mode === 'register' ? hintId : ''].filter(Boolean).join(' ') || undefined}
+                aria-describedby={error ? errId : undefined}
                 className="w-full min-w-0 bg-transparent text-lg outline-none"
               />
               <button
@@ -107,11 +93,6 @@ export function Login() {
               </button>
             </span>
           </label>
-          {mode === 'register' && (
-            <p id={hintId} className="-mt-2 text-sm text-ink-3">
-              לפחות {PASSWORD_MIN} תווים
-            </p>
-          )}
 
           {error && (
             <p id={errId} role="alert" className="rounded-2xl bg-surplus-soft px-4 py-3 text-[15px] text-surplus">
@@ -121,13 +102,11 @@ export function Login() {
 
           <PrimaryButton type="submit" disabled={busy || !username.trim() || !password}>
             {busy && <Loader2 className="size-5 animate-spin" aria-hidden />}
-            {mode === 'login' ? 'כניסה' : 'יצירת חשבון'}
+            כניסה
           </PrimaryButton>
         </form>
 
-        <p className="text-center text-sm text-ink-3">
-          {mode === 'login' ? 'אין לך חשבון? בחר ״משתמש חדש״.' : 'כל משתמש רואה רק את הנתונים שלו. נשארים מחוברים גם אחרי סגירת האפליקציה.'}
-        </p>
+        <p className="text-center text-sm text-ink-3">הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.</p>
       </div>
     </main>
   )

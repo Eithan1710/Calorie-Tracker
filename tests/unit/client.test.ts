@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { tryLocalCorrection } from '../../src/ui/sheets/Review'
-import { liftLabel, liftsFromDrafts, parseDuration } from '../../src/ui/sheets/ExerciseSheet'
+import { parseDuration, strengthDetails } from '../../src/ui/sheets/ExerciseSheet'
 import { summarizeDay } from '../../src/domain/day'
 import { parseLocally } from '../../supabase/functions/_shared/localParser.ts'
 import { fmtBalance } from '../../src/ui/format'
@@ -48,20 +48,10 @@ describe('exercise time input', () => {
   })
 })
 
-describe('workout weights (optional, tracking only)', () => {
-  it('keeps rows with a name or a load, drops empty ones', () => {
-    const lifts = liftsFromDrafts([
-      { id: '1', name: 'לחיצת חזה', weight: 68, sets: 4, reps: 8 },
-      { id: '2', name: '', weight: '', sets: '', reps: '' },
-      { id: '3', name: '', weight: 20, sets: '', reps: '' },
-      { id: '4', name: ' סקוואט ', weight: -5, sets: '', reps: '' },
-    ])
-    expect(lifts).toEqual([
-      { id: '1', name: 'לחיצת חזה', weight_kg: 68, sets: 4, reps: 8 },
-      { id: '3', name: 'תרגיל', weight_kg: 20 },
-      { id: '4', name: 'סקוואט' },
-    ])
-    expect(liftLabel(lifts[0])).toBe('לחיצת חזה 68 ק״ג · 4×8')
+describe('strength workout details', () => {
+  it('shows muscle groups and total volume in Hebrew', () => {
+    expect(strengthDetails({ muscles: ['legs', 'shoulders'], volume_kg: 8000 })).toBe('רגליים, כתפיים · 8,000 ק״ג')
+    expect(strengthDetails({})).toBe('')
   })
 })
 

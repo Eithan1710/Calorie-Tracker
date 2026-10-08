@@ -1,6 +1,8 @@
 /**
- * Username accounts on top of Supabase Auth (shared by the app and the
- * mz-register edge function, so both derive exactly the same login).
+ * Username accounts on top of Supabase Auth. Closed app: there is no sign-up.
+ * Accounts are created by the project owner in the SQL editor with
+ * public.mz_create_member(username, password) (migration
+ * 20261009000000_members_and_volume.sql), which uses exactly this mapping.
  *
  * Supabase Auth identifies password users by email. מאזן users only pick a
  * username (Hebrew or Latin), so each username maps deterministically to a
@@ -11,15 +13,18 @@
  * Hashing keeps the address ASCII-only and short whatever the script, and the
  * mapping is case/Unicode-normalised so "Dana" and "dana" are the same account.
  * The readable username is kept in the user's metadata for display.
- * Passwords are never handled here beyond being passed to Supabase Auth,
- * which stores only a bcrypt hash.
+ *
+ * Members may have short passwords (e.g. 4 characters). The Auth project is
+ * shared with another app and keeps its own minimum length, so the password
+ * Supabase sees is "maazan:" + the member's password — always long enough.
+ * Supabase Auth stores only a bcrypt hash of it.
  */
 
 export const ACCOUNT_EMAIL_DOMAIN = 'users.maazan.app'
 export const USERNAME_MIN = 2
 export const USERNAME_MAX = 24
-export const PASSWORD_MIN = 6
-export const PASSWORD_MAX = 72 // bcrypt limit
+export const PASSWORD_MAX = 64 // bcrypt uses the first 72 bytes, including the prefix
+const PASSWORD_PREFIX = 'maazan:'
 
 const USERNAME_RE = /^[\p{L}\p{M}\p{N}_.-]+$/u
 
@@ -43,11 +48,9 @@ export function usernameError(raw: string): string | null {
   return null
 }
 
-export function passwordError(pw: string): string | null {
-  if (!pw) return 'צריך סיסמה'
-  if (pw.length < PASSWORD_MIN) return `סיסמה צריכה לפחות ${PASSWORD_MIN} תווים`
-  if (new TextEncoder().encode(pw).length > PASSWORD_MAX) return 'הסיסמה ארוכה מדי'
-  return null
+/** The password as stored in Supabase Auth (see header). Same rule as public.mz_create_member. */
+export function authPassword(pw: string): string {
+  return PASSWORD_PREFIX + pw
 }
 
 export async function usernameToEmail(raw: string): Promise<string> {

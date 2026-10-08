@@ -235,30 +235,30 @@ test.describe('energy & goal', () => {
     await expect(page.getByRole('button', { name: /אימון/ })).toContainText('550')
   })
 
-  test('strength: optional per-exercise weights are saved but do not change calories', async ({ page }) => {
+  test('strength: muscle groups and total volume refine the estimate (bounded) and are saved', async ({ page }) => {
     await at(page, '2026-10-06T13:00:00')
     await page.goto('/')
     await page.getByRole('button', { name: /אימון/ }).click()
     const d = page.getByRole('dialog')
     await d.getByRole('button', { name: '60' }).click()
     const est = d.getByTestId('exercise-estimate')
-    const before = await est.textContent()
-    await d.getByRole('button', { name: /משקלים/ }).click()
-    await d.getByLabel('שם תרגיל 1').fill('לחיצת חזה')
-    await d.getByLabel('משקל בתרגיל 1').fill('68')
-    await d.getByLabel('סטים בתרגיל 1').fill('4')
-    await d.getByLabel('חזרות בתרגיל 1').fill('8')
-    await d.getByRole('button', { name: 'תרגיל נוסף' }).click()
-    await d.getByLabel('שם תרגיל 2').fill('סקוואט')
-    await d.getByLabel('משקל בתרגיל 2').fill('140')
-    await expect(est).toHaveText(before!)
-    await d.getByLabel('משקל בתרגיל 2').fill('40')
-    await expect(est).toHaveText(before!)
-    await d.getByRole('button', { name: /הוסף/ }).click()
+    // 60 min moderate, 82 kg: (5.0 × 3.5 × 82 / 200 − 1.23) × 60 ≈ 360
+    await expect(est).toHaveText(/~360/)
+    await d.getByRole('button', { name: 'רגליים' }).click()
+    await expect(d.getByRole('button', { name: 'רגליים' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(est).toHaveText(/~400/) // legs: MET × 1.10
+    await d.getByRole('button', { name: 'רגליים' }).click()
+    await d.getByRole('button', { name: 'ידיים' }).click()
+    await expect(est).toHaveText(/~310/) // arms only: MET × 0.90
+    await d.getByRole('button', { name: 'ידיים' }).click()
+    await d.getByRole('button', { name: 'רגליים' }).click()
+    await d.getByRole('button', { name: 'כתפיים' }).click()
+    await d.getByLabel('משקל כולל שהורם באימון (לא חובה)').fill('8000')
+    await expect(est).toHaveText(/~450/) // + 8,000 kg × 0.0059 ≈ 47
+    await expect(d.getByTestId('exercise-volume-part')).toContainText('45')
+    await d.getByRole('button', { name: /הוסף · ~450/ }).click()
     await page.getByRole('button', { name: /אימון/ }).click()
-    const list = page.getByRole('dialog').getByRole('list', { name: 'אימונים היום' })
-    await expect(list).toContainText('לחיצת חזה 68 ק״ג · 4×8')
-    await expect(list).toContainText('סקוואט 40 ק״ג')
+    await expect(page.getByRole('dialog').getByRole('list', { name: 'אימונים היום' })).toContainText('רגליים, כתפיים · 8,000 ק״ג')
   })
 
   test('changing body weight changes the workout estimate', async ({ page }) => {

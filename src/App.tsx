@@ -91,6 +91,12 @@ export default function App() {
   }, [])
   const closeSheet = useCallback(() => setSheet(null), [])
 
+  if (auth.status === 'unconfigured')
+    return (
+      <main className="grid min-h-dvh place-items-center p-6 text-center text-ink-2">
+        <p>האפליקציה לא מחוברת לשרת. אין גישה בלי חשבון.</p>
+      </main>
+    )
   if (auth.status === 'signedOut') return <Login />
   if (auth.status === 'loading' || !ready) return <div className="min-h-dvh bg-bg" aria-busy="true" />
   if (!isValidProfile(profile)) {
