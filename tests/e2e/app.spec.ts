@@ -485,3 +485,87 @@ test.describe('layout & a11y', () => {
     await page.screenshot({ path: shot('settings', info.project.name) })
   })
 })
+
+test.describe('install as an app', () => {
+  const fakeInstallEvent = (outcome: 'accepted' | 'dismissed') =>
+    `(() => {
+      const e = new Event('beforeinstallprompt', { cancelable: true })
+      e.prompt = async () => { window.__prompted = (window.__prompted || 0) + 1 }
+      e.userChoice = Promise.resolve({ outcome: '${outcome}', platform: 'web' })
+      window.dispatchEvent(e)
+    })()`
+
+  test.beforeEach(async ({ page }) => {
+    await seedProfile(page)
+    await at(page, '2026-10-06T13:00:00')
+  })
+
+  test('no install button until the browser offers installation (desktop)', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+  })
+
+  test('Chrome offers install → our button shows the native dialog only on tap, then hides', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(fakeInstallEvent('accepted'))
+    const banner = page.getByRole('region', { name: 'התקנת האפליקציה' })
+    await expect(banner).toBeVisible()
+    expect(await page.evaluate(() => (window as unknown as { __prompted?: number }).__prompted ?? 0)).toBe(0)
+    await banner.getByRole('button', { name: 'התקן את האפליקציה' }).click()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __prompted?: number }).__prompted ?? 0)).toBe(1)
+    await expect(banner).toHaveCount(0)
+    await page.reload()
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+  })
+
+  test('the banner can be dismissed and stays dismissed; settings still offers it', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(fakeInstallEvent('dismissed'))
+    await page.getByRole('region', { name: 'התקנת האפליקציה' }).getByRole('button', { name: 'לא עכשיו' }).click()
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+    await page.reload()
+    await page.evaluate(fakeInstallEvent('dismissed'))
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'התקן את האפליקציה' })).toBeVisible()
+  })
+
+  test('appinstalled → no install button anywhere', async ({ page }) => {
+    await page.goto('/')
+    await page.evaluate(fakeInstallEvent('dismissed'))
+    await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')))
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'התקן את האפליקציה' })).toHaveCount(0)
+  })
+
+  test('running as the installed app (standalone) → nothing to install', async ({ page }) => {
+    await page.addInitScript(() => {
+      const orig = window.matchMedia.bind(window)
+      window.matchMedia = (q: string) => (q.includes('display-mode: standalone') ? ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} } as unknown as MediaQueryList) : orig(q))
+    })
+    await page.goto('/')
+    await page.evaluate(fakeInstallEvent('dismissed'))
+    await expect(page.getByRole('region', { name: 'התקנת האפליקציה' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'התקן את האפליקציה' })).toHaveCount(0)
+  })
+})
+
+test.describe('install as an app — Android browser without an install dialog', () => {
+  test.use({ userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36' })
+
+  test('shows the button and, on tap, simple menu instructions', async ({ page }) => {
+    await seedProfile(page)
+    await at(page, '2026-10-06T13:00:00')
+    await page.goto('/')
+    const banner = page.getByRole('region', { name: 'התקנת האפליקציה' })
+    await expect(banner).toBeVisible()
+    await banner.getByRole('button', { name: 'התקן את האפליקציה' }).click()
+    const help = page.getByRole('dialog', { name: 'התקנת האפליקציה' })
+    await expect(help).toContainText('התקנת אפליקציה')
+    await expect(help).toContainText('הוספה למסך הבית')
+    await help.getByRole('button', { name: 'הבנתי' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+})

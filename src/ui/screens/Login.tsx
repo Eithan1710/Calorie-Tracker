@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { PrimaryButton } from '../primitives'
 import { Logo } from './Onboarding'
 import { signIn } from '../../services/auth'
+import { InstallApp } from '../InstallApp'
 
 /**
  * Login with a username and password. Hebrew, RTL, one screen.
@@ -107,6 +108,7 @@ export function Login() {
         </form>
 
         <p className="text-center text-sm text-ink-3">הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.</p>
+        <InstallApp variant="link" />
       </div>
     </main>
   )

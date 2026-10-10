@@ -9,6 +9,7 @@ import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { EXERCISE_META } from '../sheets/ExerciseSheet'
 import { usePhotoUrl } from '../../services/photos'
+import { InstallApp } from '../InstallApp'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -60,6 +61,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-36 lg:px-8">
       <Header date={date} today={today} onDate={actions.onDate} onSettings={actions.onSettings} />
+      {date === today && <InstallApp variant="banner" />}
 
       {reminder && date === today && (
         <button

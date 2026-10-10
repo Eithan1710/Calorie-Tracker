@@ -8,8 +8,9 @@ import { hasSupabase } from '../../services/config'
 import { useAuth } from '../../services/auth'
 import { logout } from '../../services/session'
 import { showToast } from '../toast'
+import { InstallApp } from '../InstallApp'
 import { getSyncStatus, onSyncStatus, pushProfile, syncNow } from '../../services/sync'
-import { disableReminders, enableReminders, isIOS, isStandalone, notificationSupport } from '../../services/notifications'
+import { disableReminders, enableReminders, notificationSupport } from '../../services/notifications'
 import { HealthConnect } from './StepsSheet'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
@@ -161,13 +162,9 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
           <HealthConnect />
         </section>
 
-        <HowItWorks />
+        <InstallApp variant="row" />
 
-        {isIOS() && !isStandalone() && (
-          <p className="rounded-2xl bg-surface-2 p-4 text-sm text-ink-2">
-            טיפ: באייפון, שיתוף ← <b>״הוספה למסך הבית״</b> — נפתח מהר כמו אפליקציה, ומאפשר תזכורות.
-          </p>
-        )}
+        <HowItWorks />
       </div>
     </Sheet>
   )

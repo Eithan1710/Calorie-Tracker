@@ -35,6 +35,7 @@ jobs:
         run: |
           set -o pipefail
           npm run build 2>&1 | tee build.log || { scripts/annotate-failure.sh build build.log 'error TS|error'; exit 1; }
+          npm run check:pwa 2>&1 | tee pwa.log || { scripts/annotate-failure.sh pwa pwa.log; exit 1; }
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

@@ -34,6 +34,8 @@ jobs:
           VITE_BASE: /${{ github.event.repository.name }}/
           VITE_SUPABASE_URL: https://kjfihzskaqcboeejnkak.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_COFa-LU5E_xbskpKMeQFnw_q0PUWq4u
+      - name: Check the build is an installable PWA
+        run: npm run check:pwa
       - uses: actions/configure-pages@v5
         with:
           enablement: true
