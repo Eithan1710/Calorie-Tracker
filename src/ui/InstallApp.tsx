@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Download, EllipsisVertical, Share, SquarePlus, X } from 'lucide-react'
 import { Sheet, PrimaryButton } from './primitives'
 import { bannerDismissed, dismissBanner, promptInstall, useInstall, type Platform } from '../services/install'
@@ -81,9 +82,13 @@ export function InstallApp({ variant }: { variant: 'banner' | 'row' | 'link' }) 
   )
 }
 
-/** Manual steps for browsers without an install dialog (or before Chrome offers one). */
+/**
+ * Manual steps for browsers without an install dialog (or before Chrome offers one).
+ * Portalled to <body>: the banner animates in with a transform, which would otherwise
+ * trap this fixed-position sheet inside the banner.
+ */
 export function InstallHelp({ open, onClose, platform }: { open: boolean; onClose: () => void; platform: Platform }) {
-  return (
+  return createPortal(
     <Sheet
       open={open}
       onClose={onClose}
@@ -119,7 +124,8 @@ export function InstallHelp({ open, onClose, platform }: { open: boolean; onClos
         )}
         <p className="text-sm text-ink-3">האפליקציה תופיע במסך הבית בשם Calorie Tracker ותיפתח בחלון משלה. ההתחברות והנתונים נשארים כמו שהם.</p>
       </div>
-    </Sheet>
+    </Sheet>,
+    document.body,
   )
 }
 

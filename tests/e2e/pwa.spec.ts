@@ -41,8 +41,9 @@ test('manifest: name, standalone, scope, colours, icons reachable', async ({ pag
 
 test('service worker registers, controls the page, and Chrome reports no installability errors', async ({ page }) => {
   await page.goto('/')
-  const state = await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state)
-  expect(state).toBe('activated')
+  await page.evaluate(() => navigator.serviceWorker.ready)
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.active?.state))).toBe('activated')
+  expect(await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.scope))).toBe(new URL('/', page.url()).href)
   await page.reload()
   expect(await page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
 
@@ -55,7 +56,8 @@ test('service worker registers, controls the page, and Chrome reports no install
 
 test('the service worker caches only the app’s own files — no Supabase data, no personal data', async ({ page }) => {
   await page.goto('/')
-  await page.evaluate(async () => (await navigator.serviceWorker.ready).active?.state)
+  await page.evaluate(() => navigator.serviceWorker.ready)
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.active?.state))).toBe('activated')
   await page.reload()
   const cached = await page.evaluate(async () => {
     const urls: string[] = []
