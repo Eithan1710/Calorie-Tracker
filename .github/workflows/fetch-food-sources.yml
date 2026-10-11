@@ -20,16 +20,27 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download Tzameret (data.gov.il)
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p out/tzameret
           UA='CalorieTracker-data-import/1.0 (github.com/Eithan1710/Calorie-Tracker)'
-          curl -sSf -A "$UA" 'https://data.gov.il/api/3/action/package_show?id=tzameret' -o out/tzameret/package.json
-          jq '{title: .result.title, license: .result.license_title, license_id: .result.license_id, org: .result.organization.title, modified: .result.metadata_modified, resources: [.result.resources[] | {id, name, format, last_modified, datastore_active}]}' out/tzameret/package.json > out/tzameret/meta.json
-          cat out/tzameret/meta.json
-          for id in $(jq -r '.result.resources[] | select(.datastore_active == true) | .id' out/tzameret/package.json); do
-            curl -sSf -A "$UA" "https://data.gov.il/api/3/action/datastore_search?resource_id=$id&limit=32000" -o "out/tzameret/$id.json"
-            echo "$id: $(jq '.result.total' out/tzameret/$id.json) records, fields: $(jq -c '[.result.fields[].id]' out/tzameret/$id.json | head -c 3000)"
+          BUA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+          probe() { # url ua → prints status + head of body
+            code=$(curl -sS -L -A "$2" -H 'Accept: application/json' -o /tmp/body -w '%{http_code}' "$1"); echo "::notice title=probe $code::$1 → $(head -c 300 /tmp/body | tr '\n' ' ')"; [ "$code" = 200 ]
+          }
+          probe 'https://data.gov.il/api/3/action/package_show?id=tzameret' "$UA" && cp /tmp/body out/tzameret/package.json \
+            || { probe 'https://data.gov.il/api/3/action/package_show?id=tzameret' "$BUA" && cp /tmp/body out/tzameret/package.json; } || true
+          for id in c3cb0630-0650-46c1-a068-82d575c094b2 755d28c0-75f7-40e1-9c8c-ecdd106f9b2d 5c726506-5c1e-43a7-94f7-24845dbde9c3; do
+            url="https://data.gov.il/api/3/action/datastore_search?resource_id=$id&limit=32000"
+            if probe "$url" "$UA" || probe "$url" "$BUA"; then
+              cp /tmp/body "out/tzameret/$id.json"
+              echo "::notice title=resource $id::$(jq '.result.total' out/tzameret/$id.json) records; fields: $(jq -c '[.result.fields[].id]' out/tzameret/$id.json | head -c 2500)"
+            fi
           done
+          if [ -f out/tzameret/package.json ]; then
+            jq '{title: .result.title, license: .result.license_title, license_id: .result.license_id, org: .result.organization.title, modified: .result.metadata_modified, resources: [.result.resources[] | {id, name, format, last_modified, datastore_active}]}' out/tzameret/package.json > out/tzameret/meta.json || true
+            echo "::notice title=tzameret meta::$(tr '\n' ' ' < out/tzameret/meta.json | head -c 3000)"
+          fi
+          ls -la out/tzameret
       - name: Open Food Facts — Israel coverage
         run: |
           set -euo pipefail
@@ -37,7 +48,8 @@ jobs:
           UA='CalorieTracker-data-import/1.0 (github.com/Eithan1710/Calorie-Tracker)'
           curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=1&fields=code' -o out/off/israel_count.json || true
           curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=100&sort_by=unique_scans_n&fields=code,product_name,product_name_he,brands,quantity,nutriments,nutrition_data_per,completeness' -o out/off/israel_top100.json || true
-          echo "OFF Israel products: $(jq '.count' out/off/israel_count.json 2>/dev/null)"
+          echo "::notice title=OFF Israel::$(jq '.count' out/off/israel_count.json 2>/dev/null) products"
+          echo "::notice title=OFF top100 sample::$(jq -c '[.products[:15][] | {code, n: (.product_name_he // .product_name), b: .brands, kcal: .nutriments[\"energy-kcal_100g\"]}]' out/off/israel_top100.json 2>/dev/null | head -c 3000)"
       - name: Commit raw files to data/sources
         run: |
           set -euo pipefail
