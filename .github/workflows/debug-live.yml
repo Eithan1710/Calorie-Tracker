@@ -1,0 +1,23 @@
+# Temporary: load the live Pages site in a browser and report console errors.
+name: Debug live site
+on:
+  push:
+    branches: ['debug/**']
+permissions:
+  contents: write
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/debug/live.mjs
+      - name: Publish result
+        if: always()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          cd out && git init -q -b ci/debug && git config user.name bot && git config user.email bot@users.noreply.github.com
+          git add -A && git commit -qm debug && git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci/debug
