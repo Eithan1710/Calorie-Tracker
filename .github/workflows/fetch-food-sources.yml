@@ -1,0 +1,54 @@
+# Downloads the open food-composition sources used by the food database and
+# commits the raw files to the `data/sources` branch (never to main), so the
+# import can be reviewed and reproduced. Run manually from the Actions tab.
+#   • Tzameret — Israeli Ministry of Health national nutrient database (data.gov.il CKAN API)
+#   • Open Food Facts — product counts for Israel (ODbL), for coverage planning only
+name: Fetch food sources
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['data/fetch-sources']
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Tzameret (data.gov.il)
+        run: |
+          set -euo pipefail
+          mkdir -p out/tzameret
+          UA='CalorieTracker-data-import/1.0 (github.com/Eithan1710/Calorie-Tracker)'
+          curl -sSf -A "$UA" 'https://data.gov.il/api/3/action/package_show?id=tzameret' -o out/tzameret/package.json
+          jq '{title: .result.title, license: .result.license_title, license_id: .result.license_id, org: .result.organization.title, modified: .result.metadata_modified, resources: [.result.resources[] | {id, name, format, last_modified, datastore_active}]}' out/tzameret/package.json > out/tzameret/meta.json
+          cat out/tzameret/meta.json
+          for id in $(jq -r '.result.resources[] | select(.datastore_active == true) | .id' out/tzameret/package.json); do
+            curl -sSf -A "$UA" "https://data.gov.il/api/3/action/datastore_search?resource_id=$id&limit=32000" -o "out/tzameret/$id.json"
+            echo "$id: $(jq '.result.total' out/tzameret/$id.json) records, fields: $(jq -c '[.result.fields[].id]' out/tzameret/$id.json | head -c 3000)"
+          done
+      - name: Open Food Facts — Israel coverage
+        run: |
+          set -euo pipefail
+          mkdir -p out/off
+          UA='CalorieTracker-data-import/1.0 (github.com/Eithan1710/Calorie-Tracker)'
+          curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=1&fields=code' -o out/off/israel_count.json || true
+          curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=100&sort_by=unique_scans_n&fields=code,product_name,product_name_he,brands,quantity,nutriments,nutrition_data_per,completeness' -o out/off/israel_top100.json || true
+          echo "OFF Israel products: $(jq '.count' out/off/israel_count.json 2>/dev/null)"
+      - name: Commit raw files to data/sources
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin data/sources || true
+          git switch --orphan data/sources
+          git rm -rq --cached . || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name out -exec rm -rf {} +
+          mv out/* . && rmdir out
+          printf '# Raw food-composition source files\n\nFetched by .github/workflows/fetch-food-sources.yml on %s.\n' "$(date -u +%F)" > README.md
+          git add -A
+          git commit -qm "Raw food sources $(date -u +%F)"
+          git push -f origin data/sources
