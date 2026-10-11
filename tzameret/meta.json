@@ -1,0 +1,65 @@
+{
+  "title": "מאגר התזונה הלאומי הישראלי",
+  "license": "Other (Open)",
+  "license_id": "other-open",
+  "org": "משרד הבריאות",
+  "modified": "2023-03-21T18:32:47.687636",
+  "resources": [
+    {
+      "id": "c3cb0630-0650-46c1-a068-82d575c094b2",
+      "name": "רשימת המצרכים והמתכונים עם רכיבי התזונה ל 100 גרם.",
+      "format": "CSV",
+      "last_modified": "2022-10-26T10:15:04.823858",
+      "datastore_active": true
+    },
+    {
+      "id": "5c726506-5c1e-43a7-94f7-24845dbde9c3",
+      "name": "רשימת המתכונים עם הרכב מצרכי המתכון והכמויות",
+      "format": "CSV",
+      "last_modified": "2022-07-11T15:29:54.915160",
+      "datastore_active": true
+    },
+    {
+      "id": "98fb46fe-e8de-4067-94d2-b0a8ea4269da",
+      "name": "טבלת יחידות מידה",
+      "format": "CSV",
+      "last_modified": "2022-01-03T07:54:00.520638",
+      "datastore_active": true
+    },
+    {
+      "id": "755d28c0-75f7-40e1-9c8c-ecdd106f9b2d",
+      "name": "טבלת משקל ליחידת מידע למצרך",
+      "format": "CSV",
+      "last_modified": "2022-01-04T07:08:22.983742",
+      "datastore_active": true
+    },
+    {
+      "id": "7b9e9ae3-1082-460e-a3e8-3d0ff2eb5dc6",
+      "name": "מבנה קובץ יחידות מידה למצרכים.xlsx",
+      "format": "XLSX",
+      "last_modified": "2021-07-20T06:40:28.527024",
+      "datastore_active": true
+    },
+    {
+      "id": "2c78a1d6-a949-47a5-934e-bfe4a0fbb665",
+      "name": "מבנה קובץ יחידות מידה.xlsx",
+      "format": "XLSX",
+      "last_modified": "2021-07-20T06:40:43.826884",
+      "datastore_active": true
+    },
+    {
+      "id": "b9125bf7-cf1b-4faa-bf5c-43aa04fe4210",
+      "name": "מבנה קובץ מצרכים.xlsx",
+      "format": "XLSX",
+      "last_modified": "2023-01-02T11:17:31.364091",
+      "datastore_active": true
+    },
+    {
+      "id": "22612122-51ef-4b0d-81ba-b4c7a8720fda",
+      "name": "מבנה קובץ מתכונים.xlsx",
+      "format": "XLSX",
+      "last_modified": "2021-07-20T06:41:06.501071",
+      "datastore_active": true
+    }
+  ]
+}
