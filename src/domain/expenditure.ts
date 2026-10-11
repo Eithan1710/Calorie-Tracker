@@ -160,7 +160,6 @@ export function findDuplicates(workouts: DayWorkout[]): Map<string, string> {
   return dup
 }
 
-const round10 = (n: number) => Math.round(n / 10) * 10
 
 /** One workout's energy above rest: Apple's own number when present, otherwise the estimate. */
 export function workoutEnergy(w: DayWorkout, p: Profile): Pick<WorkoutEnergy, 'kcal' | 'low' | 'high' | 'kcalSource'> & { net: number } {
