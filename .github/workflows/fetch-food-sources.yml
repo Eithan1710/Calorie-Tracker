@@ -36,6 +36,21 @@ jobs:
               echo "::notice title=resource $id::$(jq '.result.total' out/tzameret/$id.json) records; fields: $(jq -c '[.result.fields[].id]' out/tzameret/$id.json | head -c 2500)"
             fi
           done
+          # the dataset slug isn't "tzameret": find the package through one of its resources
+          if [ ! -f out/tzameret/package.json ]; then
+            if probe 'https://data.gov.il/api/3/action/resource_show?id=c3cb0630-0650-46c1-a068-82d575c094b2' "$UA"; then
+              pkg=$(jq -r '.result.package_id' /tmp/body)
+              probe "https://data.gov.il/api/3/action/package_show?id=$pkg" "$UA" && cp /tmp/body out/tzameret/package.json
+            fi
+          fi
+          # code tables (units of measure, data sources…) live as other resources of the same package
+          if [ -f out/tzameret/package.json ]; then
+            for id in $(jq -r '.result.resources[] | select(.datastore_active == true) | .id' out/tzameret/package.json); do
+              [ -f "out/tzameret/$id.json" ] && continue
+              url="https://data.gov.il/api/3/action/datastore_search?resource_id=$id&limit=32000"
+              probe "$url" "$UA" && cp /tmp/body "out/tzameret/$id.json" && echo "::notice title=extra resource $id::$(jq '.result.total' out/tzameret/$id.json) records; fields $(jq -c '[.result.fields[].id]' out/tzameret/$id.json); sample $(jq -c '.result.records[:6]' out/tzameret/$id.json | head -c 1500)"
+            done
+          fi
           if [ -f out/tzameret/package.json ]; then
             jq '{title: .result.title, license: .result.license_title, license_id: .result.license_id, org: .result.organization.title, modified: .result.metadata_modified, resources: [.result.resources[] | {id, name, format, last_modified, datastore_active}]}' out/tzameret/package.json > out/tzameret/meta.json || true
             echo "::notice title=tzameret meta::$(tr '\n' ' ' < out/tzameret/meta.json | head -c 3000)"
@@ -43,13 +58,19 @@ jobs:
           ls -la out/tzameret
       - name: Open Food Facts — Israel coverage
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p out/off
-          UA='CalorieTracker-data-import/1.0 (github.com/Eithan1710/Calorie-Tracker)'
-          curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=1&fields=code' -o out/off/israel_count.json || true
-          curl -sSf -A "$UA" 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=100&sort_by=unique_scans_n&fields=code,product_name,product_name_he,brands,quantity,nutriments,nutrition_data_per,completeness' -o out/off/israel_top100.json || true
-          echo "::notice title=OFF Israel::$(jq '.count' out/off/israel_count.json 2>/dev/null) products"
-          echo "::notice title=OFF top100 sample::$(jq -c '[.products[:15][] | {code, n: (.product_name_he // .product_name), b: .brands, kcal: .nutriments[\"energy-kcal_100g\"]}]' out/off/israel_top100.json 2>/dev/null | head -c 3000)"
+          UA='CalorieTracker/1.0 (eithan11710@gmail.com)'
+          probe() { code=$(curl -sS -L -A "$UA" -o "$2" -w '%{http_code}' "$1"); echo "::notice title=OFF $code::$1 → $(head -c 200 "$2" | tr '\n' ' ')"; }
+          probe 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=1&fields=code' out/off/israel_count.json
+          sleep 7
+          probe 'https://world.openfoodfacts.org/api/v2/search?countries_tags_en=israel&page_size=100&sort_by=unique_scans_n&fields=code,product_name,product_name_he,brands,quantity,nutriments,nutrition_data_per,completeness' out/off/israel_top100.json
+          sleep 7
+          probe 'https://world.openfoodfacts.org/api/v2/product/7290000066318?fields=code,product_name,product_name_he,brands,nutriments' out/off/sample_product.json
+          echo "::notice title=OFF Israel count::$(jq '.count' out/off/israel_count.json 2>/dev/null)"
+          echo "::notice title=OFF top sample::$(jq -c '[.products[:20][] | {code, n: (.product_name_he // .product_name), b: .brands, kcal: .nutriments["energy-kcal_100g"], p: .nutriments.proteins_100g}]' out/off/israel_top100.json 2>/dev/null | head -c 3500)"
+          # data dumps (preferred by OFF for bulk use) — size only
+          curl -sSI -A "$UA" https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz | grep -i '^content-length' | sed 's/^/::notice title=OFF dump size::/' || true
       - name: Commit raw files to data/sources
         run: |
           set -euo pipefail
