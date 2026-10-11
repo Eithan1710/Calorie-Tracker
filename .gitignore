@@ -12,3 +12,4 @@ supabase/.branches
 .DS_Store
 dist-e2e
 build/
+__pycache__/
