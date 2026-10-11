@@ -51,6 +51,17 @@ jobs:
           }
           echo "::notice title=e2e::$(sed -e 's/\x1b\[[0-9;]*m//g' e2e.log | grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped)' | tr -s ' ' | tr '\n' ' ')"
 
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            test-results/**/*.png
+            docs/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Food database: every curated number still matches its source record, the full
   # build passes validation, the migration applies (twice) on Postgres, and search
   # quality / access rules hold. Uses the raw datasets on the data/sources branch.

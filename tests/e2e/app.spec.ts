@@ -313,6 +313,11 @@ test.describe('energy & goal', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'עדכון' }).click()
     // 8000 × 0.7387 m × 82 × 0.5 × 1.1 = 266 more
     await expect(hero(page)).toContainText('2,320')
+    // no Apple Health data: the breakdown is an honest estimate (rows add up to the total)
+    const energy = page.getByRole('region', { name: 'שריפה היום' })
+    await expect(energy.getByTestId('energy-total')).toHaveText(/2,320/)
+    await expect(energy.getByTestId('energy-status')).toContainText('הערכה')
+    await page.screenshot({ path: shot('energy-estimate', test.info().project.name), fullPage: true })
   })
 
   test('steps arrive from a Shortcut URL', async ({ page }) => {
