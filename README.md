@@ -81,6 +81,7 @@ bcrypt hash of `"maazan:" + password`, so the shared project's minimum length ne
 | Web Push keys, cron secret | generated inside Supabase, kept in Vault |
 | AI keys | GitHub secret → [`sync-ai-keys.yml`](.github/workflows/sync-ai-keys.yml) → `mz-config` function → Vault. No Supabase token needed: the function verifies GitHub's signed OIDC token and only accepts this repo's `main` branch |
 | Edge functions | [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`) redeploys after code changes |
+| Apple Health energy & workouts | additive migration `20261012000000_health_energy_workouts.sql` via [`apply-migration.yml`](.github/workflows/apply-migration.yml) (manual) or the SQL editor; then redeploy functions |
 | Food database (~13k foods) | [`import-food-db.yml`](.github/workflows/import-food-db.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`): applies the additive `mz_foods` migration and loads MoH + USDA + Israeli products. Raw data refreshed by [`fetch-food-sources.yml`](.github/workflows/fetch-food-sources.yml). See [docs/food-data](docs/food-data/README.md) |
 | PWA | [`pages.yml`](.github/workflows/pages.yml) on push to `main`: tests → build → GitHub Pages |
 | Checks | [`ci.yml`](.github/workflows/ci.yml) on every other branch / PR: unit tests, typecheck + build, Playwright (mobile, desktop, accounts) |
@@ -203,23 +204,20 @@ text / photo
 
 ## Apple Health — what's possible and what's built
 
-**A web app / PWA cannot read HealthKit.** Apple exposes HealthKit only to native apps; Safari and home-screen
-PWAs have no API for it (Android's Health Connect is likewise native-only). So the app does not pretend.
+**A web app / PWA cannot read HealthKit.** Apple exposes HealthKit only to native apps, so the bridge is Apple's
+free **Shortcuts** app: a Personal Automation reads **Steps, Active Energy and Resting Energy** (and workouts, where
+the phone exposes them) and POSTs them to `health-ingest` with a personal token (only its SHA-256 is stored).
+The original steps-only automation keeps working unchanged.
 
-Implemented bridges, all using Apple's free **Shortcuts** app:
+- **Calories burned:** with Apple data, total = Apple Resting + Apple Active. Workouts (Apple Watch, Strava, Hevy)
+  are already inside Active Energy, so they are shown but never added again; a manual workout marked "not measured
+  by Apple Health" is the only thing added on top. Without Apple data the estimate model (BMR + steps + workouts
+  + 10% TEF) is used and labelled as an estimate. Partial days project resting energy to 24 h.
+- **Sync safety:** newest snapshot wins, partial updates, idempotent workouts (stable ids), deleted workouts stay
+  deleted, user time zone for "today", 14-day window, range checks.
+- Details, research and the exact Shortcut steps: [docs/apple-health.md](docs/apple-health.md).
 
-1. **Background sync (recommended, needs Supabase).** Settings → Steps → "צור קוד אישי" creates a personal
-   token (only its SHA-256 is stored). A Shortcuts *Personal Automation* (e.g. 21:15 daily, "run immediately"):
-   *Find Health Samples (Steps, today)* → *Calculate Statistics (Sum)* → *Get Contents of URL* `POST`
-   `…/functions/v1/health-ingest` with `Authorization: Bearer <token>` and JSON `{"steps": <sum>}`. The app picks it
-   up on next open. Works with Android automation apps too (same endpoint).
-2. **Open-with-URL (no backend).** A shortcut opens `https://your-app/?steps=7842&date=2026-10-06`; the app imports
-   and cleans the URL. Caveat (shown in the UI): on iOS the link opens in Safari, whose storage is separate from
-   the installed PWA — so this suits Safari-tab, Android and desktop use.
-3. **Manual** — tap the steps tile, type the number.
-
-Upgrade path if fully automatic sync is ever needed: wrap the same React app in Capacitor and add a HealthKit
-plugin (a small native companion) — the energy model and data layer don't change.
+Other bridges: open-with-URL (`/?steps=7842&date=…`, Safari only on iOS) and manual entry.
 
 ## Reminders — what works where
 
