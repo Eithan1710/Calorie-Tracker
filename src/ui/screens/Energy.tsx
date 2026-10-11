@@ -100,7 +100,8 @@ export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: bo
             <dt className="flex min-w-0 flex-1 items-center gap-2 text-[15px]">
               <span className="size-2.5 shrink-0 rounded-full" style={{ background: p.color }} aria-hidden />
               {p.label}
-              <SourceTag apple={p.apple} />
+              {/* a source tag only where a row differs from the card (Apple day with an estimated part) */}
+              {apple && !p.apple && p.key !== 'extra' && <SourceTag apple={false} />}
             </dt>
             <dd className="num font-semibold">{fmt(p.value)}</dd>
           </div>

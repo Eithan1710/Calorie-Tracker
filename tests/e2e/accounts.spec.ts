@@ -232,7 +232,7 @@ test('Apple Health: resting + active energy and an imported Strava run, no doubl
   await expect(workouts).toContainText('5 ק״מ')
   await expect(workouts).toContainText('330')
   await expect(workouts).toContainText('כלול בפעילה')
-  await page.screenshot({ path: `test-results/shots/apple-health-${test.info().project.name}.png`, fullPage: true })
+  await page.screenshot({ path: 'docs/screenshots/accounts-apple-health.png', fullPage: true })
 
   // a gym session logged by hand is assumed to be in Apple's active energy …
   await workouts.click()
