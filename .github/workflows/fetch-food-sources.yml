@@ -71,6 +71,49 @@ jobs:
           echo "::notice title=OFF top sample::$(jq -c '[.products[:20][] | {code, n: (.product_name_he // .product_name), b: .brands, kcal: .nutriments["energy-kcal_100g"], p: .nutriments.proteins_100g}]' out/off/israel_top100.json 2>/dev/null | head -c 3500)"
           # data dumps (preferred by OFF for bulk use) — size only
           curl -sSI -A "$UA" https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz | grep -i '^content-length' | sed 's/^/::notice title=OFF dump size::/' || true
+      - name: USDA FoodData Central — Foundation + SR Legacy (CC0)
+        run: |
+          set -euo pipefail
+          mkdir -p out/usda && cd out/usda
+          page=$(curl -sSL https://fdc.nal.usda.gov/download-datasets)
+          for kind in foundation_food_json sr_legacy_food_json; do
+            url=$(printf '%s' "$page" | grep -oE "https?://[^\"']*FoodData_Central_${kind}_[0-9-]+\.zip|/fdc-datasets/FoodData_Central_${kind}_[0-9-]+\.zip" | head -1)
+            case "$url" in /*) url="https://fdc.nal.usda.gov$url";; esac
+            echo "::notice title=USDA $kind::$url"
+            curl -sSLf "$url" -o "$kind.zip"
+            unzip -o -q "$kind.zip"
+          done
+          rm -f *.zip
+          ls -la
+          for f in *.json; do python3 - "$f" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1])); k=list(d)[0]
+          print(f"::notice title=USDA file {sys.argv[1]}::{k}: {len(d[k])} foods")
+          PY
+          gzip -9 "$f"; done
+      - name: Open Food Facts — products sold in Israel (bulk CSV export, ODbL)
+        run: |
+          set -euo pipefail
+          mkdir -p out/off
+          curl -sSLf -A 'CalorieTracker/1.0 (eithan11710@gmail.com)' https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz -o /tmp/off.csv.gz
+          ls -la /tmp/off.csv.gz
+          python3 - <<'PY'
+          import csv, gzip, json, sys
+          csv.field_size_limit(sys.maxsize)
+          keep = ['code','product_name','generic_name','brands','quantity','serving_size','serving_quantity','categories_tags','countries_tags','lang','last_modified_t','completeness','nutrition_data_per','energy-kcal_100g','energy_100g','proteins_100g','fat_100g','saturated-fat_100g','carbohydrates_100g','sugars_100g','fiber_100g','sodium_100g','salt_100g','states_tags']
+          n = kept = 0
+          with gzip.open('/tmp/off.csv.gz', 'rt', encoding='utf-8', errors='replace', newline='') as f, gzip.open('out/off/israel_products.jsonl.gz', 'wt', encoding='utf-8') as out:
+              r = csv.DictReader(f, delimiter='\t')
+              missing = [k for k in keep if k not in r.fieldnames]
+              print('::notice title=OFF columns missing::' + ','.join(missing))
+              for row in r:
+                  n += 1
+                  if 'en:israel' not in (row.get('countries_tags') or ''): continue
+                  kept += 1
+                  out.write(json.dumps({k: row.get(k) for k in keep if k in row}, ensure_ascii=False) + '\n')
+          print(f'::notice title=OFF Israel subset::{kept} of {n} products')
+          PY
+          ls -la out/off
       - name: Commit raw files to data/sources
         run: |
           set -euo pipefail
