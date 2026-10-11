@@ -194,7 +194,7 @@ export function WorkoutsCard({ s, exercises, onOpen }: { s: DaySummary; exercise
       onClick={onOpen}
       className="card pressable animate-rise w-full p-4 text-start"
       style={{ animationDelay: '80ms' }}
-      aria-label={`אימונים היום${visible.length ? `: ${visible.length}` : ''}. להוספה או עריכה`}
+      aria-label={`אימון. ${visible.length ? `${visible.length} אימונים היום` : 'אין אימונים היום'}. להוספה או עריכה`}
     >
       <div className="flex items-center justify-between px-1">
         <span className="text-sm font-medium text-ink-3">אימונים</span>
