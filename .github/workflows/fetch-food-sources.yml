@@ -95,15 +95,17 @@ jobs:
               for path in glob.glob('*.json'):
                   d = json.load(open(path)); key = list(d)[0]
                   for f in d[key]:
+                      if not isinstance(f, dict): continue
                       nut = {}
-                      for fn in f.get('foodNutrients', []):
-                          nid = (fn.get('nutrient') or {}).get('id')
+                      for fn in (f.get('foodNutrients') or []):
+                          if not isinstance(fn, dict): continue
+                          nid = (fn.get('nutrient') or {}).get('id') if isinstance(fn.get('nutrient'), dict) else fn.get('nutrientId')
                           if nid in N and fn.get('amount') is not None and N[nid] not in nut:
                               nut[N[nid]] = fn['amount']
                       portions = [{'g': p.get('gramWeight'), 'amount': p.get('amount'), 'unit': (p.get('measureUnit') or {}).get('name'),
-                                   'desc': p.get('portionDescription') or p.get('modifier')} for p in f.get('foodPortions', []) if p.get('gramWeight')]
+                                   'desc': p.get('portionDescription') or p.get('modifier')} for p in (f.get('foodPortions') or []) if isinstance(p, dict) and p.get('gramWeight')]
                       out.write(json.dumps({'fdcId': f['fdcId'], 'dataset': key, 'description': f['description'],
-                                            'category': (f.get('foodCategory') or {}).get('description'),
+                                            'category': (f.get('foodCategory') or {}).get('description') if isinstance(f.get('foodCategory'), dict) else f.get('foodCategory'),
                                             'published': f.get('publicationDate'), 'nutrients': nut, 'portions': portions[:8]}) + '\n')
                       n += 1
           print(f'::notice title=USDA compact::{n} foods')
