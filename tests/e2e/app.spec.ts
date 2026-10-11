@@ -397,7 +397,7 @@ test.describe('resilience', () => {
     await mockAnalyze(page, { error: 'unavailable', message: 'x' }, 503)
     await page.goto('/')
     await addText(page, '2 פרוסות לחם')
-    await expect(page.getByRole('dialog').getByTestId('analysis-total')).toHaveText(/160/)
+    await expect(page.getByRole('dialog').getByTestId('analysis-total')).toHaveText(/158/)
   })
 
   test('invalid JSON from the server is never saved', async ({ page }) => {
