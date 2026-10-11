@@ -79,7 +79,7 @@ export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: bo
           </p>
           {showProjection && (
             <p className="mt-1 text-sm text-ink-2" data-testid="energy-projection">
-              צפי לסוף היום <span className="num font-semibold">~{fmt(Math.round(e.total / 10) * 10)}</span>
+              צפי לסוף היום <span className="ltr num inline-block font-semibold">~{fmt(Math.round(e.total / 10) * 10)}</span>
             </p>
           )}
         </div>
