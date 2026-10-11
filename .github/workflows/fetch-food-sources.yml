@@ -85,7 +85,8 @@ jobs:
           done
           rm -f *.zip
           # keep a compact subset: per-100 g macros + fibre/sugar/sodium/sat-fat + portions
-          python3 - <<'PY'
+          ls -la
+          python3 - 2>/tmp/usda_err <<'PY' || { echo "::error title=USDA compact failed::$(tail -c 2000 /tmp/usda_err | tr '\n' ' ')"; exit 1; }
           import glob, gzip, json
           N = {1008: 'kcal', 2047: 'kcal_atw_gen', 2048: 'kcal_atw_spec', 1003: 'protein', 1004: 'fat', 1005: 'carbs', 1050: 'carbs_sum',
                1079: 'fiber', 2000: 'sugar', 1063: 'sugar_nlea', 1093: 'sodium', 1258: 'sat_fat', 1051: 'water', 1018: 'alcohol'}
