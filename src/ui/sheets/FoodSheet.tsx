@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ImagePlus, Loader2, RotateCcw, Trash2, WifiOff, X } from 'lucide-react'
+import { ImagePlus, Loader2, RotateCcw, Search, Trash2, WifiOff, X } from 'lucide-react'
 import { Sheet, PrimaryButton, GhostButton } from '../primitives'
 import { Review } from './Review'
+import { FoodSearch } from './FoodSearch'
 import { analyzePhoto, analyzeText } from '../../services/ai'
 import { imageErrorMessage, prepareImage, type PreparedImage } from '../../services/image'
 import { deletePhoto, newPhotoPath, photoUnavailable, savePhoto, usePhotoUrl } from '../../services/photos'
 import { deleteFood, getState, recentMeals, restoreFood, upsertFood, useStore } from '../../data/store'
 import { MEALS, mealForTime, type Analysis, type FoodEntry, type Meal } from '../../data/types'
-import { newId } from '../../../supabase/functions/_shared/nutrition.ts'
+import { newId, totalsOf } from '../../../supabase/functions/_shared/nutrition.ts'
 import { showToast } from '../toast'
 import { fmt, haptic, KCAL } from '../format'
 
-type Phase = 'input' | 'analyzing' | 'review' | 'error'
+type Phase = 'input' | 'search' | 'analyzing' | 'review' | 'error'
 
 function entryFromAnalysis(a: Analysis, date: string, meal: Meal, rawText: string, base?: FoodEntry): FoodEntry {
   const now = new Date().toISOString()
@@ -286,10 +287,29 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
     ) : null
 
   return (
-    <Sheet open={open} onClose={onClose} title={phase === 'review' ? 'זה נראה נכון?' : 'מה אכלת?'} footer={footer}>
+    <Sheet open={open} onClose={onClose} title={phase === 'review' ? 'זה נראה נכון?' : phase === 'search' ? 'חיפוש במאגר' : 'מה אכלת?'} footer={footer}>
       <PhotoInput inputRef={fileRef} onFile={(f) => void onPickPhoto(f)} testId="food-photo-input" />
       <div className="flex flex-col gap-4 pt-1">
         <MealPicker value={meal} onChange={setMeal} />
+
+        {phase === 'search' && (
+          <FoodSearch
+            onCancel={() => setPhase('input')}
+            onPick={(item) => {
+              setAnalysis({
+                title: item.name,
+                emoji: item.emoji ?? '🍽️',
+                items: [item],
+                totals: totalsOf([item]),
+                overall_confidence: item.confidence,
+                clarification: null,
+                provider: 'database',
+              })
+              setPhase('review')
+              haptic()
+            }}
+          />
+        )}
 
         {phase === 'input' && (
           <>
@@ -320,6 +340,16 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
               >
                 {photoBusy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <ImagePlus className="size-5" aria-hidden />} הוסף תמונה
                 <span className="font-normal text-ink-3">· מהגלריה או מצלמה</span>
+              </button>
+            )}
+            {!photo && (
+              <button
+                type="button"
+                onClick={() => setPhase('search')}
+                className="pressable flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-surface-2 font-medium text-ink-2"
+              >
+                <Search className="size-5" aria-hidden /> חיפוש במאגר המזון
+                <span className="font-normal text-ink-3">· מוצר או מאכל מדויק</span>
               </button>
             )}
             {recents.length > 0 && !photo && (

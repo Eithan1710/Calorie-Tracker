@@ -2,6 +2,7 @@
 // Holds the AI provider keys server-side; the browser never sees them.
 import { createClient } from '@supabase/supabase-js'
 import { analyzeFood } from '../_shared/pipeline.ts'
+import { toDbFood, type SearchFoods } from '../_shared/foodMatch.ts'
 import { AnalyzeRequestSchema } from '../_shared/schema.ts'
 import { corsHeaders, json } from '../_shared/http.ts'
 import { getSecret } from '../_shared/secrets.ts'
@@ -62,8 +63,19 @@ Deno.serve(async (req) => {
   const parsed = AnalyzeRequestSchema.safeParse(body)
   if (!parsed.success) return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
 
+  // the food database (mz_foods). If it isn't installed yet or is slow, matching
+  // simply falls back to the curated table + USDA — analysis never fails because of it.
+  const searchFoods: SearchFoods = async (q, opts) => {
+    const { data, error } = await admin
+      .rpc('mz_search_foods', { q, lim: opts?.limit ?? 8, want_state: opts?.state ?? null })
+      .abortSignal(AbortSignal.timeout(2500))
+    if (error || !Array.isArray(data)) return []
+    return data.map((r: Record<string, unknown>) => toDbFood(r))
+  }
+
   const result = await analyzeFood(parsed.data, {
     env,
+    searchFoods: env('FOOD_DB_DISABLED') === 'true' ? undefined : searchFoods,
     log: (entry) => {
       if (!userId) return
       // fire-and-forget; never store images, and only a truncated text

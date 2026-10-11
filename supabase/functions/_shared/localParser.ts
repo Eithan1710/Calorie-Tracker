@@ -1,6 +1,6 @@
 import { FOODS, FOOD_BY_KEY, type FoodRef, type UnitKey } from './foodDb.ts'
 import type { Analysis, FoodItem } from './schema.ts'
-import { newId, overallConfidence, per100FromRef, scale, totalsOf } from './nutrition.ts'
+import { newId, overallConfidence, per100FromRef, provenanceFromRef, scale, totalsOf } from './nutrition.ts'
 
 /**
  * Deterministic Hebrew food parser.
@@ -87,7 +87,10 @@ const KNOWN_LEADS = new Set([...ALIAS_FIRST_TOKENS, ...Object.keys(NUMBER_WORDS)
 /** Split the free text into food segments. */
 function segment(text: string): { text: string; afterWith: boolean }[] {
   let t = normalizeHebrew(text)
-  t = t.replace(/(^|\s)כ-?(?=\d)/g, '$1').replace(/(\d+)\s*-\s*(\d+)/g, (_m, a, b) => String((Number(a) + Number(b)) / 2))
+  t = t
+    .replace(/(^|\s)ו-(?=\d)/g, '$1, ') // "ו-2 פרוסות" → a new item
+    .replace(/(^|\s)כ-?(?=\d)/g, '$1')
+    .replace(/(\d+)\s*-\s*(\d+)/g, (_m, a, b) => String((Number(a) + Number(b)) / 2))
   for (const lead of LEAD_PHRASES) {
     t = t.replace(new RegExp(`(^|[\\s,])${lead}(?=\\s)`, 'g'), '$1')
   }
@@ -135,7 +138,7 @@ function parseNumber(tok: string): number | null {
   return NUMBER_WORDS[tok] ?? null
 }
 
-interface SegmentParse { ref: FoodRef; grams: number; confidence: number; assumptions: string[] }
+interface SegmentParse { ref: FoodRef; grams: number; confidence: number; assumptions: string[]; basis: 'stated' | 'counted' | 'estimated' }
 
 function matchFood(tokens: string[]): { ref: FoodRef; start: number; len: number } | null {
   const candidates = new Set(ALIASES.flatMap((a) => a.tokens))
@@ -182,13 +185,16 @@ function parseSegment(seg: string): SegmentParse | null {
   const assumptions: string[] = []
   let grams: number
   let confidence: number
+  let basis: SegmentParse['basis'] = 'counted'
   const u = unit as (typeof UNIT_WORDS)[string] | null
   if (u === 'g' || u === 'ml') {
     grams = count ?? ref.units.serving
     confidence = 0.85
+    basis = count === null ? 'estimated' : 'stated'
   } else if (u === 'kg' || u === 'l') {
     grams = (count ?? 1) * 1000
     confidence = 0.85
+    basis = 'stated'
   } else if (u) {
     const per = ref.units[u] ?? ref.units.unit ?? ref.units.serving
     grams = (count ?? 1) * per * sizeFactor
@@ -202,25 +208,35 @@ function parseSegment(seg: string): SegmentParse | null {
   } else {
     grams = ref.units.serving * sizeFactor
     confidence = 0.5
+    basis = 'estimated'
     assumptions.push(`מנה סטנדרטית ~${Math.round(grams)} גרם`)
   }
   if (sizeFactor !== 1) assumptions.push(sizeFactor > 1 ? 'מנה גדולה מהרגיל' : 'מנה קטנה מהרגיל')
   if (ref.state === 'raw' && ref.key === 'ground_beef_raw') assumptions.push('משקל נא, כמקובל בתפריטים')
   if (leftovers.length) confidence -= 0.15
 
-  return { ref, grams: Math.round(grams), confidence: Math.max(0.3, confidence), assumptions }
+  if (ref.verification === 'estimate') confidence = Math.min(confidence, 0.6)
+  return { ref, grams: Math.round(grams), confidence: Math.max(0.3, confidence), assumptions, basis }
 }
+
+const OIL_KEYS = new Set(['olive_oil', 'oil', 'butter'])
 
 export function parseLocally(text: string): LocalParseResult {
   const segs = segment(text)
   const items: FoodItem[] = []
   const unmatched: string[] = []
+  const parsedSegs = segs.map((seg) => ({ seg, parsed: parseSegment(seg.text) }))
+  // oil written in the text ("עם כף שמן") is counted on its own → dishes use their no-oil record
+  const oilListed = parsedSegs.some((p) => p.parsed && OIL_KEYS.has(p.parsed.ref.key))
 
-  for (const seg of segs) {
-    const parsed = parseSegment(seg.text)
+  for (const { seg, parsed: p0 } of parsedSegs) {
+    let parsed = p0
     if (!parsed) {
       unmatched.push(seg.text)
       continue
+    }
+    if (oilListed && parsed.ref.fat_added && parsed.ref.no_oil && FOOD_BY_KEY[parsed.ref.no_oil]) {
+      parsed = { ...parsed, ref: FOOD_BY_KEY[parsed.ref.no_oil], assumptions: [...parsed.assumptions, 'השמן נספר בנפרד'] }
     }
     // "טוסט עם גבינה צהובה" — the cheese is already in the toast
     const prev = items[items.length - 1]
@@ -240,6 +256,8 @@ export function parseLocally(text: string): LocalParseResult {
       db_key: parsed.ref.key,
       state: parsed.ref.state,
       emoji: parsed.ref.emoji,
+      basis: parsed.basis,
+      ...provenanceFromRef(parsed.ref),
     })
   }
 

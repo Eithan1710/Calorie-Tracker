@@ -50,3 +50,46 @@ jobs:
             exit 1
           }
           echo "::notice title=e2e::$(sed -e 's/\x1b\[[0-9;]*m//g' e2e.log | grep -E '^\s+[0-9]+ (passed|failed|flaky|skipped)' | tr -s ' ' | tr '\n' ' ')"
+
+  # Food database: every curated number still matches its source record, the full
+  # build passes validation, the migration applies (twice) on Postgres, and search
+  # quality / access rules hold. Uses the raw datasets on the data/sources branch.
+  food-data:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Raw datasets (data/sources branch)
+        run: |
+          git fetch --depth 1 origin data/sources
+          mkdir -p "$RUNNER_TEMP/food-sources"
+          git archive FETCH_HEAD | tar -x -C "$RUNNER_TEMP/food-sources"
+      - name: Curated table matches its sources
+        run: python3 -I scripts/foods/build_curated.py "$RUNNER_TEMP/food-sources" --check
+      - name: Build + validate the full database
+        run: |
+          mkdir -p build
+          python3 -I scripts/foods/build.py "$RUNNER_TEMP/food-sources" build/foods.ndjson build/import-report.md
+          cat build/import-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Migration (twice) + import + search checks
+        run: |
+          set -e
+          P="psql -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/local_stubs.sql
+          $P -f supabase/migrations/20261011000000_food_database.sql
+          $P -f supabase/migrations/20261011000000_food_database.sql
+          python3 -I scripts/foods/import_foods.py build/foods.ndjson --sql | $P
+          $P -f supabase/tests/food_search.sql 2>&1 | tee search.log
+          grep -q 'food search checks passed' search.log

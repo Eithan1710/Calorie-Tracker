@@ -11,3 +11,4 @@ supabase/.temp
 supabase/.branches
 .DS_Store
 dist-e2e
+build/

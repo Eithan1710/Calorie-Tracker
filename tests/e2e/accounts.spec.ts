@@ -114,7 +114,7 @@ test('two users on the same device see only their own data', async ({ page }) =>
   await login(page, 'איתן', '123456')
   await onboard(page, '82')
   await logFood(page, '2 פרוסות לחם')
-  await expect(hero(page)).toContainText('160')
+  await expect(hero(page)).toContainText('158')
   await expect.poll(() => sb.rows('mz_food_entries').length).toBe(1)
   await logout(page)
 

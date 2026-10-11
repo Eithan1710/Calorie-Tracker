@@ -81,6 +81,7 @@ bcrypt hash of `"maazan:" + password`, so the shared project's minimum length ne
 | Web Push keys, cron secret | generated inside Supabase, kept in Vault |
 | AI keys | GitHub secret → [`sync-ai-keys.yml`](.github/workflows/sync-ai-keys.yml) → `mz-config` function → Vault. No Supabase token needed: the function verifies GitHub's signed OIDC token and only accepts this repo's `main` branch |
 | Edge functions | [`deploy-supabase.yml`](.github/workflows/deploy-supabase.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`) redeploys after code changes |
+| Food database (~13k foods) | [`import-food-db.yml`](.github/workflows/import-food-db.yml) (manual, needs `SUPABASE_ACCESS_TOKEN`): applies the additive `mz_foods` migration and loads MoH + USDA + Israeli products. Raw data refreshed by [`fetch-food-sources.yml`](.github/workflows/fetch-food-sources.yml). See [docs/food-data](docs/food-data/README.md) |
 | PWA | [`pages.yml`](.github/workflows/pages.yml) on push to `main`: tests → build → GitHub Pages |
 | Checks | [`ci.yml`](.github/workflows/ci.yml) on every other branch / PR: unit tests, typecheck + build, Playwright (mobile, desktop, accounts) |
 
@@ -168,14 +169,18 @@ it shows how many calories are still available. The app never recommends aggress
 text / photo
   → AI with the nutrition skill: identify items, edible grams, raw/cooked state, map to table keys
   → zod validation of the model JSON (invalid → next provider)
-  → nutrients: curated table (USDA SR Legacy + Israeli labels) → USDA FDC search → AI per-100 g estimate (sanity-checked)
+  → nutrients: curated table → food database (Israeli MoH + USDA + Israeli products, mz_foods)
+     → USDA FDC live search → AI per-100 g estimate (sanity-checked, flagged)
+  → oil never counted twice; raw/cooked asked when it matters
   → calories/macros computed deterministically; totals summed in code; kcal range from portion range
   → result with confidence, assumptions, source per item → client validates again → user confirms/edits
 ```
 
 - **The model never supplies the final calories.** It decides *what* and *how much*; numbers come from
-  [`foodDb.ts`](supabase/functions/_shared/foodDb.ts) (135 foods incl. Israeli staples, per-100 g, portion units,
-  composite dishes that list their ingredients to prevent double counting) or USDA FoodData Central.
+  the curated table [`foodDb.generated.ts`](supabase/functions/_shared/foodDb.generated.ts) (205 foods, each
+  copied by script from a referenced Israeli MoH / USDA / product-label record, with servings, raw/cooked
+  pairs and no-oil variants) or the ~13k-row food database. Sources, licences, validation and before/after
+  values: [docs/food-data](docs/food-data/README.md).
   Only foods found in neither use the model's own per-100 g estimate, which must pass an Atwater
   consistency check, is labelled `הערכה`, and caps confidence.
 - **Skill / system instructions:** [`skills/nutrition-analysis/SKILL.md`](skills/nutrition-analysis/SKILL.md) —

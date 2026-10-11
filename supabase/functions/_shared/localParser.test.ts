@@ -44,14 +44,14 @@ describe('local Hebrew parser', () => {
     expect(keys('2 פרוסות לחם מלא')).toEqual(['bread_whole'])
     expect(item('2 פרוסות לחם מלא', 'bread_whole').grams).toBe(64)
     expect(item('כוס חלב', 'milk_3').grams).toBe(240)
-    expect(item('קופסת טונה', 'tuna_water').grams).toBe(110)
+    expect(item('קופסת טונה', 'tuna_water').grams).toBe(112) // drained Israeli can (MoH/StarKist)
     expect(item('2 כדורי גלידה', 'ice_cream').grams).toBe(140)
     expect(item('משולש פיצה', 'pizza').grams).toBe(120)
-    expect(item('4 כדורי פלאפל', 'falafel').grams).toBe(68)
+    expect(item('4 כדורי פלאפל', 'falafel').grams).toBe(80) // ~20 g Israeli falafel ball
   })
 
   it('understands Hebrew number words, halves and units', () => {
-    expect(item('שתי כפות טחינה', 'tahini').grams).toBe(30)
+    expect(item('שתי כפות טחינה', 'tahini').grams).toBe(42) // MoH: tbsp prepared tahini = 21 g
     expect(item('חצי אבוקדו', 'avocado').grams).toBe(75)
     expect(item('כוס וחצי אורז', 'rice_white_cooked').grams).toBe(240)
     expect(item('כפית שמן זית', 'olive_oil').grams).toBe(5)

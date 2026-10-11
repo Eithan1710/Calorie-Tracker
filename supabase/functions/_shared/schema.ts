@@ -15,7 +15,13 @@ export const Per100Schema = z.object({
   kcal: num(0, 950),
   protein_g: num(0, 100),
   fat_g: num(0, 100),
+  /** available carbohydrate (without fibre), as on Israeli labels */
   carbs_g: num(0, 100),
+  /** optional — absent/null means "not reported by the source", never zero */
+  fiber_g: num(0, 100).nullable().optional(),
+  sugar_g: num(0, 100).nullable().optional(),
+  sat_fat_g: num(0, 100).nullable().optional(),
+  sodium_mg: num(0, 40000).nullable().optional(),
 })
 export type Per100 = z.infer<typeof Per100Schema>
 
@@ -29,6 +35,10 @@ export const AiItemSchema = z.object({
   grams_low: num(0, 3000).nullable().optional(),
   grams_high: num(0, 3000).nullable().optional(),
   state: z.enum(['raw', 'cooked', 'as_sold', 'unknown']).default('unknown'),
+  /** brand / product line when the user named one ("דנונה PRO", "תנובה") */
+  brand: z.string().trim().max(60).nullable().optional(),
+  /** where the amount came from: user wrote grams/ml, counted units, or the model estimated it */
+  quantity_basis: z.enum(['stated', 'counted', 'estimated']).default('estimated'),
   /** model's own per-100 g estimate — required when db_key is null */
   est_per100: Per100Schema.nullable().optional(),
   confidence: num(0, 1).default(0.6),
@@ -49,6 +59,11 @@ export type AiParse = z.infer<typeof AiParseSchema>
 export const ItemSourceSchema = z.enum(['db', 'usda', 'ai', 'manual'])
 export type ItemSource = z.infer<typeof ItemSourceSchema>
 
+/** which dataset the numbers came from (finer than `source`, kept optional for old entries) */
+export const ItemOriginSchema = z.enum(['curated', 'moh', 'usda', 'off', 'recipe', 'estimate', 'ai', 'manual'])
+export const VerificationSchema = z.enum(['official', 'label', 'recipe', 'community', 'estimate'])
+export type Verification = z.infer<typeof VerificationSchema>
+
 export const FoodItemSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -66,6 +81,17 @@ export const FoodItemSchema = z.object({
   db_key: z.string().nullable().optional(),
   state: z.string().optional(),
   emoji: z.string().optional(),
+  // ── provenance (all optional: entries saved before the food database stay valid) ──
+  /** dataset record the numbers came from: 'moh:1561', 'fdc:171077', 'off:7290…', 'cur:egg' */
+  ref: z.string().max(400).optional(),
+  ref_name: z.string().max(200).optional(),
+  brand: z.string().max(80).optional(),
+  origin: ItemOriginSchema.optional(),
+  verification: VerificationSchema.optional(),
+  /** stated = the user gave the amount, counted = units × standard weight, estimated = guessed */
+  basis: z.enum(['stated', 'counted', 'estimated']).optional(),
+  /** known variance of this food, shown to the user */
+  note: z.string().max(200).optional(),
 })
 export type FoodItem = z.infer<typeof FoodItemSchema>
 

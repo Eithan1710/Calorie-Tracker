@@ -47,15 +47,15 @@ test.describe('daily logging', () => {
     await addText(page, "אכלתי 3 ביצים, 2 פרוסות לחם, קוטג' וסלט")
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('זה נראה נכון?')).toBeVisible()
-    // 215 + 160 + 120 + 30
-    await expect(dialog.getByTestId('analysis-total')).toHaveText(/525/)
+    // 215 + 158 + 119 + 26 (MoH records: egg 143, white bread 264, cottage 5% 95, Israeli salad 17 per 100 g)
+    await expect(dialog.getByTestId('analysis-total')).toHaveText(/518/)
     await page.screenshot({ path: shot('review', info.project.name) })
     await dialog.getByRole('button', { name: 'אישור' }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(hero(page)).toContainText('525')
-    // protein 18.9 + 4.6 + 13.8 + 1.2 = 38.5 → 39
+    await expect(hero(page)).toContainText('518')
+    // protein 18.9 + 5.0 + 13.8 + 1.2 = 38.9 → 39
     await expect(page.getByRole('region', { name: 'חלבון' })).toContainText('39')
-    await expect(page.getByText('נוסף · 525')).toBeVisible()
+    await expect(page.getByText('נוסף · 518')).toBeVisible()
   })
 
   test('AI result: edit grams recalculates, then confirm', async ({ page }) => {
@@ -165,7 +165,7 @@ test.describe('daily logging', () => {
     await page.goto('/')
     await addText(page, '2 פרוסות לחם')
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
-    await expect(hero(page)).toContainText('160')
+    await expect(hero(page)).toContainText('158')
     await expect(page.getByRole('region', { name: 'מה אכלתי' }).locator('img')).toHaveCount(0)
   })
 
@@ -173,22 +173,49 @@ test.describe('daily logging', () => {
     await page.goto('/')
     await addText(page, '2 טוסטים עם גבינה צהובה')
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
-    await expect(hero(page)).toContainText('604')
+    await expect(hero(page)).toContainText('592')
     await page.getByRole('region', { name: 'מה אכלתי' }).getByRole('button', { name: /טוסט/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'מחיקה' }).click()
     await expect(page.getByText('עוד לא נרשם כלום.')).toBeVisible()
     await page.getByRole('button', { name: 'ביטול' }).click()
-    await expect(hero(page)).toContainText('604')
+    await expect(hero(page)).toContainText('592')
+  })
+
+  test('food database: search, pick a serving, log it; swap an item for another record', async ({ page }, info) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'הוסף אוכל' }).first().click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: /חיפוש במאגר המזון/ }).click()
+    await dialog.getByLabel('חיפוש במאגר המזון').fill('קוטג 3')
+    await dialog.getByRole('button', { name: /קוטג' 3%/ }).first().click()
+    // amount: the serving chips come from the record (גביע = 250 g)
+    await dialog.getByRole('button', { name: /גביע · 250/ }).click()
+    await expect(dialog.getByText('תווית יצרן').first()).toBeVisible()
+    await page.screenshot({ path: shot('food-search-amount', info.project.name) })
+    await dialog.getByRole('button', { name: /הוסף · 193/ }).click() // moh:500 Tnuva 3% = 77 kcal/100 g × 250 g
+    await expect(dialog.getByTestId('analysis-total')).toHaveText(/193/)
+    await dialog.getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('193')
+
+    // swap: "לחם" was white bread; replace it with whole-wheat, keeping the 60 g
+    await addText(page, '2 פרוסות לחם')
+    await expect(dialog.getByTestId('analysis-total')).toHaveText(/158/)
+    await dialog.getByRole('button', { name: 'החלף לחם לבן' }).click()
+    await dialog.getByLabel('חיפוש במאגר המזון').fill('לחם מלא')
+    await dialog.getByRole('button', { name: /^לחם מלא/ }).first().click()
+    await dialog.getByRole('button', { name: /החלף · 148/ }).click() // moh:2005 246 × 60 g
+    await expect(dialog.getByTestId('analysis-total')).toHaveText(/148/)
+    await expect(dialog.getByLabel('גרמים של לחם מלא')).toHaveValue('60')
   })
 
   test('one-tap re-log of a recent meal', async ({ page }) => {
     await page.goto('/')
     await addText(page, 'יוגורט חלבון')
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
-    await expect(hero(page)).toContainText('124')
+    await expect(hero(page)).toContainText('116')
     await page.getByRole('button', { name: 'הוסף אוכל' }).first().click()
     await page.getByRole('dialog').getByRole('button', { name: /יוגורט חלבון/ }).click()
-    await expect(hero(page)).toContainText('248')
+    await expect(hero(page)).toContainText('232')
   })
 })
 

@@ -6,7 +6,24 @@ import type { FoodRef } from './foodDb.ts'
 const r1 = (n: number) => Math.round(n * 10) / 10
 
 export function per100FromRef(ref: FoodRef): Per100 {
-  return { kcal: ref.kcal, protein_g: ref.p, fat_g: ref.f, carbs_g: ref.c }
+  const p: Per100 = { kcal: ref.kcal, protein_g: ref.p, fat_g: ref.f, carbs_g: ref.c }
+  // optional nutrients only when the source reports them (missing ≠ zero)
+  if (ref.fib !== undefined) p.fiber_g = ref.fib
+  if (ref.sug !== undefined) p.sugar_g = ref.sug
+  if (ref.sat !== undefined) p.sat_fat_g = ref.sat
+  if (ref.na !== undefined) p.sodium_mg = ref.na
+  return p
+}
+
+/** Provenance fields of an item computed from the curated table. */
+export function provenanceFromRef(ref: FoodRef) {
+  return {
+    ref: `cur:${ref.key}`,
+    ref_name: ref.ref_name ?? ref.he,
+    origin: (ref.source === 'recipe' || ref.source === 'estimate' ? ref.source : 'curated') as 'curated' | 'recipe' | 'estimate',
+    verification: ref.verification,
+    ...(ref.note ? { note: ref.note } : {}),
+  }
 }
 
 export function scale(per100: Per100, grams: number) {

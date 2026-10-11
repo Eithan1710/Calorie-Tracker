@@ -39,12 +39,14 @@ describe('analyzeFood pipeline', () => {
     if (!r.ok) return
     const [patty, bun, sauce] = r.analysis.items
     expect(patty.source).toBe('db')
-    expect(patty.calories).toBe(508) // 200 g × 254
-    expect(patty.protein_g).toBeCloseTo(34.4)
-    expect(bun.calories).toBe(195) // 70 × 2.79
+    expect(patty.calories).toBe(494) // 200 g × 247 (MoH moh:655, raw ground beef)
+    expect(patty.protein_g).toBeCloseTo(34.8)
+    expect(patty.ref).toBe('cur:ground_beef_raw')
+    expect(patty.verification).toBe('official')
+    expect(bun.calories).toBe(184) // 70 × 2.63 (MoH moh:1970)
     expect(sauce.source).toBe('ai')
     expect(sauce.confidence).toBeLessThanOrEqual(0.5)
-    expect(r.analysis.totals.calories).toBe(508 + 195 + 120)
+    expect(r.analysis.totals.calories).toBe(494 + 184 + 120)
     expect(r.analysis.totals.calories_low).toBeLessThan(r.analysis.totals.calories)
     expect(r.analysis.totals.calories_high).toBeGreaterThan(r.analysis.totals.calories)
     expect(r.analysis.provider).toBe('a')
