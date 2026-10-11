@@ -84,13 +84,31 @@ jobs:
             unzip -o -q "$kind.zip"
           done
           rm -f *.zip
-          ls -la
-          for f in *.json; do python3 - "$f" <<'PY'
-          import json,sys
-          d=json.load(open(sys.argv[1])); k=list(d)[0]
-          print(f"::notice title=USDA file {sys.argv[1]}::{k}: {len(d[k])} foods")
+          # keep a compact subset: per-100 g macros + fibre/sugar/sodium/sat-fat + portions
+          python3 - <<'PY'
+          import glob, gzip, json
+          N = {1008: 'kcal', 2047: 'kcal_atw_gen', 2048: 'kcal_atw_spec', 1003: 'protein', 1004: 'fat', 1005: 'carbs', 1050: 'carbs_sum',
+               1079: 'fiber', 2000: 'sugar', 1063: 'sugar_nlea', 1093: 'sodium', 1258: 'sat_fat', 1051: 'water', 1018: 'alcohol'}
+          n = 0
+          with gzip.open('foods.jsonl.gz', 'wt', encoding='utf-8') as out:
+              for path in glob.glob('*.json'):
+                  d = json.load(open(path)); key = list(d)[0]
+                  for f in d[key]:
+                      nut = {}
+                      for fn in f.get('foodNutrients', []):
+                          nid = (fn.get('nutrient') or {}).get('id')
+                          if nid in N and fn.get('amount') is not None and N[nid] not in nut:
+                              nut[N[nid]] = fn['amount']
+                      portions = [{'g': p.get('gramWeight'), 'amount': p.get('amount'), 'unit': (p.get('measureUnit') or {}).get('name'),
+                                   'desc': p.get('portionDescription') or p.get('modifier')} for p in f.get('foodPortions', []) if p.get('gramWeight')]
+                      out.write(json.dumps({'fdcId': f['fdcId'], 'dataset': key, 'description': f['description'],
+                                            'category': (f.get('foodCategory') or {}).get('description'),
+                                            'published': f.get('publicationDate'), 'nutrients': nut, 'portions': portions[:8]}) + '\n')
+                      n += 1
+          print(f'::notice title=USDA compact::{n} foods')
           PY
-          gzip -9 "$f"; done
+          rm -f *.json
+          ls -la
       - name: Open Food Facts — products sold in Israel (bulk CSV export, ODbL)
         run: |
           set -euo pipefail
@@ -124,6 +142,7 @@ jobs:
           git rm -rq --cached . || true
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name out -exec rm -rf {} +
           mv out/* . && rmdir out
+          echo "::notice title=committing::$(du -ah . --exclude=.git | sort -h | tail -12 | tr '\n' ' ')"
           printf '# Raw food-composition source files\n\nFetched by .github/workflows/fetch-food-sources.yml on %s.\n' "$(date -u +%F)" > README.md
           git add -A
           git commit -qm "Raw food sources $(date -u +%F)"
