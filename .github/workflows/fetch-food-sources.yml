@@ -75,13 +75,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out/usda && cd out/usda
-          page=$(curl -sSL https://fdc.nal.usda.gov/download-datasets)
-          for kind in foundation_food_json sr_legacy_food_json; do
-            url=$(printf '%s' "$page" | grep -oE "https?://[^\"']*FoodData_Central_${kind}_[0-9-]+\.zip|/fdc-datasets/FoodData_Central_${kind}_[0-9-]+\.zip" | head -1)
-            case "$url" in /*) url="https://fdc.nal.usda.gov$url";; esac
-            echo "::notice title=USDA $kind::$url"
-            curl -sSLf "$url" -o "$kind.zip"
-            unzip -o -q "$kind.zip"
+          # current releases (the download page is JS-rendered, so links are pinned; update when USDA publishes new ones)
+          for url in https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip \
+                     https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip; do
+            echo "::notice title=USDA download::$url"
+            for try in 1 2 3; do curl -sSLf --retry 3 "$url" -o d.zip && break; sleep 10; done
+            unzip -o -q d.zip && rm -f d.zip
           done
           rm -f *.zip
           # keep a compact subset: per-100 g macros + fibre/sugar/sodium/sat-fat + portions
