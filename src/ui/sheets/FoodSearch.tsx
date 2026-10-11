@@ -7,7 +7,8 @@ import { CATEGORIES, mergeResults, recentFoods, searchLocal, searchRemote, type 
 import { displayName, itemFromDb, STATE_LABEL_HE, trustBadge, type DbFood } from '../../../supabase/functions/_shared/foodMatch.ts'
 import { FOOD_BY_KEY } from '../../../supabase/functions/_shared/foodDb.ts'
 import { newId, per100FromRef, scale } from '../../../supabase/functions/_shared/nutrition.ts'
-import type { FoodItem, Per100 } from '../../data/types'
+import type { FoodItem } from '../../data/types'
+import type { Per100 } from '../../../supabase/functions/_shared/schema.ts'
 
 const UNIT_HE: Record<string, string> = {
   unit: 'יחידה', slice: 'פרוסה', tbsp: 'כף', tsp: 'כפית', cup: 'כוס', handful: 'חופן', can: 'קופסה', container: 'גביע',
