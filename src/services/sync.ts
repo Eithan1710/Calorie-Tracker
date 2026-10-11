@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react'
 import { getSupabase } from './supabase'
 import { hasSupabase } from './config'
 import {
-  exercisesForDate, foodForDate, getState, markClean, onLocalChange, setSteps, updateSettings, upsertExercise, upsertFood,
+  applyHealthRow, exercisesForDate, foodForDate, getState, markClean, onLocalChange, updateSettings, upsertExercise, upsertFood,
 } from '../data/store'
-import type { Exercise, FoodEntry } from '../data/types'
+import type { Exercise, FoodEntry, HealthDay } from '../data/types'
 import { summarizeDay } from '../domain/day'
 import { isValidProfile } from '../domain/energy'
 import { isValidTarget } from '../domain/goal'
@@ -107,10 +107,19 @@ const exToRow = (e: Exercise, uid: string) => ({
   lifts: e.lifts ?? [],
   muscles: e.muscles ?? [],
   volume_kg: e.volume_kg != null ? Math.round(e.volume_kg) : null,
+  origin: e.origin ?? 'manual',
+  started_at: e.started_at ?? null,
+  ended_at: e.ended_at ?? null,
+  source_app: e.source_app ?? null,
+  title: e.title ?? null,
+  reported_kcal: e.reported_kcal ?? null,
+  outside_health: Boolean(e.outside_health),
   created_at: e.created_at,
   updated_at: e.updated_at,
   deleted_at: e.deleted ? e.updated_at : null,
 })
+/** columns added by 20261012000000_health_energy_workouts.sql — left out until the database has them */
+const HEALTH_EX_COLUMNS = ['origin', 'started_at', 'ended_at', 'source_app', 'title', 'reported_kcal', 'outside_health'] as const
 interface ExRow extends ReturnType<typeof exToRow> {}
 const rowToEx = (r: ExRow): Exercise => ({
   id: r.id,
@@ -123,10 +132,20 @@ const rowToEx = (r: ExRow): Exercise => ({
   lifts: Array.isArray(r.lifts) && r.lifts.length ? r.lifts : undefined,
   muscles: Array.isArray(r.muscles) && r.muscles.length ? r.muscles : undefined,
   volume_kg: r.volume_kg != null ? Number(r.volume_kg) : undefined,
+  origin: r.origin === 'apple_health' ? 'apple_health' : undefined,
+  started_at: r.started_at ?? undefined,
+  ended_at: r.ended_at ?? undefined,
+  source_app: r.source_app ?? undefined,
+  title: r.title ?? undefined,
+  reported_kcal: r.reported_kcal != null ? Number(r.reported_kcal) : undefined,
+  outside_health: r.outside_health ? true : undefined,
   created_at: r.created_at,
   updated_at: r.updated_at,
   deleted: Boolean(r.deleted_at),
 })
+
+type HealthRow = Pick<HealthDay, 'date' | 'steps' | 'source' | 'updated_at'> & { active_kcal?: number | string | null; resting_kcal?: number | string | null; health_as_of?: string | null }
+const numOrNull = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v))
 
 async function push() {
   const sb = await getSupabase()
@@ -147,7 +166,12 @@ async function push() {
     markClean('food', dirtyFood.map((f) => f.id))
   }
   if (dirtyEx.length) {
-    const { error } = await sb.from('mz_exercises').upsert(dirtyEx.map((e) => exToRow(e, userId!)))
+    const rows = dirtyEx.map((e) => exToRow(e, userId!))
+    let { error } = await sb.from('mz_exercises').upsert(rows)
+    if (error && HEALTH_EX_COLUMNS.some((c) => error!.message?.includes(c))) {
+      // database not migrated yet: keep manual logging working
+      ;({ error } = await sb.from('mz_exercises').upsert(rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !(HEALTH_EX_COLUMNS as readonly string[]).includes(k))))))
+    }
     if (error) throw error
     markClean('exercise', dirtyEx.map((e) => e.id))
   }
@@ -169,6 +193,7 @@ async function push() {
         food: foodForDate(st, date),
         exercises: exercisesForDate(st, date),
         steps: st.health[date]?.steps ?? 0,
+        health: st.health[date],
         profile: st.settings.profile,
         proteinTarget: st.settings.proteinTarget,
         target: st.settings.deficitTarget,
@@ -202,7 +227,7 @@ async function pull() {
   const [food, ex, health] = await Promise.all([
     sb.from('mz_food_entries').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
     sb.from('mz_exercises').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
-    sb.from('mz_health_data').select('date,steps,source,updated_at').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
+    sb.from('mz_health_data').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
   ])
   if (food.error) throw food.error
   if (ex.error) throw ex.error
@@ -220,10 +245,18 @@ async function pull() {
     if (local?.dirty && local.updated_at > row.updated_at) continue
     upsertExercise(rowToEx(row), { fromServer: true })
   }
-  for (const row of (health.data ?? []) as { date: string; steps: number; source: 'manual' | 'shortcut' | 'url'; updated_at: string }[]) {
+  for (const row of (health.data ?? []) as HealthRow[]) {
     const local = s.health[row.date]
     if (local && local.updated_at >= row.updated_at) continue
-    setSteps(row.date, row.steps, row.source, { fromServer: true, updatedAt: row.updated_at })
+    applyHealthRow({
+      date: row.date,
+      steps: Number(row.steps) || 0,
+      source: row.source,
+      updated_at: row.updated_at,
+      active_kcal: numOrNull(row.active_kcal),
+      resting_kcal: numOrNull(row.resting_kcal),
+      health_as_of: row.health_as_of ?? null,
+    })
   }
   updateSettings({ lastPulledAt: startedAt })
 }

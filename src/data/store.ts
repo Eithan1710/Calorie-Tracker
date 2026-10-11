@@ -251,6 +251,7 @@ export function deleteExercise(id: string) {
 
 export function setSteps(date: string, steps: number, source: HealthDay['source'], opts: { fromServer?: boolean; updatedAt?: string } = {}) {
   const rec: HealthDay = {
+    ...state.health[date], // keep the day's Apple Health energy
     date,
     steps: Math.max(0, Math.round(steps)),
     source,
@@ -261,6 +262,14 @@ export function setSteps(date: string, steps: number, source: HealthDay['source'
   emit()
   void putMany('health', [rec])
   if (!opts.fromServer) localChanged()
+}
+
+/** A day's Apple Health row from the server (steps + energy snapshot). */
+export function applyHealthRow(row: Omit<HealthDay, 'dirty'>) {
+  const rec: HealthDay = { ...state.health[row.date], ...row, dirty: false }
+  state = { ...state, health: { ...state.health, [row.date]: rec } }
+  emit()
+  void putMany('health', [rec])
 }
 
 export function markClean(kind: 'food' | 'exercise' | 'health', ids: string[]) {

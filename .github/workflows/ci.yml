@@ -93,3 +93,12 @@ jobs:
           python3 -I scripts/foods/import_foods.py build/foods.ndjson --sql | $P
           $P -f supabase/tests/food_search.sql 2>&1 | tee search.log
           grep -q 'food search checks passed' search.log
+      - name: Apple Health ingest (migration twice + idempotency / safety checks)
+        run: |
+          set -e
+          P="psql -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/health_ingest_base.sql
+          $P -f supabase/migrations/20261012000000_health_energy_workouts.sql
+          $P -f supabase/migrations/20261012000000_health_energy_workouts.sql
+          $P -f supabase/tests/health_ingest.sql 2>&1 | tee health.log
+          grep -q 'health ingest checks passed' health.log

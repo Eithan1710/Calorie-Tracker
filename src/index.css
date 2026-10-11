@@ -46,6 +46,8 @@
   --carbs: #2f8fcf;
   --eaten: #e2733d;
   --burned: #17181b;
+  --active: #d23f6e;
+  --resting: #b9b5ab;
 
   --shadow-1: 0 1px 2px rgb(23 24 27 / 0.04), 0 4px 16px -6px rgb(23 24 27 / 0.08);
   --shadow-2: 0 2px 6px rgb(23 24 27 / 0.06), 0 18px 40px -12px rgb(23 24 27 / 0.22);
@@ -78,6 +80,8 @@
     --carbs: #5bb0e8;
     --eaten: #f08a55;
     --burned: #f3f2ee;
+    --active: #ff6f9a;
+    --resting: #55575e;
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow-2: 0 18px 40px -12px rgb(0 0 0 / 0.6);
   }

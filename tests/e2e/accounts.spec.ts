@@ -199,3 +199,54 @@ test('strength workout with total volume and muscle groups syncs to the account'
   expect(ex.volume_kg).toBe(8000)
   expect(ex.muscles).toEqual(['legs'])
 })
+
+test('Apple Health: resting + active energy and an imported Strava run, no double counting', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  // what the Shortcuts automation wrote at 12:30 (health-ingest → mz_ingest_health)
+  ;(sb.tables.mz_health_data ??= []).push({
+    user_id: u.id, date: '2026-10-06', steps: 6000, active_kcal: 420, resting_kcal: 1100,
+    health_as_of: '2026-10-06T12:30:00+03:00', source: 'shortcut', updated_at: '2026-10-06T09:30:05Z',
+  })
+  ;(sb.tables.mz_exercises ??= []).push({
+    id: '11111111-1111-5111-8111-111111111111', user_id: u.id, date: '2026-10-06', type: 'run', origin: 'apple_health',
+    title: 'Running', source_app: 'Strava', started_at: '2026-10-06T07:00:00+03:00', ended_at: '2026-10-06T07:30:00+03:00',
+    duration_min: 30, distance_km: 5, reported_kcal: 330, muscles: [], lifts: [], outside_health: false,
+    created_at: '2026-10-06T04:00:00Z', updated_at: '2026-10-06T09:30:05Z', deleted_at: null,
+  })
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await onboard(page, '82')
+
+  const energy = page.getByRole('region', { name: 'שריפה היום' })
+  // measured so far = 1,100 resting + 420 active; the run (330) is inside "active", not added
+  await expect(energy.getByTestId('energy-total')).toHaveText(/1,520/)
+  await expect(energy).toContainText('Apple Health')
+  await expect(energy.getByTestId('energy-status')).toContainText('היום 12:30')
+  // full-day: resting projected from 12.5 h (1,100 × 24 / 12.5 = 2,112) + 420 active
+  await expect(energy.getByTestId('energy-projection')).toContainText('2,530')
+  await expect(hero(page)).toContainText('שריפה צפויה היום')
+  await expect(hero(page)).toContainText('2,532')
+
+  const workouts = page.getByRole('button', { name: /אימונים היום/ })
+  await expect(workouts).toContainText('Strava')
+  await expect(workouts).toContainText('5 ק״מ')
+  await expect(workouts).toContainText('330')
+  await expect(workouts).toContainText('כלול בפעילה')
+  await page.screenshot({ path: `test-results/shots/apple-health-${test.info().project.name}.png`, fullPage: true })
+
+  // a gym session logged by hand is assumed to be in Apple's active energy …
+  await workouts.click()
+  const d = page.getByRole('dialog')
+  await d.getByRole('button', { name: '60' }).click()
+  await d.getByRole('button', { name: /הוסף/ }).click()
+  await expect(page.getByText(/כלול בשריפה של Apple Health/)).toBeVisible()
+  await expect(hero(page)).toContainText('2,532')
+  // … unless the user says Apple Health did not measure it: then (only) its estimate is added
+  await page.getByRole('button', { name: /אימונים היום/ }).click()
+  await page.getByRole('dialog').getByLabel(/בלי שעון/).check()
+  await page.keyboard.press('Escape')
+  await expect(hero(page)).toContainText('2,888') // + (5.0 MET × 3.5 × 82 / 200 − 1,777.5 / 1,440) × 60 ≈ 356
+  await expect.poll(() => sb.rows('mz_exercises').filter((r) => r.outside_health === true).length).toBe(1)
+  // the imported run was not pushed back or duplicated
+  expect(sb.rows('mz_exercises').filter((r) => r.origin === 'apple_health')).toHaveLength(1)
+})

@@ -1,15 +1,14 @@
 import { useMemo } from 'react'
-import { Check, ChevronLeft, ChevronRight, Clock, Dumbbell, Footprints, Plus, Settings2, TriangleAlert, Info, ArrowDown, Bell } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Clock, Plus, Settings2, TriangleAlert, Info, ArrowDown, Bell } from 'lucide-react'
 import { exercisesForDate, foodForDate, useStore } from '../../data/store'
 import { MEALS, type Exercise, type FoodEntry } from '../../data/types'
-import { summarizeDay, type DaySummary, toExerciseInput } from '../../domain/day'
+import { summarizeDay, type DaySummary } from '../../domain/day'
 import { addDays, toDateKey, type GoalStatus } from '../../domain/goal'
-import { workoutDisplayKcal, isValidProfile } from '../../domain/energy'
 import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
-import { EXERCISE_META } from '../sheets/ExerciseSheet'
 import { usePhotoUrl } from '../../services/photos'
 import { InstallApp } from '../InstallApp'
+import { EnergyCard, WorkoutsCard } from './Energy'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -50,7 +49,7 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
     return {
       food: f,
       exercises: ex,
-      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, profile: settings.profile, proteinTarget: settings.proteinTarget, target: settings.deficitTarget }),
+      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: settings.deficitTarget }),
     }
   }, [food, exercise, health, settings, date])
 }
@@ -76,15 +75,13 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr] lg:items-start">
         <div className="flex min-w-0 flex-col gap-4">
-          <BalanceHero s={summary} />
+          <BalanceHero s={summary} isToday={date === today} />
+          <EnergyCard s={summary} isToday={date === today} onSteps={actions.onSteps} />
+          <WorkoutsCard s={summary} exercises={exercises} onOpen={actions.onExercise} />
           <ProteinCard s={summary} />
           <div className="grid grid-cols-2 gap-3">
             <MacroTile label="שומן" value={summary.fat} color="var(--fat)" />
             <MacroTile label="פחמימות" value={summary.carbs} color="var(--carbs)" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <StepsTile steps={summary.steps} onClick={actions.onSteps} />
-            <ExerciseTile exercises={exercises} onClick={actions.onExercise} />
           </div>
         </div>
         <FoodLog food={food} total={summary.eaten} onAdd={actions.onAddFood} onOpen={actions.onOpenEntry} />
@@ -130,7 +127,7 @@ function Header({ date, today, onDate, onSettings }: { date: string; today: stri
 const G_MIN = -700 // balance axis (eaten − burned)
 const G_MAX = 400
 
-function BalanceHero({ s }: { s: DaySummary }) {
+function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
   const goal = s.goal
   if (!goal) return null
   const style = STATUS_STYLE[goal.status]
@@ -211,7 +208,7 @@ function BalanceHero({ s }: { s: DaySummary }) {
         <div>
           <p className="flex items-center gap-1.5 text-sm text-ink-3">
             <span className="size-2 rounded-full" style={{ background: 'var(--burned)' }} aria-hidden />
-            קלוריות שנשרפו
+            {s.energy?.mode === 'health' && s.energy.partial ? (isToday ? 'שריפה צפויה היום' : 'שריפה (משוערת ליום)') : 'קלוריות שנשרפו'}
           </p>
           <p className="num text-[28px] font-semibold tracking-tight">
             <AnimatedNumber value={s.burned} format={fmt} />
@@ -266,46 +263,6 @@ function MacroTile({ label, value, color }: { label: string; value: number; colo
       </p>
     </div>
   )
-}
-
-function StepsTile({ steps, onClick }: { steps: number; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="card pressable animate-rise px-4 py-3.5 text-start" style={{ animationDelay: '140ms' }} aria-label={`צעדים: ${fmt(steps)}. לעדכון`}>
-      <p className="flex items-center gap-1.5 text-sm text-ink-3">
-        <Footprints className="size-4" aria-hidden /> צעדים
-      </p>
-      <p className="mt-0.5 text-2xl font-semibold tracking-tight">{steps ? <AnimatedNumber value={steps} format={fmt} /> : <span className="text-ink-3">הוסף</span>}</p>
-    </button>
-  )
-}
-
-function ExerciseTile({ exercises, onClick }: { exercises: Exercise[]; onClick: () => void }) {
-  const profile = useStore((s) => s.settings.profile)
-  const kcal = isValidProfile(profile) ? exercises.reduce((sum, e) => sum + workoutDisplayKcal(toExerciseInput(e), profile), 0) : 0
-  const first = exercises[0]
-  return (
-    <button type="button" onClick={onClick} className="card pressable animate-rise px-4 py-3.5 text-start" style={{ animationDelay: '180ms' }} aria-label="אימון. להוספה או עריכה">
-      <p className="flex items-center gap-1.5 text-sm text-ink-3">
-        <Dumbbell className="size-4" aria-hidden /> אימון
-      </p>
-      {first ? (
-        <>
-          <p className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight">
-            {EXERCISE_META[first.type].emoji} {exerciseSummary(first)}
-            {exercises.length > 1 && <span className="text-ink-3"> +{exercises.length - 1}</span>}
-          </p>
-          <p className="text-sm text-ink-3">~{fmt(kcal)} {KCAL}</p>
-        </>
-      ) : (
-        <p className="mt-0.5 text-2xl font-semibold tracking-tight text-ink-3">הוסף</p>
-      )}
-    </button>
-  )
-}
-
-export function exerciseSummary(e: Exercise): string {
-  if ((e.type === 'run' || e.type === 'walk') && e.distance_km) return `${e.distance_km} ק״מ${e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}`
-  return `${EXERCISE_META[e.type].label}${e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}`
 }
 
 /** The entry's photo when it has one, otherwise its emoji. */

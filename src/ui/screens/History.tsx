@@ -25,6 +25,7 @@ export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
         food: foodForDate(st, date),
         exercises: exercisesForDate(st, date),
         steps: health[date]?.steps ?? 0,
+        health: health[date],
         profile: settings.profile,
         proteinTarget: settings.proteinTarget,
         target: settings.deficitTarget,

@@ -52,6 +52,18 @@ export interface Exercise extends Syncable {
   volume_kg?: number
   /** older entries only: per-exercise loads (no longer entered) */
   lifts?: Lift[]
+  /** 'apple_health' = imported by the Shortcuts automation (Strava, Hevy, Apple Watch…) */
+  origin?: 'manual' | 'apple_health'
+  started_at?: string
+  ended_at?: string
+  /** app that recorded it, as Apple Health reports it */
+  source_app?: string
+  /** workout name as Apple Health reports it ("Running", "Traditional Strength Training") */
+  title?: string
+  /** workout active energy reported by Apple Health (kcal above rest) */
+  reported_kcal?: number
+  /** manual workout that Apple Health did not measure → its estimate is added to Apple's active energy */
+  outside_health?: boolean
   created_at: string
 }
 
@@ -61,6 +73,12 @@ export interface HealthDay {
   steps: number
   source: 'manual' | 'shortcut' | 'url'
   updated_at: string
+  /** Apple Health "Active Energy" for the day (kcal), from the Shortcuts automation */
+  active_kcal?: number | null
+  /** Apple Health "Resting Energy" for the day (kcal) */
+  resting_kcal?: number | null
+  /** when the Apple Health snapshot was read */
+  health_as_of?: string | null
   dirty?: boolean
 }
 

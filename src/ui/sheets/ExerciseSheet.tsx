@@ -4,7 +4,8 @@ import { Sheet, PrimaryButton, NumberField, Segmented } from '../primitives'
 import { deleteExercise, exercisesForDate, getState, upsertExercise, useStore } from '../../data/store'
 import type { Exercise } from '../../data/types'
 import { isValidProfile, paceSecPerKm, workoutDisplay, type ExerciseInput, type ExerciseType, type Intensity, type Lift, type MuscleGroup, type RestStyle } from '../../domain/energy'
-import { toExerciseInput } from '../../domain/day'
+import { toDayWorkout } from '../../domain/day'
+import { dayEnergy } from '../../domain/expenditure'
 import { newId } from '../../../supabase/functions/_shared/nutrition.ts'
 import { fmt, fmtPace, haptic, KCAL } from '../format'
 import { showToast } from '../toast'
@@ -85,6 +86,14 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
   const profile = useStore((s) => s.settings.profile)
   const exMap = useStore((s) => s.exercise)
   const existing = useMemo(() => exercisesForDate({ ...getState(), exercise: exMap }, date), [exMap, date])
+  const health = useStore((s) => s.health[date])
+  const appleActive = health?.active_kcal != null
+  /** per-workout energy and how it enters the day (imported / estimated, included / added / duplicate) */
+  const lines = useMemo(() => {
+    if (!isValidProfile(profile)) return new Map()
+    const e = dayEnergy({ date, profile, steps: health?.steps ?? 0, workouts: existing.map(toDayWorkout), health })
+    return new Map(e.workouts.map((w) => [w.id, w]))
+  }, [profile, date, health, existing])
   const [type, setType] = useState<ExerciseType>('strength')
   const [distance, setDistance] = useState<number | ''>('')
   const [time, setTime] = useState('')
@@ -92,6 +101,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
   const [rest, setRest] = useState<RestStyle>('standard')
   const [muscles, setMuscles] = useState<MuscleGroup[]>([])
   const [volume, setVolume] = useState<number | ''>('')
+  const [outside, setOutside] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -101,6 +111,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       setRest('standard')
       setMuscles([])
       setVolume('')
+      setOutside(false)
     }
   }, [open])
 
@@ -134,13 +145,15 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       rest: type === 'strength' ? rest : undefined,
       muscles: type === 'strength' && muscles.length ? muscles : undefined,
       volume_kg: input.volumeKg ? Math.round(input.volumeKg) : undefined,
+      outside_health: appleActive && outside ? true : undefined,
       created_at: now,
       updated_at: now,
     }
     upsertExercise(ex)
     haptic(18)
     onClose()
-    showToast(`${EXERCISE_META[type].emoji} נוסף · ~${fmt(kcal)} ${KCAL}`, { label: 'ביטול', run: () => deleteExercise(ex.id) })
+    const msg = appleActive && !outside ? `${EXERCISE_META[type].emoji} נוסף · כלול בשריפה של Apple Health` : `${EXERCISE_META[type].emoji} נוסף · ~${fmt(kcal)} ${KCAL}`
+    showToast(msg, { label: 'ביטול', run: () => deleteExercise(ex.id) })
   }
 
   const toggleMuscle = (m: MuscleGroup) => setMuscles((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]))
@@ -159,24 +172,53 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       <div className="flex flex-col gap-5 pt-1">
         {existing.length > 0 && (
           <ul className="flex flex-col gap-1" aria-label="אימונים היום">
-            {existing.map((e) => (
-              <li key={e.id} className="flex items-center gap-3 rounded-2xl bg-surface-2 py-2 ps-3 pe-1">
-                <span className="text-xl" aria-hidden>{EXERCISE_META[e.type].emoji}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block">
-                    {EXERCISE_META[e.type].label}
-                    {e.distance_km ? ` · ${e.distance_km} ק״מ` : ''}
-                    {e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}
-                    {isValidProfile(profile) && <span className="text-ink-3"> · ~{fmt(workoutDisplay(toExerciseInput(e), profile).kcal)}</span>}
-                  </span>
-                  {e.type === 'strength' && strengthDetails(e) ? <span className="block truncate text-sm text-ink-3">{strengthDetails(e)}</span> : null}
-                </span>
-                <button type="button" onClick={() => deleteExercise(e.id)} className="pressable grid size-10 shrink-0 place-items-center rounded-xl text-ink-3 hover:text-surplus" aria-label={`מחק ${EXERCISE_META[e.type].label}`}>
-                  <Trash2 className="size-4" />
-                </button>
-              </li>
-            ))}
+            {existing.map((e) => {
+              const w = lines.get(e.id)
+              const imported = e.origin === 'apple_health'
+              return (
+                <li key={e.id} className="flex flex-col gap-1 rounded-2xl bg-surface-2 py-2 ps-3 pe-1">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl" aria-hidden>{EXERCISE_META[e.type].emoji}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block">
+                        {EXERCISE_META[e.type].label}
+                        {e.distance_km ? ` · ${e.distance_km} ק״מ` : ''}
+                        {e.duration_min ? ` · ${Math.round(e.duration_min)} דק׳` : ''}
+                        {w && w.kcal !== null && (
+                          <span className="text-ink-3"> · {w.kcalSource === 'imported' ? '' : '~'}{fmt(w.kcal)}</span>
+                        )}
+                      </span>
+                      {e.type === 'strength' && strengthDetails(e) ? <span className="block truncate text-sm text-ink-3">{strengthDetails(e)}</span> : null}
+                      <span className="block text-xs text-ink-3">
+                        {imported ? `מ-Apple Health${e.source_app ? ` · ${e.source_app}` : ''}${e.started_at ? ` · ${new Date(e.started_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'נרשם ידנית'}
+                        {w?.kcalSource === 'imported' ? ' · קלוריות מ-Apple Health' : w?.kcalSource === 'estimated' ? ' · קלוריות משוערות' : w ? ' · אין מספיק נתונים לחישוב' : ''}
+                        {w?.counting === 'duplicate' ? ' · נראה כפול — לא נספר' : w?.counting === 'included_in_active' ? ' · כלול באנרגיה הפעילה' : ''}
+                      </span>
+                    </span>
+                    <button type="button" onClick={() => deleteExercise(e.id)} className="pressable grid size-10 shrink-0 place-items-center rounded-xl text-ink-3 hover:text-surplus" aria-label={`מחק ${EXERCISE_META[e.type].label}`}>
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                  {!imported && appleActive && w?.counting !== 'duplicate' && (
+                    <label className="flex min-h-10 items-center gap-2 ps-9 text-sm text-ink-2">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[var(--ink)]"
+                        checked={Boolean(e.outside_health)}
+                        onChange={(ev) => upsertExercise({ ...e, outside_health: ev.target.checked || undefined, updated_at: new Date().toISOString() })}
+                      />
+                      לא נמדד ב-Apple Health (בלי שעון) — להוסיף לשריפה
+                    </label>
+                  )}
+                </li>
+              )
+            })}
           </ul>
+        )}
+        {appleActive && (
+          <p className="-mt-2 text-sm text-ink-3">
+            היום יש אנרגיה פעילה מ-Apple Health, והיא כבר כוללת אימונים שנמדדו בשעון או נכתבו מ-Strava/Hevy. אימון שתוסיף כאן לא יתווסף לשריפה, אלא אם תסמן שהוא לא נמדד.
+          </p>
         )}
 
         <div role="radiogroup" aria-label="סוג אימון" className="grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -259,6 +301,13 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
 
             <NumberField label="משקל כולל שהורם באימון (לא חובה)" unit="ק״ג" value={volume} onChange={setVolume} inputMode="numeric" min={0} max={200000} step={100} placeholder="8000" />
           </>
+        )}
+
+        {appleActive && (
+          <label className="flex min-h-11 items-center gap-2 rounded-2xl bg-surface-2 px-4 text-[15px]">
+            <input type="checkbox" className="size-4 accent-[var(--ink)]" checked={outside} onChange={(ev) => setOutside(ev.target.checked)} />
+            האימון לא נמדד ב-Apple Health — להוסיף את ההערכה לשריפה
+          </label>
         )}
 
         <div className="rounded-3xl bg-surface-2 p-4" aria-live="polite">
