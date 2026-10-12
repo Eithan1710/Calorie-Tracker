@@ -59,8 +59,9 @@ export function summarizeDay(opts: {
   const sum = (k: 'calories' | 'protein_g' | 'fat_g' | 'carbs_g') => ok.reduce((s, f) => s + (f.totals[k] ?? 0), 0)
   const eaten = Math.round(sum('calories'))
   const protein = Math.round(sum('protein_g'))
+  const intake = { protein_g: sum('protein_g'), carbs_g: sum('carbs_g'), fat_g: sum('fat_g') }
   const energy = isValidProfile(opts.profile)
-    ? dayEnergy({ date: opts.date, profile: opts.profile, steps: opts.steps, workouts: opts.exercises.map(toDayWorkout), health: opts.health, now: opts.now })
+    ? dayEnergy({ date: opts.date, profile: opts.profile, steps: opts.steps, workouts: opts.exercises.map(toDayWorkout), health: opts.health, intake, now: opts.now })
     : null
   const burn = energy?.estimate ?? null
   const burned = energy?.total ?? 0

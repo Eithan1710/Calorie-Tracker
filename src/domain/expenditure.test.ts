@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { bmrMifflinStJeor, dailyBurn, workoutEstimate, type Profile } from './energy'
-import { dayEnergy, findDuplicates, projectResting, type DayWorkout } from './expenditure'
+import { dayEnergy, findDuplicates, foodTef, projectResting, type DayWorkout } from './expenditure'
+import type { FoodEntry } from '../data/types'
 import { summarizeDay } from './day'
 
 // the user's own numbers: ~61 kg, 162 cm (age assumed 25 for the tests)
@@ -121,6 +122,38 @@ describe('Apple Health mode', () => {
     })
     expect(s.burned).toBe(2100)
     expect(s.energy?.mode).toBe('health')
+  })
+})
+
+describe('digestion energy (TEF) in Apple Health mode', () => {
+  it('per macro: protein 25%, carbs 7.5%, fat 2% of their calories', () => {
+    // 28.5 g protein (114 kcal) → 28.5; 59.1 g carbs (236.4) → 17.7; 23.2 g fat (208.8) → 4.2
+    expect(foodTef({ protein_g: 28.5, carbs_g: 59.1, fat_g: 23.2 })).toBeCloseTo(50.4, 1)
+    expect(foodTef(null)).toBe(0)
+    expect(foodTef({ protein_g: -5, carbs_g: Number.NaN, fat_g: 10 })).toBeCloseTo(1.8, 5)
+  })
+
+  it('is added on top of Apple resting + active, so protein-heavy days burn more', () => {
+    const health = { resting_kcal: 1480, active_kcal: 620, health_as_of: iso(D, '23:58') }
+    const now = at('2026-10-12', '08:00')
+    const none = dayEnergy({ date: D, profile: me, steps: 0, workouts: [], health, now })
+    const protein = dayEnergy({ date: D, profile: me, steps: 0, workouts: [], health, intake: { protein_g: 200, carbs_g: 0, fat_g: 0 }, now })
+    const fat = dayEnergy({ date: D, profile: me, steps: 0, workouts: [], health, intake: { protein_g: 0, carbs_g: 0, fat_g: 89 }, now })
+    expect(none.total).toBe(2100)
+    expect(protein.tef).toBe(200)
+    expect(protein.total).toBe(2300)
+    expect(fat.tef).toBe(16) // ~800 kcal of fat → only 2%
+    expect(protein.soFar - none.soFar).toBe(200)
+  })
+
+  it('summarizeDay passes the logged macros', () => {
+    const food = [{ status: 'ok', totals: { calories: 574, protein_g: 28.5, carbs_g: 59.1, fat_g: 23.2 } }] as unknown as FoodEntry[]
+    const s = summarizeDay({
+      date: D, food, exercises: [], steps: 0, profile: me, proteinTarget: 120,
+      health: { resting_kcal: 1480, active_kcal: 620, health_as_of: iso(D, '23:58') }, now: at('2026-10-12', '08:00'),
+    })
+    expect(s.energy?.tef).toBe(50)
+    expect(s.burned).toBe(2150)
   })
 })
 

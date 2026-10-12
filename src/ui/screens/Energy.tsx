@@ -51,6 +51,7 @@ export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: bo
         { key: 'resting', label: 'מנוחה', value: e.resting.kcal, color: 'var(--resting)', apple: e.resting.source === 'apple' },
         { key: 'active', label: 'פעילה', value: e.active.kcal, color: 'var(--active)', apple: e.active.source === 'apple' },
         ...(e.extra > 0 ? [{ key: 'extra', label: 'אימון שלא נמדד', value: e.extra, color: 'var(--warn)', apple: false }] : []),
+        ...(e.tef > 0 ? [{ key: 'tef', label: 'עיכול מזון', value: e.tef, color: 'var(--ink-3)', apple: false }] : []),
       ]
     : [
         { key: 'resting', label: 'מנוחה', value: e.resting.kcal, color: 'var(--resting)', apple: false },
@@ -152,7 +153,12 @@ function EnergyExplainer({ e }: { e: DayEnergy }) {
       </p>
       {apple ? (
         <p>
-          <b>סה״כ</b> = מנוחה + פעילה. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
+          <b>עיכול מזון</b> — Apple Health לא סופר אותו, אז הוא מחושב ממה שאכלת: 25% מקלוריות החלבון, 7.5% מהפחמימות ו-2% מהשומן. עולה ככל שנרשם עוד אוכל.
+        </p>
+      ) : null}
+      {apple ? (
+        <p>
+          <b>סה״כ</b> = מנוחה + פעילה + עיכול מזון. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
         </p>
       ) : (
         <p>

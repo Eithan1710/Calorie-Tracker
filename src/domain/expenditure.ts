@@ -15,8 +15,12 @@
  *      watch/phone or written by Strava/Hevy, so workouts are shown but NOT added.
  *      The only exception is a manual workout the user marked as not measured
  *      by Apple Health — its estimate is added (and nothing else).
- *    • No BMR estimate is added on top of Apple's Resting Energy, and no
- *      thermic-effect-of-food add-on: Apple's two numbers are the whole total.
+ *    • No BMR estimate is added on top of Apple's Resting Energy.
+ *    • Apple does not count the energy of digesting food (thermic effect of food,
+ *      TEF): Resting Energy is a BMR-type estimate and Active Energy is movement.
+ *      So TEF is added from what was actually eaten, per macronutrient
+ *      (protein 25%, carbohydrate 7.5%, fat 2% of their energy — mid-points of the
+ *      usual 20–30% / 5–10% / 0–3% ranges). It grows as food is logged.
  *    • A component Apple didn't send is filled from the estimate model and
  *      labelled "estimate" (resting → Mifflin-St Jeor BMR; active → daily
  *      movement from steps + workouts).
@@ -87,7 +91,7 @@ export interface DayEnergy {
   active: { kcal: number; source: ComponentSource }
   /** manual workouts Apple Health did not measure (added on top of Apple's active energy) */
   extra: number
-  /** thermic effect of food (estimate mode only) */
+  /** thermic effect of food: estimate mode = 10% model add-on; Apple mode = from the macros eaten */
   tef: number
   workouts: WorkoutEnergy[]
   /** Σ kcal of the day's distinct workouts where known (informational in Apple mode) */
@@ -103,6 +107,22 @@ export interface DayEnergy {
   asOf: string | null
   /** the estimate model's breakdown (always computed; settings & comparisons) */
   estimate: DailyBurnBreakdown
+}
+
+/** Share of each macronutrient's energy spent digesting it (mid-points of 20–30% / 5–10% / 0–3%). */
+export const TEF_BY_MACRO = { protein: 0.25, carbs: 0.075, fat: 0.02 } as const
+
+export interface MacroIntake {
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+}
+
+/** Thermic effect of food (kcal) from the grams eaten: protein & carbs 4 kcal/g, fat 9 kcal/g. */
+export function foodTef(m: MacroIntake | null | undefined): number {
+  if (!m) return 0
+  const g = (x: number) => (Number.isFinite(x) && x > 0 ? x : 0)
+  return g(m.protein_g) * 4 * TEF_BY_MACRO.protein + g(m.carbs_g) * 4 * TEF_BY_MACRO.carbs + g(m.fat_g) * 9 * TEF_BY_MACRO.fat
 }
 
 /** a snapshot read at/after 23:00 counts as the full day */
@@ -200,6 +220,8 @@ export function dayEnergy(opts: {
   steps: number
   workouts: DayWorkout[]
   health?: HealthEnergyDay | null
+  /** what was eaten (grams) — for the digestion energy in Apple Health mode */
+  intake?: MacroIntake | null
   now?: Date
 }): DayEnergy {
   const p = opts.profile
@@ -279,16 +301,18 @@ export function dayEnergy(opts: {
     }
   }
 
+  const tef = foodTef(opts.intake)
+
   return {
     mode: 'health',
     resting: { kcal: Math.round(restingSoFar), fullDay: Math.round(restingFull), source: hasResting ? 'apple' : 'estimate' },
     active: { kcal: Math.round(active), source: hasActive ? 'apple' : 'estimate' },
     extra: Math.round(extra),
-    tef: 0,
+    tef: Math.round(tef),
     workouts: lines,
     workoutKcal,
-    soFar: Math.round(restingSoFar + active + extra),
-    total: Math.round(restingFull + active + extra),
+    soFar: Math.round(restingSoFar + active + extra + tef),
+    total: Math.round(restingFull + active + extra + tef),
     partial: !complete,
     coverageMinutes: minutes,
     asOf,

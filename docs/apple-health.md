@@ -26,7 +26,8 @@
 | Resting | Apple Resting Energy | BMR (Mifflin-St Jeor) |
 | Active | Apple Active Energy (includes workouts) | baseline movement + steps + workouts (MET) |
 | Workouts | shown, **not added** (inside Active) — except a manual one marked "not measured by Apple Health" | added once (Apple workout energy if imported, else MET estimate) |
-| Total | resting + active | (resting + active) × 1.10 (food digestion) |
+| Food digestion | from the macros eaten: 25% of protein kcal + 7.5% of carbs + 2% of fat (Apple doesn't count it) | 10% of the day's burn |
+| Total | resting + active + digestion | (resting + active) × 1.10 |
 
 * **Partial day.** Apple totals grow during the day. The card shows what was burned *so far*;
   the balance uses resting projected to 24 h (linear from the minutes covered by the snapshot,
