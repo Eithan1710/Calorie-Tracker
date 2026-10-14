@@ -6,17 +6,28 @@
  *     "steps": 7842,                                  // any subset of the fields below
  *     "active_kcal": 512.3,                           // Apple "Active Energy", sum for the day
  *     "resting_kcal": 1203.4,                         // Apple "Resting Energy", sum for the day
- *     "date": "2026-10-11",                           // optional; default = today in the user's time zone
+ *     "date": "2026-10-11",                           // optional; default = today (Asia/Jerusalem); also "today" / "yesterday"
  *     "as_of": "2026-10-11T21:15:00+03:00",           // optional; when the totals were read
  *     "energy_unit": "kcal",                          // optional; "kJ" is converted
  *     "workouts": [{ "type": "Running", "start": "…", "end": "…", "duration_min": 32,
- *                    "distance_km": 5.1, "kcal": 340, "source": "Strava" }]
+ *                    "distance_km": 5.1, "kcal": 340, "source": "Strava" }],
+ *     "active_samples":  [{ "start": "2026-10-11T00:00:00+03:00", "end": "…", "kcal": 412.5, "source": "Apple Watch" }],
+ *     "resting_samples": [ …same shape… ]
  *   }
  *
  * Shortcuts sends numbers in many shapes ("7,842", "512.3 kcal", "5.1 km", "00:32:10"),
  * so every numeric field is parsed leniently, then range-checked.
- * Daily totals are idempotent snapshots: a newer snapshot replaces an older one, so
- * re-running the automation never adds anything twice.
+ *
+ * Two ways to send energy:
+ *  • Aggregate totals (active_kcal / resting_kcal) — one snapshot of ONE day (`date`,
+ *    default today). Idempotent: a newer snapshot replaces an older one. The server can't
+ *    tell which day the energy in an aggregate belongs to, so it is filed under `date`.
+ *  • Timestamped samples (active_samples / resting_samples) — raw Health samples or
+ *    Shortcuts' grouped buckets (Group by Day/Hour). Each sample is filed under the local
+ *    calendar day of its START time, so one request may carry yesterday and today. Each
+ *    gets a stable key (the sample's own id if sent, else hash of kind|start|end|source):
+ *    re-sending updates it instead of adding it again. Day totals are then recomputed
+ *    from the stored samples (see mz_ingest_health_samples).
  */
 
 export type HealthWorkoutType = 'run' | 'walk' | 'strength' | 'cycling' | 'swimming' | 'other'
@@ -37,6 +48,31 @@ export interface ParsedWorkout {
   source_app: string | null
 }
 
+export type EnergyKind = 'active' | 'resting'
+
+export interface ParsedSample {
+  /** stable identity: the sample's own id when sent, else sha256(kind|start|end|source) */
+  key: string
+  /** local calendar day (day-boundary time zone) of the sample's start */
+  date: string
+  start: string
+  end: string
+  kcal: number
+  source: string | null
+}
+
+export interface SampleStats {
+  received: number
+  accepted: number
+  /** same key twice in one request (the last one wins) */
+  duplicates_in_request: number
+  invalid_timestamp: number
+  invalid_value: number
+  out_of_range: number
+  /** accepted samples per local day */
+  days: Record<string, { samples: number; kcal: number }>
+}
+
 export interface ParsedIngest {
   date: string
   steps: number | null
@@ -44,6 +80,8 @@ export interface ParsedIngest {
   resting_kcal: number | null
   as_of: string
   workouts: ParsedWorkout[]
+  samples: Record<EnergyKind, ParsedSample[]>
+  sample_stats: Partial<Record<EnergyKind, SampleStats>>
   warnings: string[]
 }
 
@@ -59,7 +97,16 @@ export const LIMITS = {
   workouts: 30,
   /** how far back a day / workout may be (re-sending yesterday's final totals is fine) */
   past_days: 14,
+  /** energy samples per kind per request (raw samples for two days stay well below) */
+  samples: 3_000,
+  /** one sample / bucket: a whole day of active energy fits */
+  sample_kcal: 8_000,
+  /** a sample (or a Group-by-Day bucket) may span a DST day of 25 h, not more */
+  sample_span_hours: 25,
 }
+
+/** Calendar-day boundaries for health data (the app is used in Israel). */
+export const DAY_TZ = 'Asia/Jerusalem'
 
 // ── lenient numbers ──────────────────────────────────────────────────────────
 
@@ -131,6 +178,23 @@ function dayDiff(a: string, b: string): number {
   return Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000)
 }
 
+/** UTC instant of local midnight starting `day` in `tz` (DST-aware). */
+export function zonedMidnight(day: string, tz: string): Date {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const offset = (t: number) => {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]))
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - t
+  }
+  const naive = Date.parse(`${day}T00:00:00Z`)
+  let t = naive - offset(naive)
+  t = naive - offset(t)
+  return new Date(t)
+}
+
+export function shiftDay(day: string, n: number): string {
+  return new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+}
+
 // ── workout types (Apple Health names in English and Hebrew) ────────────────
 
 const TYPE_RULES: [RegExp, HealthWorkoutType][] = [
@@ -177,18 +241,101 @@ const pick = (o: Obj, ...keys: string[]): unknown => {
   return undefined
 }
 
-/** Shortcuts may send the list as an array, a JSON string, or a dictionary of dictionaries. */
-function asWorkoutList(v: unknown): Obj[] {
-  if (Array.isArray(v)) return v.filter((x): x is Obj => !!x && typeof x === 'object')
+const ITEM_KEYS = ['start', 'start_date', 'startDate', 'started_at', 'type', 'name']
+
+/**
+ * Shortcuts may send a list as an array, a JSON string, a dictionary of dictionaries,
+ * or — when "Add to Variable" collected a single item — one bare dictionary.
+ */
+function asObjList(v: unknown): Obj[] {
+  if (Array.isArray(v)) return v.flatMap((x) => (typeof x === 'string' ? asObjList(x) : x && typeof x === 'object' ? [x as Obj] : []))
   if (typeof v === 'string') {
+    const t = v.trim()
+    if (!t) return []
     try {
-      return asWorkoutList(JSON.parse(v))
+      return asObjList(JSON.parse(t))
     } catch {
-      return []
+      // "Add to Variable" of dictionaries joined as text: one JSON object per line
+      const lines = t.split(/\n+/).filter((l) => l.trim().startsWith('{'))
+      return lines.length > 1 ? lines.flatMap((l) => asObjList(l)) : []
     }
   }
-  if (v && typeof v === 'object') return Object.values(v as Obj).filter((x): x is Obj => !!x && typeof x === 'object')
+  if (v && typeof v === 'object') {
+    const o = v as Obj
+    if (ITEM_KEYS.some((k) => k in o)) return [o]
+    return Object.values(o).filter((x): x is Obj => !!x && typeof x === 'object')
+  }
   return []
+}
+
+const SAMPLE_FIELDS: Record<EnergyKind, string[]> = {
+  active: ['active_samples', 'active_energy_samples', 'activeSamples'],
+  resting: ['resting_samples', 'resting_energy_samples', 'basal_samples', 'restingSamples'],
+}
+
+/**
+ * Timestamped energy samples → validated, de-duplicated, each filed under the local day
+ * of its start. Invalid ones are counted (for the logs), never guessed.
+ */
+export async function parseSamples(
+  kind: EnergyKind,
+  list: Obj[],
+  opts: { userId: string; tz: string; now: Date; today: string; unit: string | null },
+): Promise<{ samples: ParsedSample[]; stats: SampleStats }> {
+  const stats: SampleStats = { received: list.length, accepted: 0, duplicates_in_request: 0, invalid_timestamp: 0, invalid_value: 0, out_of_range: 0, days: {} }
+  const byKey = new Map<string, ParsedSample>()
+  for (const s of list) {
+    const rawStart = pick(s, 'start', 'start_date', 'startDate', 'started_at', 'from')
+    let start = parseInstant(rawStart)
+    const rawEnd = pick(s, 'end', 'end_date', 'endDate', 'ended_at', 'to')
+    let end = rawEnd === undefined ? start : parseInstant(rawEnd)
+    // a whole-day bucket sent as {date, kcal}: exactly that local day (DST-aware)
+    const rawDay = rawStart === undefined ? pick(s, 'date', 'day') : undefined
+    if (rawDay !== undefined) {
+      const k = String(rawDay).trim().toLowerCase()
+      const day = k === 'today' || k === 'היום' ? opts.today : k === 'yesterday' || k === 'אתמול' ? shiftDay(opts.today, -1) : /^\d{4}-\d{2}-\d{2}$/.test(k) ? k : null
+      start = day ? zonedMidnight(day, opts.tz) : null
+      end = day ? zonedMidnight(shiftDay(day, 1), opts.tz) : null
+    }
+    if (!start || !end || end.getTime() < start.getTime() || end.getTime() - start.getTime() > LIMITS.sample_span_hours * 3_600_000) {
+      stats.invalid_timestamp++
+      continue
+    }
+    const sampleUnit = pick(s, 'unit')
+    const kcal = parseEnergy(pick(s, 'kcal', 'value', 'qty', 'quantity', 'energy', 'calories'), typeof sampleUnit === 'string' ? sampleUnit : opts.unit)
+    if (kcal === null || kcal < 0 || kcal > LIMITS.sample_kcal) {
+      stats.invalid_value++
+      continue
+    }
+    const date = localDateKey(start, opts.tz)
+    const ago = dayDiff(opts.today, date)
+    // the start must not be in the future; the end may be (today's bucket ends at midnight)
+    if (ago < 0 || ago > LIMITS.past_days || start.getTime() > opts.now.getTime() + 5 * 60_000) {
+      stats.out_of_range++
+      continue
+    }
+    const rawSource = pick(s, 'source', 'source_app', 'sourceName', 'device')
+    const source = typeof rawSource === 'string' && rawSource.trim() ? rawSource.trim().slice(0, 80) : null
+    const id = pick(s, 'id', 'uuid', 'sample_id')
+    // second precision: Shortcuts' ISO 8601 has no milliseconds, so re-reads produce the same key
+    const sec = (d: Date) => new Date(Math.floor(d.getTime() / 1000) * 1000).toISOString()
+    const key = id !== undefined && String(id).trim()
+      ? `id:${String(id).trim().slice(0, 100)}`
+      : await sha256Hex(`${kind}|${sec(start)}|${sec(end)}|${(source ?? '').toLowerCase()}`)
+    if (byKey.has(key)) {
+      stats.duplicates_in_request++
+      byKey.delete(key) // keep the last occurrence, in order
+    }
+    byKey.set(key, { key, date, start: sec(start), end: sec(end), kcal: Math.round(kcal * 100) / 100, source })
+  }
+  const samples = [...byKey.values()]
+  stats.accepted = samples.length
+  for (const x of samples) {
+    const d = (stats.days[x.date] ??= { samples: 0, kcal: 0 })
+    d.samples++
+    d.kcal = Math.round((d.kcal + x.kcal) * 10) / 10
+  }
+  return { samples, stats }
 }
 
 export async function parseIngest(raw: unknown, opts: { userId: string; tz: string; now?: Date }): Promise<IngestResult> {
@@ -204,7 +351,8 @@ export async function parseIngest(raw: unknown, opts: { userId: string; tz: stri
   const rawDate = pick(o, 'date')
   if (rawDate !== undefined) {
     const s = String(rawDate).trim()
-    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : (() => {
+    const kw = s.toLowerCase()
+    const d = kw === 'today' || kw === 'היום' ? today : kw === 'yesterday' || kw === 'אתמול' ? shiftDay(today, -1) : /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : (() => {
       const inst = parseInstant(s)
       return inst ? localDateKey(inst, opts.tz) : null
     })()
@@ -239,7 +387,7 @@ export async function parseIngest(raw: unknown, opts: { userId: string; tz: stri
   const resting = num(['resting_kcal', 'resting', 'resting_energy', 'basal_kcal'], LIMITS.resting_kcal, 'resting_kcal', (v) => parseEnergy(v, unit))
 
   // workouts
-  const list = asWorkoutList(o.workouts)
+  const list = asObjList(o.workouts)
   if (list.length > LIMITS.workouts) return { ok: false, error: `at most ${LIMITS.workouts} workouts per request` }
   const workouts: ParsedWorkout[] = []
   const seen = new Set<string>()
@@ -286,6 +434,25 @@ export async function parseIngest(raw: unknown, opts: { userId: string; tz: stri
     })
   }
 
+  // timestamped energy samples (each filed under its own day)
+  const samples: Record<EnergyKind, ParsedSample[]> = { active: [], resting: [] }
+  const sample_stats: Partial<Record<EnergyKind, SampleStats>> = {}
+  for (const kind of ['active', 'resting'] as const) {
+    const field = SAMPLE_FIELDS[kind].find((k) => o[k] !== undefined && o[k] !== null && o[k] !== '')
+    if (!field) continue
+    const items = asObjList(o[field])
+    if (items.length > LIMITS.samples) return { ok: false, error: `at most ${LIMITS.samples} ${kind} samples per request` }
+    const r = await parseSamples(kind, items, { userId: opts.userId, tz: opts.tz, now, today, unit })
+    samples[kind] = r.samples
+    sample_stats[kind] = r.stats
+    const st = r.stats
+    if (!st.received) warnings.push(`${field} is empty or not a list of samples`)
+    if (st.invalid_timestamp) warnings.push(`${kind} samples: ${st.invalid_timestamp} skipped (missing/invalid start or end)`)
+    if (st.invalid_value) warnings.push(`${kind} samples: ${st.invalid_value} skipped (missing/invalid energy value)`)
+    if (st.out_of_range) warnings.push(`${kind} samples: ${st.out_of_range} skipped (future or older than ${LIMITS.past_days} days)`)
+    if (st.duplicates_in_request) warnings.push(`${kind} samples: ${st.duplicates_in_request} duplicates in the request ignored`)
+  }
+
   const val = (x: number | null | 'bad') => (x === 'bad' ? null : x)
   const r1 = (x: number | null) => (x === null ? null : Math.round(x * 10) / 10)
   const value: ParsedIngest = {
@@ -295,10 +462,13 @@ export async function parseIngest(raw: unknown, opts: { userId: string; tz: stri
     resting_kcal: r1(val(resting)),
     as_of: asOf.toISOString(),
     workouts,
+    samples,
+    sample_stats,
     warnings,
   }
-  if (value.steps === null && value.active_kcal === null && value.resting_kcal === null && !workouts.length) {
-    return { ok: false, error: 'nothing to import (send steps, active_kcal, resting_kcal or workouts)' }
+  if (value.steps === null && value.active_kcal === null && value.resting_kcal === null && !workouts.length && !samples.active.length && !samples.resting.length) {
+    const sent = Object.values(sample_stats).reduce((n, st) => n + (st?.received ?? 0), 0)
+    return { ok: false, error: sent ? `nothing to import: none of the ${sent} samples were valid (${warnings.join('; ')})` : 'nothing to import (send steps, active_kcal, resting_kcal, workouts or *_samples)' }
   }
   return { ok: true, value }
 }

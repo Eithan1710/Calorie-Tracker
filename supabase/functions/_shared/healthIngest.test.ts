@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, workoutType } from './healthIngest.ts'
+import { DAY_TZ, parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, workoutType } from './healthIngest.ts'
 
 const TZ = 'Asia/Jerusalem'
 const NOW = new Date('2026-10-11T18:30:00Z') // 21:30 in Israel
@@ -121,5 +121,143 @@ describe('workouts', () => {
   it('unknown energy stays null (estimated later, never invented)', async () => {
     const v = await ok({ workouts: [{ type: 'Traditional Strength Training', start: '2026-10-11T19:00:00+03:00', duration: '00:55:00', source: 'Hevy' }] })
     expect(v.workouts[0]).toMatchObject({ type: 'strength', kcal: null, duration_min: 55, source_app: 'Hevy' })
+  })
+})
+
+describe('date keywords', () => {
+  it('"yesterday" / "today" (English or Hebrew) resolve in Israel time', async () => {
+    expect((await ok({ active_kcal: 500, date: 'yesterday' })).date).toBe('2026-10-10')
+    expect((await ok({ active_kcal: 500, date: 'אתמול' })).date).toBe('2026-10-10')
+    expect((await ok({ active_kcal: 500, date: 'Today' })).date).toBe('2026-10-11')
+    // at 00:10 Israel time "yesterday" is the day that just ended, although UTC is still on it
+    const r = await parseIngest({ active_kcal: 500, date: 'yesterday' }, { ...opts, now: new Date('2026-10-11T21:10:00Z') })
+    expect(r.ok && r.value.date).toBe('2026-10-11')
+  })
+})
+
+describe('timestamped energy samples', () => {
+  // 2026-10-14 21:40 in Israel (IDT, UTC+3)
+  const now = new Date('2026-10-14T18:40:00Z')
+  const sopts = { userId: 'u1', tz: DAY_TZ, now }
+  const parse = async (raw: unknown, o = sopts) => {
+    const r = await parseIngest(raw, o)
+    if (!r.ok) throw new Error(r.error)
+    return r.value
+  }
+  const yesterday = { start: '2026-10-13T00:00:00+03:00', end: '2026-10-13T23:59:00+03:00', kcal: 512.4, source: 'Apple Watch' }
+  const today = { start: '2026-10-14T00:00:00+03:00', end: '2026-10-14T21:30:00+03:00', kcal: '398 kcal', source: 'Apple Watch' }
+
+  it('one request with yesterday and today files each sample under its own day', async () => {
+    const v = await parse({ active_samples: [yesterday, today] })
+    expect(v.samples.active.map((s) => [s.date, s.kcal])).toEqual([['2026-10-13', 512.4], ['2026-10-14', 398]])
+    expect(v.sample_stats.active?.days).toEqual({ '2026-10-13': { samples: 1, kcal: 512.4 }, '2026-10-14': { samples: 1, kcal: 398 } })
+    expect(v.active_kcal).toBeNull() // no aggregate was sent — nothing is filed under `date`
+  })
+
+  it('midnight: the local day of the START decides (not UTC, not the request day)', async () => {
+    const v = await parse({
+      active_samples: [
+        { start: '2026-10-13T20:59:30Z', end: '2026-10-13T21:00:30Z', kcal: 3 }, // 23:59:30 on the 13th in Israel
+        { start: '2026-10-13T21:00:30Z', end: '2026-10-13T21:01:30Z', kcal: 5 }, // 00:00:30 on the 14th in Israel
+      ],
+    })
+    expect(v.samples.active.map((s) => s.date)).toEqual(['2026-10-13', '2026-10-14'])
+  })
+
+  it('daylight-saving end (25 Oct 02:00 → 01:00): boundaries follow Israel time, not a fixed +3', async () => {
+    const after = { ...sopts, now: new Date('2026-10-26T06:00:00Z') }
+    const v = await parse({
+      resting_samples: [
+        { start: '2026-10-25T21:30:00Z', end: '2026-10-25T21:31:00Z', kcal: 1 }, // 23:30 IST on the 25th (would be 00:30 at +3)
+        { start: '2026-10-25T22:30:00Z', end: '2026-10-25T22:31:00Z', kcal: 2 }, // 00:30 IST on the 26th
+      ],
+    }, after)
+    expect(v.samples.resting.map((s) => s.date)).toEqual(['2026-10-25', '2026-10-26'])
+  })
+
+  it('the same sample sent again gets the same key; source and times are part of it, the value is not', async () => {
+    const a = await parse({ active_samples: [today] })
+    const b = await parse({ active_samples: [{ ...today, kcal: 410 }] })
+    const c = await parse({ active_samples: [{ ...today, source: 'iPhone' }] })
+    const d = await parse({ active_samples: [{ ...today, end: '2026-10-14T21:35:00+03:00' }] })
+    expect(b.samples.active[0].key).toBe(a.samples.active[0].key)
+    expect(c.samples.active[0].key).not.toBe(a.samples.active[0].key)
+    expect(d.samples.active[0].key).not.toBe(a.samples.active[0].key)
+    // two different samples with the same calories are NOT merged
+    const e = await parse({ active_samples: [{ ...today, kcal: 5 }, { ...today, start: '2026-10-14T01:00:00+03:00', kcal: 5 }] })
+    expect(e.samples.active).toHaveLength(2)
+  })
+
+  it('a phone-supplied sample id is used as the key', async () => {
+    const v = await parse({ active_samples: [{ ...today, id: 'A1B2-C3' }] })
+    expect(v.samples.active[0].key).toBe('id:A1B2-C3')
+  })
+
+  it('duplicates inside one request are counted and collapsed (the last one wins)', async () => {
+    const v = await parse({ active_samples: [today, { ...today, kcal: 401 }, yesterday] })
+    expect(v.samples.active).toHaveLength(2)
+    expect(v.samples.active.find((s) => s.date === '2026-10-14')?.kcal).toBe(401)
+    expect(v.sample_stats.active?.duplicates_in_request).toBe(1)
+    expect(v.warnings.join(' ')).toMatch(/1 duplicates/)
+  })
+
+  it('invalid timestamps / values / dates are skipped and counted, never guessed', async () => {
+    const v = await parse({
+      active_samples: [
+        today,
+        { kcal: 10 },                                                            // no start
+        { start: 'yesterday-ish', kcal: 10 },                                    // unparseable
+        { start: '2026-10-14T10:00:00+03:00', end: '2026-10-14T09:00:00+03:00', kcal: 1 }, // end before start
+        { start: '2026-10-12T00:00:00+03:00', end: '2026-10-14T00:00:00+03:00', kcal: 1 }, // 48 h
+        { start: '2026-10-14T10:00:00+03:00', end: '2026-10-14T10:05:00+03:00', kcal: 'n/a' },
+        { start: '2026-10-14T10:00:00+03:00', end: '2026-10-14T10:05:00+03:00', kcal: -4 },
+        { start: '2026-09-01T10:00:00+03:00', end: '2026-09-01T10:05:00+03:00', kcal: 4 }, // too old
+        { start: '2026-10-15T10:00:00+03:00', end: '2026-10-15T10:05:00+03:00', kcal: 4 }, // future
+      ],
+    })
+    expect(v.samples.active).toHaveLength(1)
+    expect(v.sample_stats.active).toMatchObject({ received: 9, accepted: 1, invalid_timestamp: 4, invalid_value: 2, out_of_range: 2 })
+    expect(v.warnings.length).toBe(3)
+  })
+
+  it('today\'s Group-by-Day bucket may end at the coming midnight', async () => {
+    const v = await parse({ active_samples: [{ start: '2026-10-14T00:00:00+03:00', end: '2026-10-15T00:00:00+03:00', kcal: 398 }] })
+    expect(v.samples.active.map((s) => s.date)).toEqual(['2026-10-14'])
+  })
+
+  it('whole-day buckets as {date, kcal}: exact local-midnight bounds, stable key, DST day = 25 h', async () => {
+    const v = await parse({ active_samples: [{ date: 'yesterday', kcal: 512.4 }, { date: '2026-10-14', kcal: 398 }] })
+    expect(v.samples.active.map((s) => [s.date, s.start, s.end])).toEqual([
+      ['2026-10-13', '2026-10-12T21:00:00.000Z', '2026-10-13T21:00:00.000Z'],
+      ['2026-10-14', '2026-10-13T21:00:00.000Z', '2026-10-14T21:00:00.000Z'],
+    ])
+    const again = await parse({ active_samples: [{ date: '2026-10-14', kcal: 431 }] })
+    expect(again.samples.active[0].key).toBe(v.samples.active[1].key)
+    const dst = await parse({ resting_samples: [{ date: '2026-10-25', kcal: 1400 }] }, { ...sopts, now: new Date('2026-10-26T06:00:00Z') })
+    expect([dst.samples.resting[0].start, dst.samples.resting[0].end]).toEqual(['2026-10-24T21:00:00.000Z', '2026-10-25T22:00:00.000Z'])
+    expect((await parse({ active_samples: [{ date: 'last week', kcal: 1 }, today] })).sample_stats.active?.invalid_timestamp).toBe(1)
+  })
+
+  it('only samples is a valid request; only invalid samples is an error that says why', async () => {
+    expect((await parseIngest({ active_samples: [today] }, sopts)).ok).toBe(true)
+    const bad = await parseIngest({ active_samples: [{ kcal: 1 }] }, sopts)
+    expect(bad.ok).toBe(false)
+    expect(!bad.ok && bad.error).toMatch(/none of the 1 samples were valid/)
+  })
+
+  it('Shortcuts shapes: JSON text, dictionary of dictionaries, a single dictionary, kJ, "Cal" strings', async () => {
+    expect((await parse({ active_samples: JSON.stringify([today, yesterday]) })).samples.active).toHaveLength(2)
+    expect((await parse({ active_samples: { 1: today, 2: yesterday } })).samples.active).toHaveLength(2)
+    expect((await parse({ active_samples: today })).samples.active).toHaveLength(1)
+    expect((await parse({ active_samples: `${JSON.stringify(today)}\n${JSON.stringify(yesterday)}` })).samples.active).toHaveLength(2)
+    expect((await parse({ active_samples: [{ ...today, kcal: '2092 kJ' }] })).samples.active[0].kcal).toBeCloseTo(500, 1)
+    expect((await parse({ active_samples: [{ ...today, kcal: '1,204.5 Cal' }] })).samples.active[0].kcal).toBe(1204.5)
+  })
+
+  it('aggregates and samples can travel together (steps stay an aggregate)', async () => {
+    const v = await parse({ steps: 7013, resting_kcal: 1284.8, active_samples: [yesterday, today] })
+    expect(v).toMatchObject({ date: '2026-10-14', steps: 7013, resting_kcal: 1284.8, active_kcal: null })
+    expect(v.samples.active).toHaveLength(2)
+    expect(v.samples.resting).toHaveLength(0)
   })
 })

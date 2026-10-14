@@ -41,28 +41,45 @@
   MET × duration (volume lifted only adds the small mechanical work, ~0.006 kcal/kg). Shown with a
   range and "≈"; without a duration there is no number ("אין מספיק נתונים").
 
-## Sync guarantees (`mz_ingest_health`, `_shared/healthIngest.ts`)
+## Sync guarantees (`mz_ingest_health`, `mz_ingest_health_samples`, `_shared/healthIngest.ts`)
 
-* Daily totals are **snapshots**: a newer snapshot replaces an older one; an older one arriving late
-  is ignored (`health_as_of`). Fields not sent are left unchanged. Re-running is harmless.
-* "Today" is the user's own day (profile time zone). Future dates, days older than 14 days, and
-  snapshots read before the day they describe are rejected. Out-of-range values are ignored.
+* **Calendar days are Asia/Jerusalem days** (DST-aware; override with the `MZ_DAY_TZ` function secret).
+  `date` accepts `YYYY-MM-DD`, `today` or `yesterday`.
+* **Aggregate totals** (`steps`, `active_kcal`, `resting_kcal`) are **snapshots of one day** (`date`,
+  default today): a newer snapshot replaces an older one; an older one arriving late is ignored
+  (`health_as_of`). Fields not sent are left unchanged. Re-running is harmless. Limitation: an
+  aggregate carries no timestamps, so the server cannot split it between days — the last
+  "since midnight" snapshot before 00:00 is all it will ever know about that day unless the
+  Shortcut re-sends that day explicitly (`date: "yesterday"`) or sends samples.
+* **Timestamped samples** (`active_samples`, `resting_samples`: raw Health samples or Shortcuts'
+  Group-by-Day/Hour buckets, each `{start, end, kcal, source?, id?}`) are filed under the local day
+  of their **start**, so one request can carry yesterday and today. Each sample has a stable key —
+  its own `id` if sent, else `sha256(kind|start|end|source)` (never the calorie value). Re-sending
+  updates the row; a stored sample of the **same source** that overlaps a new one under another key
+  (the current bucket grew and its end moved) is replaced. Day totals are **recomputed** from the
+  stored samples after every request, never incremented. A day that has samples ignores aggregate
+  `active_kcal` / `resting_kcal` for that kind (steps and the other kind still apply). Samples older
+  than 35 days are purged.
+* Validation: future dates, days older than 14 days, snapshots read before the day they describe,
+  samples with missing/invalid/reversed timestamps, spans > 25 h, or invalid energy are rejected and
+  **counted** in the response (`samples.active.invalid_timestamp`, …) and in the function logs.
 * Workouts get a stable id from (account, type, start minute, source app): re-sending updates,
   never duplicates; a workout the user deleted is not brought back; user edits are kept. A workout
   crossing midnight belongs to the day it started.
-* Personal token (only its SHA-256 is stored), members only, service-role function not callable by
-  users. Structured logs per request in the function logs.
+* Personal token (only its SHA-256 is stored), members only, service-role functions not callable by
+  users. Structured JSON logs per request in the function logs.
 
-## Shortcut (one automation, a few times a day + 23:50)
+## Shortcut (one automation, every 15 minutes)
 
-1. Find Health Samples — Steps — Start Date is Today → Calculate Statistics → Sum
-2. Same with **Active Energy** → Sum
-3. Same with **Resting Energy** → Sum
-4. Current Date → Format Date → ISO 8601 (with time)
-5. Get Contents of URL — POST `…/functions/v1/health-ingest`, header
-   `Authorization: Bearer <token>`, JSON: `steps`, `active_kcal`, `resting_kcal` (Numbers), `as_of` (Text)
-6. *(optional)* Find Health Samples — Workouts — today → Repeat with Each → Dictionary
-   (`type`, `start`, `end`, `duration_min`, `distance_km`, `kcal`, `source`) → Add to Variable →
-   JSON field `workouts` (Array).
+Recommended — yesterday + today as day buckets (accurate across midnight):
 
-Numbers may arrive as "7,842", "512.3 kcal", "5.1 km", "00:32:10"; kJ is converted.
+1. **Current Date** → **Adjust Date**: Subtract 1 day → **Adjust Date**: Get Start of Day → (Adjusted Date)
+2. **Find Health Samples** where Type is **Active Energy**, Start Date **is after** Adjusted Date,
+   Source is *your watch/phone* · Group by **Day** · Fill Missing off · Unit cal
+3. **Repeat with Each** → **Dictionary** `start` = Repeat Item › Start Date (format ISO 8601),
+   `end` = Repeat Item › End Date (ISO 8601), `kcal` = Repeat Item › Value (Number) → **Add to Variable** `ActiveDays`
+4. Steps / Resting Energy as before (Start Date is today, Group by Day, Sum)
+5. **Get Contents of URL** — POST `…/functions/v1/health-ingest`, header `Authorization: Bearer <token>`,
+   JSON: `steps` (Number), `resting_kcal` (Number), `active_samples` (Array → `ActiveDays`)
+
+Still supported: `{"steps", "active_kcal", "resting_kcal", "as_of", "date"}` aggregates and `workouts`.
