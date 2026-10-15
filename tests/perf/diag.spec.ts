@@ -259,3 +259,58 @@ test('photo: client overhead from picking a 12 MP photo to the result', async ({
   }
   save(`photo-${info.project.name}`, { runs })
 })
+
+/** Same 12 MP photo through different decode/resize/encode strategies (in the page, no app code). */
+test('prepare variants: decode + resize + encode', async ({ page }, info) => {
+  await page.goto('/')
+  await throttle(page, info.project.name)
+  const res = await page.evaluate(async () => {
+    const c = document.createElement('canvas')
+    c.width = 4032
+    c.height = 3024
+    const g = c.getContext('2d')!
+    // photo-like: smooth gradients, a few large shapes, mild grain
+    const grd = g.createRadialGradient(2000, 1500, 100, 2000, 1500, 2600)
+    grd.addColorStop(0, '#f3e2c4'), grd.addColorStop(0.5, '#c8673a'), grd.addColorStop(1, '#3a2a20')
+    g.fillStyle = grd
+    g.fillRect(0, 0, 4032, 3024)
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = `hsl(${20 + Math.random() * 100} 55% ${30 + Math.random() * 40}%)`
+      g.beginPath(); g.ellipse(Math.random() * 4032, Math.random() * 3024, 80 + Math.random() * 400, 60 + Math.random() * 300, Math.random() * 3, 0, 7); g.fill()
+    }
+    const img = g.getImageData(0, 0, 4032, 3024)
+    for (let i = 0; i < img.data.length; i += 4) { const n = (Math.random() - 0.5) * 18; img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n }
+    g.putImageData(img, 0, 0)
+    const file = new File([await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.9))], 'p.jpg', { type: 'image/jpeg' })
+    const b64 = (b: Blob) => new Promise<string>((r) => { const f = new FileReader(); f.onload = () => r(String(f.result).split(',')[1]); f.readAsDataURL(b) })
+    const draw = (bm: ImageBitmap, max: number) => {
+      const s = Math.min(1, max / Math.max(bm.width, bm.height))
+      const cv = document.createElement('canvas')
+      cv.width = Math.round(bm.width * s); cv.height = Math.round(bm.height * s)
+      const x = cv.getContext('2d')!
+      x.imageSmoothingQuality = 'high'
+      x.drawImage(bm, 0, 0, cv.width, cv.height)
+      bm.close()
+      return cv
+    }
+    const blob = (cv: HTMLCanvasElement, q: number) => new Promise<Blob>((r) => cv.toBlob((b) => r(b!), 'image/jpeg', q))
+    const variants: Record<string, () => Promise<number>> = {
+      'A old: full decode, 1280, toDataURL': async () => draw(await createImageBitmap(file, { imageOrientation: 'from-image' }), 1280).toDataURL('image/jpeg', 0.8).length,
+      'B decode→1024 (resizeWidth high), toBlob': async () => (await b64(await blob(draw(await createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth: 1024, resizeQuality: 'high' }), 1024), 0.8))).length,
+      'C full decode, 1024, toBlob': async () => (await b64(await blob(draw(await createImageBitmap(file, { imageOrientation: 'from-image' }), 1024), 0.8))).length,
+      'D full decode, 1024, toDataURL': async () => draw(await createImageBitmap(file, { imageOrientation: 'from-image' }), 1024).toDataURL('image/jpeg', 0.8).length,
+      'E decode→1024 (resizeWidth low), toDataURL': async () => draw(await createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth: 1024, resizeQuality: 'low' }), 1024).toDataURL('image/jpeg', 0.8).length,
+    }
+    const out: Record<string, { ms: number[]; b64_kb: number } | string> = { file_mb: (file.size / 1e6).toFixed(2) }
+    for (const [k, fn] of Object.entries(variants)) {
+      const ms: number[] = []
+      let len = 0
+      try {
+        for (let i = 0; i < 3; i++) { const t = performance.now(); len = await fn(); ms.push(Math.round(performance.now() - t)) }
+        out[k] = { ms, b64_kb: Math.round(len / 1024) }
+      } catch (e) { out[k] = `error: ${(e as Error).message}` }
+    }
+    return out
+  })
+  save(`prepare-${info.project.name}`, res)
+})
