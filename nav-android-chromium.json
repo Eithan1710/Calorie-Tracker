@@ -1,0 +1,163 @@
+{
+  "viewport": {
+    "width": 412,
+    "height": 839
+  },
+  "hit_initial": [
+    {
+      "button": "היום",
+      "rect": [
+        331,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "path."
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        153,
+        758,
+        170,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "button.pressable flex min-h-14 flex-1 items-center justify-center g"
+    },
+    {
+      "button": "צלם אוכל",
+      "rect": [
+        89,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-camera size-6"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        25,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "path."
+    }
+  ],
+  "history": "ok",
+  "today": "ok",
+  "add": "ok",
+  "camera": "ok",
+  "hit_after_scroll": [
+    {
+      "button": "היום",
+      "rect": [
+        331,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "path."
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        153,
+        758,
+        170,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "button.pressable flex min-h-14 flex-1 items-center justify-center g"
+    },
+    {
+      "button": "צלם אוכל",
+      "rect": [
+        89,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-camera size-6"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        25,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "path."
+    }
+  ],
+  "history_after_scroll": "ok",
+  "hit_with_toast": [
+    {
+      "button": "היום",
+      "rect": [
+        331,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": false,
+      "hit": "button.pressable inline-flex min-h-14 items-center justify-center g"
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        153,
+        758,
+        170,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": false,
+      "hit": "button.pressable inline-flex min-h-14 items-center justify-center g"
+    },
+    {
+      "button": "צלם אוכל",
+      "rect": [
+        89,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": false,
+      "hit": "button.pressable inline-flex min-h-14 items-center justify-center g"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        25,
+        758,
+        56,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": false,
+      "hit": "svg.lucide lucide-rotate-ccw size-5"
+    }
+  ],
+  "history_with_toast": "ok",
+  "history_plain_click": "ok"
+}
