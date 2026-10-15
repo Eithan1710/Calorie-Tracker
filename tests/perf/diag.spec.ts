@@ -30,6 +30,31 @@ async function throttle(page: Page, projectName: string) {
   return true
 }
 
+const logs: string[] = []
+test.beforeEach(async ({ page }, info) => {
+  logs.length = 0
+  page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`))
+  page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`))
+  page.on('requestfailed', (r) => logs.push(`[requestfailed] ${r.url()} ${r.failure()?.errorText}`))
+  info.setTimeout(90_000)
+})
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) {
+    await page.screenshot({ path: `${OUT}/fail-${info.project.name}-${info.title.slice(0, 20).replace(/\W+/g, '_')}.png` }).catch(() => {})
+    writeFileSync(`${OUT}/fail-${info.project.name}-${info.title.slice(0, 20).replace(/\W+/g, '_')}.txt`, `${info.error?.message ?? ''}\n\n${logs.join('\n')}\n\nBODY:\n${await page.locator('body').innerText().catch(() => '')}`)
+  }
+})
+
+test('boot: the app renders (login screen) and reports no errors', async ({ page }, info) => {
+  const sb = new MockSupabase()
+  await sb.install(page.context())
+  await page.goto('/')
+  await page.waitForTimeout(4000)
+  await page.screenshot({ path: `${OUT}/boot-${info.project.name}.png` })
+  writeFileSync(`${OUT}/boot-${info.project.name}.txt`, `${logs.join('\n')}\n\nBODY:\n${await page.locator('body').innerText()}`)
+  await expect(page.getByLabel('שם משתמש')).toBeVisible()
+})
+
 async function signIn(page: Page, sb: MockSupabase) {
   sb.addUser('perf', '123456')
   await sb.install(page.context())
