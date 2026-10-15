@@ -201,7 +201,7 @@ describe('providers', () => {
     expect((bodies[1].generationConfig as Record<string, unknown>).thinkingConfig).toBeUndefined()
   })
 
-  it('Gemini: a stuck model is abandoned after its slot and the next model answers', async () => {
+  it('Gemini: a stalled model is hedged — the next model starts and the first answer wins', async () => {
     const calls: string[] = []
     const fetchFn = vi.fn((url: string, init: RequestInit) => {
       calls.push(url)
@@ -215,6 +215,23 @@ describe('providers', () => {
     const r = await new GeminiProvider('key', ['slow', 'fast'], fetchFn, 60).complete({ system: 's', user: 'u', jsonSchema: {} }, AbortSignal.timeout(5000))
     expect(r).toEqual({ text: '{"ok":2}', model: 'fast' })
     expect(Date.now() - t0).toBeLessThan(2000)
+  })
+
+  it('Gemini: hedging never starts a second call when the first answers in time', async () => {
+    const fetchFn = vi.fn(async () => okGemini('{"ok":1}')) as unknown as typeof fetch
+    await new GeminiProvider('key', ['a', 'b'], fetchFn, 5000).complete({ system: 's', user: 'u', jsonSchema: {} })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('Gemini: with hedging, a fast error still moves on immediately', async () => {
+    const calls: string[] = []
+    const fetchFn = vi.fn(async (url: string) => {
+      calls.push(url)
+      return url.includes('/a:') ? new Response('busy', { status: 503 }) : okGemini('{"ok":3}')
+    }) as unknown as typeof fetch
+    const r = await new GeminiProvider('key', ['a', 'b'], fetchFn, 5000).complete({ system: 's', user: 'u', jsonSchema: {} })
+    expect(r.model).toBe('b')
+    expect(calls).toHaveLength(2)
   })
 
   it('Gemini: when the overall budget runs out it stops (no endless model hopping)', async () => {

@@ -99,45 +99,75 @@ export class GeminiProvider implements NutritionAIProvider {
   private apiKey: string
   private models: string[]
   private fetchFn: FetchFn
-  /** a single model attempt may take this long before the next model is tried (0 = no limit) */
-  private attemptMs: number
-  constructor(apiKey: string, models: string[], fetchFn: FetchFn = fetch, attemptMs = 0) {
+  /**
+   * Hedging: if a model hasn't answered after this long, the next model starts in
+   * parallel and the first good answer wins (0 = strictly one after another).
+   * Production showed Gemini sometimes stalling for the whole budget while an
+   * immediate retry answered in ~4 s.
+   */
+  private hedgeMs: number
+  constructor(apiKey: string, models: string[], fetchFn: FetchFn = fetch, hedgeMs = 0) {
     this.apiKey = apiKey
     this.models = models
     this.fetchFn = fetchFn
-    this.attemptMs = attemptMs
+    this.hedgeMs = hedgeMs
   }
 
-  async complete(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
-    let lastErr: ProviderError | null = null
-    for (const [i, model] of this.models.entries()) {
-      if (signal?.aborted) break
-      // the first model gets a bounded slot; a stuck request moves on to the next model
-      // instead of eating the whole budget (seen in production: 25 s, then nothing)
-      const last = i === this.models.length - 1
-      const attempt = this.attemptMs > 0 && !last ? AbortSignal.timeout(this.attemptMs) : undefined
-      const sig = attempt && signal ? AbortSignal.any([signal, attempt]) : (attempt ?? signal)
-      try {
-        return await this.call(model, req, true, sig)
-      } catch (e) {
-        const err = e instanceof ProviderError ? e : new ProviderError('unavailable', String(e))
-        if (err.kind === 'bad_request') {
-          // older/newer models may reject responseJsonSchema/thinkingConfig — retry plain JSON mode
-          try {
-            return await this.call(model, req, false, sig)
-          } catch (e2) {
-            lastErr = e2 instanceof ProviderError ? e2 : err
-          }
-        } else {
-          lastErr = err
-        }
-        if (lastErr.kind === 'auth') throw lastErr
-        // the overall budget is spent → give up; only this model's slot ran out → next model
-        if (lastErr.kind === 'timeout' && (signal?.aborted || !attempt?.aborted)) throw lastErr
-        // rate_limit / not_found / unavailable / slot timeout → try the next Gemini model
-      }
+  /** one model, with the plain-JSON retry for models that reject schema/thinking config */
+  private async attempt(model: string, req: ProviderRequest, signal: AbortSignal): Promise<ProviderResponse> {
+    try {
+      return await this.call(model, req, true, signal)
+    } catch (e) {
+      const err = e instanceof ProviderError ? e : new ProviderError('unavailable', String(e))
+      if (err.kind !== 'bad_request') throw err
+      // older/newer models may reject responseJsonSchema/thinkingConfig — retry plain JSON mode
+      return this.call(model, req, false, signal)
     }
-    throw lastErr ?? new ProviderError('unavailable', 'no gemini models configured')
+  }
+
+  complete(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+    return new Promise((resolve, reject) => {
+      const controllers: AbortController[] = []
+      let next = 0
+      let pending = 0
+      let done = false
+      let lastErr: ProviderError | null = null
+      let hedge: ReturnType<typeof setTimeout> | undefined
+      const finish = (fn: () => void) => {
+        if (done) return
+        done = true
+        clearTimeout(hedge)
+        controllers.forEach((c) => c.abort())
+        fn()
+      }
+      const failIfExhausted = () => {
+        if (!done && pending === 0 && next >= this.models.length) finish(() => reject(lastErr ?? new ProviderError('unavailable', 'no gemini models configured')))
+      }
+      const launch = () => {
+        if (done || next >= this.models.length) return failIfExhausted()
+        const model = this.models[next++]
+        const c = new AbortController()
+        controllers.push(c)
+        pending++
+        this.attempt(model, req, signal ? AbortSignal.any([signal, c.signal]) : c.signal).then(
+          (r) => finish(() => resolve(r)),
+          (e) => {
+            pending--
+            if (done) return
+            lastErr = e instanceof ProviderError ? e : new ProviderError('unavailable', String(e))
+            // wrong key, or the overall budget is spent → stop; anything else → next model
+            if (lastErr.kind === 'auth' || signal?.aborted) return finish(() => reject(lastErr))
+            launch()
+            failIfExhausted()
+          },
+        )
+        clearTimeout(hedge)
+        if (this.hedgeMs > 0 && next < this.models.length) hedge = setTimeout(() => !done && launch(), this.hedgeMs)
+      }
+      if (signal?.aborted) return reject(new ProviderError('timeout', 'timeout'))
+      signal?.addEventListener('abort', () => finish(() => reject(lastErr?.kind === 'timeout' ? lastErr : new ProviderError('timeout', 'timeout'))), { once: true })
+      launch()
+    })
   }
 
   private async call(model: string, req: ProviderRequest, rich: boolean, signal?: AbortSignal): Promise<ProviderResponse> {
@@ -241,7 +271,7 @@ export function providersFromEnv(env: Env, fetchFn: FetchFn = fetch): NutritionA
   for (const id of order) {
     if (id === 'gemini' && env('GEMINI_API_KEY')) {
       const models = (env('GEMINI_MODELS') ?? DEFAULT_GEMINI_MODELS).split(',').map((s) => s.trim()).filter(Boolean)
-      list.push(new GeminiProvider(env('GEMINI_API_KEY')!, models, fetchFn, Number(env('GEMINI_ATTEMPT_MS') ?? 12000)))
+      list.push(new GeminiProvider(env('GEMINI_API_KEY')!, models, fetchFn, Number(env('GEMINI_HEDGE_MS') ?? 8000)))
     }
     if (id === 'groq' && env('GROQ_API_KEY')) {
       list.push(
