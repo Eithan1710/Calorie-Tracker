@@ -132,8 +132,11 @@ function SuggestionRow({ sug, date }: { sug: Suggestion; date: string }) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{sug.name}</span>
-            <span className="num block truncate text-sm text-ink-3">
-              {fmt(item.grams)} ג׳ · {fmt(item.calories)} {KCAL} · <span className="text-protein">חלבון {fmt(item.protein_g)}</span> · פחמ׳ {fmt(item.carbs_g)} · שומן {fmt(item.fat_g)}
+            <span className="num block truncate text-sm text-ink-2">
+              {fmt(item.grams)} ג׳ · {fmt(item.calories)} {KCAL}
+            </span>
+            <span className="num block truncate text-xs text-ink-3">
+              <span className="font-medium text-protein">חלבון {fmt(item.protein_g)}</span> · פחמ׳ {fmt(item.carbs_g)} · שומן {fmt(item.fat_g)} ג׳
             </span>
           </span>
         </button>
