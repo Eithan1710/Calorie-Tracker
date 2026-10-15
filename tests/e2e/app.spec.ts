@@ -462,6 +462,34 @@ test.describe('layout & a11y', () => {
     expect(sw).toBeLessThanOrEqual(vw)
   })
 
+  test('dock: every button is on top and works, also right after a sheet closes', async ({ page }) => {
+    await mockAnalyze(page, analysis([item('e', 'ביצה', 150, { kcal: 143, protein_g: 12.6, fat_g: 9.5, carbs_g: 0.7 })]))
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'ניווט ראשי' })
+    const onTop = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('nav[aria-label="ניווט ראשי"] button, nav[aria-label="ניווט ראשי"] label[aria-label]')].map((b) => {
+          const r = b.getBoundingClientRect()
+          return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('button, label') === b
+        }),
+      )
+    expect(await onTop()).toEqual([true, true, true, true])
+    // labels + selected state are visible, not only icons
+    await expect(nav.getByRole('button', { name: 'היום' })).toHaveAttribute('aria-current', 'page')
+    await expect(nav).toContainText('היסטוריה')
+    await expect(nav).toContainText('צילום')
+    // add a meal, and tap the dock while the sheet is still animating away
+    await addText(page, '3 ביצים')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    expect(await onTop()).toEqual([true, true, true, true])
+    await nav.getByRole('button', { name: 'היסטוריה' }).click()
+    await expect(page.getByRole('heading', { name: 'היסטוריה' })).toBeVisible()
+    await expect(nav.getByRole('button', { name: 'היסטוריה' })).toHaveAttribute('aria-current', 'page')
+    const chooser = page.waitForEvent('filechooser')
+    await nav.getByRole('button', { name: 'צלם אוכל' }).click()
+    await chooser
+  })
+
   test('layout: one column on mobile, two on desktop', async ({ page }, info) => {
     await page.goto('/')
     await expect(hero(page)).toBeVisible()

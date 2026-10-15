@@ -31,6 +31,10 @@ Open → see the balance → `+ הוסף אוכל` → type or photograph → `�
   (distance + time → pace + burn), walk, cycling, swimming, cardio/other. Every estimate is shown with a range.
 - **Steps** — manual, or from Apple Health through an Apple Shortcuts bridge (see below).
 - **History** — week / month: days in target, average balance, protein, steps, three small charts, day list.
+- **Body weight** (History → `משקל`) — log the weekly weigh-in in a few seconds (one per day: a second entry
+  for the same day corrects it; date can be changed), latest weight, change since the previous weigh-in, one
+  trend line (month / 3 months / all) on an honest axis (≥ 4 kg visible), tap any entry to edit or delete. The
+  newest weigh-in also updates the weight used for the calorie estimates. Synced to `mz_weights` (own rows only).
 - **Daily 21:30 reminder** — `לא שכחת לעדכן את היום? 🥗`, once a day, skipped if the evening is logged.
 - **Offline-first** — data lives in IndexedDB; common foods are computed offline by a deterministic Hebrew
   parser; anything else is queued and analysed when the connection returns. Optional Supabase sync.
@@ -100,6 +104,7 @@ All documented in [`.env.example`](.env.example). Summary:
 | `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_VISION` | server | Fallback AI #1 |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | server | Fallback AI #2 |
 | `AI_PROVIDER_ORDER`, `AI_TIMEOUT_MS` | server | Chain order / timeout |
+| `GEMINI_HEDGE_MS` | server | If the first Gemini model hasn't answered after this long (default 8000), the next model starts in parallel; first answer wins (`0` = off) |
 | `USDA_FDC_API_KEY`, `USDA_FDC_DISABLED` | server | USDA FoodData Central lookups for foods outside the table |
 | `REQUIRE_AUTH` | server | the AI endpoint requires a signed-in (non-anonymous) session; `false` disables that for local experiments only |
 | `VAPID_*`, `CRON_SECRET` | server (optional) | Override the Web Push keys / cron secret that otherwise live in Vault |
@@ -228,6 +233,8 @@ Other bridges: open-with-URL (`/?steps=7842&date=…`, Safari only on iOS) and m
   to the Home Screen** (iOS 16.4+); the settings screen explains this.
 - **Without a backend:** a local timer fires while the app is open/backgrounded, and an in-app banner appears when
   the app is opened after 21:30 with nothing logged. Never more than one per day.
+
+Speed measurements, bottlenecks and what was changed: [docs/performance.md](docs/performance.md).
 
 ## Data & security
 
