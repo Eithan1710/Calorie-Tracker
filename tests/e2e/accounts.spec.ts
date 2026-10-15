@@ -344,12 +344,17 @@ test('weight: long history from the server, range filters, honest axis; other ac
   await expect(page.getByText('77.7')).toHaveCount(0)
 
   const chart = page.getByTestId('weight-chart')
-  const dots = chart.locator('circle')
-  await expect(dots).toHaveCount(14) // 3 months ≈ 13–14 weekly points
+  // a long history opens on 3 months; one tap target (and tooltip) per weigh-in in range
+  const points = chart.locator('rect > title')
+  await expect(page.getByRole('radio', { name: '3 חודשים' })).toHaveAttribute('aria-checked', 'true')
+  await expect(points).toHaveCount(14) // 3 months ≈ 13–14 weekly points
   await page.getByRole('radio', { name: 'חודש', exact: true }).click()
-  await expect(dots).toHaveCount(5)
+  await expect(points).toHaveCount(5)
+  await expect(chart.locator('circle')).toHaveCount(5)
   await page.getByRole('radio', { name: 'הכל' }).click()
-  await expect(dots).toHaveCount(105)
+  await expect(points).toHaveCount(105)
+  // two years of dots would be a smear: only the newest is drawn, the line carries the rest
+  await expect(chart.locator('circle')).toHaveCount(1)
   // axis labels are whole kilograms and span at least 4 kg
   const ticks = (await chart.locator('svg > g > text').allTextContents()).map(Number)
   expect(ticks.every((t) => Number.isInteger(t))).toBe(true)

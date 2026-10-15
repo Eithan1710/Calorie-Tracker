@@ -34,7 +34,11 @@ const toPoints = (list: WeightEntry[]): WeightPoint[] => list.map((w) => ({ date
 export function Weight({ switcher }: { switcher: ReactNode }) {
   const weights = useStore((s) => s.weights)
   const list = useMemo(() => weightList({ weights }), [weights])
-  const [range, setRange] = useState<WeightRange>('3m')
+  // a short history fills the chart ("all" starts at the first weigh-in); a long one opens on 3 months
+  const [range, setRange] = useState<WeightRange>(() => {
+    const first = list[0]
+    return first && dayNum(toDateKey(new Date())) - dayNum(first.date) > 92 ? '3m' : 'all'
+  })
   const [editing, setEditing] = useState<WeightEntry | null>(null)
   const [showAll, setShowAll] = useState(false)
   const today = toDateKey(new Date())
@@ -83,7 +87,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
         <section aria-label="מגמת משקל" className="mt-6">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">מגמה</h2>
-            <div className="w-56">
+            <div className="w-[15.5rem] shrink-0">
               <Segmented<WeightRange>
                 label="טווח"
                 size="sm"
@@ -91,7 +95,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
                 onChange={setRange}
                 options={[
                   { value: '1m', label: 'חודש' },
-                  { value: '3m', label: '3 חודשים' },
+                  { value: '3m', label: <span className="whitespace-nowrap">3 חודשים</span> },
                   { value: 'all', label: 'הכל' },
                 ]}
               />
@@ -371,6 +375,8 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
         {px.length > 1 && <path d={line} fill="none" stroke="var(--ink)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />}
         {shown.map((p, i) => {
           const newest = i === shown.length - 1
+          // dots only while they have room (≥ 9 px apart); the newest weigh-in is always marked
+          if (!newest && active !== i && innerW / Math.max(1, shown.length - 1) < 9) return null
           return (
             <circle
               key={p.date}
