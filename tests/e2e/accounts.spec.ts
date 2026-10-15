@@ -363,3 +363,73 @@ test('weight: long history from the server, range filters, honest axis; other ac
   await expect(page.getByRole('button', { name: 'כל השקילות (105)' })).toBeVisible()
   await page.screenshot({ path: 'docs/screenshots/accounts-weight-history.png', fullPage: true })
 })
+
+// ── suggestions from the user's own history ─────────────────────────────────
+
+function foodRow(userId: string, day: string, hm: string, meal: string, name: string, grams: number, per100: { kcal: number; protein_g: number; fat_g: number; carbs_g: number }) {
+  const k = grams / 100
+  const at = new Date(`${day}T${hm}:00+03:00`).toISOString()
+  const it = { id: `${name}-${day}`, name, grams, per100, calories: Math.round(per100.kcal * k), protein_g: per100.protein_g * k, fat_g: per100.fat_g * k, carbs_g: per100.carbs_g * k, confidence: 0.85, assumptions: [], source: 'db', db_key: null }
+  return {
+    id: crypto.randomUUID(), user_id: userId, date: day, meal, title: name, emoji: '🍽️', items: [it],
+    calories: it.calories, protein_g: it.protein_g, fat_g: it.fat_g, carbs_g: it.carbs_g, calories_low: null, calories_high: null,
+    confidence: 0.85, provider: 'gemini', raw_text: name, status: 'ok', photo_path: null, created_at: at, updated_at: at, deleted_at: null,
+  }
+}
+
+test('suggestions: only foods from my own log, around this time of day, by what is missing; adding one updates today', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  const other = sb.addUser('דנה', '654321')
+  ;(sb.tables.mz_profiles ??= []).push({ user_id: u.id, sex: 'male', age: 32, height_cm: 178, weight_kg: 82, protein_target_g: 120, deficit_min: 100, deficit_max: 300, updated_at: '2026-10-01T10:00:00Z' })
+  const CHICKEN = { kcal: 165, protein_g: 31, fat_g: 3.6, carbs_g: 0 }
+  const TUNA = { kcal: 116, protein_g: 26, fat_g: 1, carbs_g: 0 }
+  const YOGURT = { kcal: 58, protein_g: 10, fat_g: 0.2, carbs_g: 4 }
+  const PASTA = { kcal: 158, protein_g: 5.8, fat_g: 0.9, carbs_g: 31 }
+  const rows = (sb.tables.mz_food_entries ??= [])
+  rows.push(
+    foodRow(u.id, '2026-10-01', '08:05', 'breakfast', 'יוגורט חלבון', 200, YOGURT),
+    foodRow(u.id, '2026-10-02', '07:55', 'breakfast', 'יוגורט חלבון', 200, YOGURT),
+    foodRow(u.id, '2026-10-03', '08:10', 'breakfast', 'יוגורט חלבון', 200, YOGURT),
+    foodRow(u.id, '2026-10-01', '20:10', 'dinner', 'חזה עוף', 150, CHICKEN),
+    foodRow(u.id, '2026-10-03', '19:50', 'dinner', 'חזה עוף', 150, CHICKEN),
+    foodRow(u.id, '2026-10-02', '19:40', 'dinner', 'טונה במים', 120, TUNA),
+    foodRow(u.id, '2026-10-04', '20:20', 'dinner', 'טונה במים', 120, TUNA),
+    // today: a big carb-heavy lunch → protein is what's missing tonight
+    foodRow(u.id, '2026-10-06', '12:30', 'lunch', 'פסטה', 400, PASTA),
+    // someone else's evening food never shows up
+    foodRow(other.id, '2026-10-02', '20:00', 'dinner', 'סטייק של דנה', 250, { kcal: 250, protein_g: 26, fat_g: 15, carbs_g: 0 }),
+  )
+
+  // 13:00: nothing logged around lunchtime before → no fallback to evening foods, just a short note
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await expect(hero(page)).toContainText('632')
+  await expect(page.getByTestId('suggestions-empty')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'הצעה לעכשיו' })).toHaveCount(0)
+
+  // 20:00: evening foods that fill the protein gap
+  await page.clock.setSystemTime(new Date('2026-10-06T20:00:00+03:00'))
+  await page.reload()
+  const card = page.getByRole('region', { name: 'הצעה לעכשיו' })
+  await expect(card).toBeVisible()
+  await expect(page.getByTestId('suggestions-need')).toContainText('חלבון')
+  await expect(card).toContainText('חזה עוף')
+  await expect(card).toContainText('טונה במים')
+  await expect(card).not.toContainText('יוגורט') // a breakfast food, not at 20:00
+  await expect(card).not.toContainText('סטייק של דנה')
+  await expect(card.getByRole('listitem')).toHaveCount(2)
+  await page.screenshot({ path: 'docs/screenshots/accounts-suggestions.png', fullPage: true })
+
+  // adjust the amount (usual 150 g → +step) and add: a normal entry, totals update, it isn't suggested again
+  await card.getByRole('button', { name: /^חזה עוף, 150 גרם/ }).click()
+  await card.getByRole('button', { name: 'יותר' }).click()
+  await expect(card.getByRole('group', { name: 'כמות חזה עוף' })).toContainText('190')
+  await card.getByRole('button', { name: 'הוסף חזה עוף' }).click()
+  await expect(hero(page)).toContainText('946') // 632 + 190 g × 1.65
+  await expect(card).not.toContainText('חזה עוף')
+  await expect(card).toContainText('טונה במים')
+  await expect
+    .poll(() => sb.rows('mz_food_entries', u.id).filter((r) => r.provider === 'history').map((r) => [r.title, r.date, r.meal, r.calories, (r.items as { grams: number }[])[0].grams]))
+    .toEqual([['חזה עוף', '2026-10-06', 'dinner', 314, 190]])
+})
