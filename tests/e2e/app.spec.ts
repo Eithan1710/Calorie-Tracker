@@ -473,6 +473,7 @@ test.describe('layout & a11y', () => {
           return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('button, label') === b
         }),
       )
+    await expect(nav.getByRole('button', { name: 'היסטוריה' })).toBeVisible()
     expect(await onTop()).toEqual([true, true, true, true])
     // labels + selected state are visible, not only icons
     await expect(nav.getByRole('button', { name: 'היום' })).toHaveAttribute('aria-current', 'page')
