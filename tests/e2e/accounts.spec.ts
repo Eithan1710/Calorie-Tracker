@@ -250,3 +250,111 @@ test('Apple Health: resting + active energy and an imported Strava run, no doubl
   // the imported run was not pushed back or duplicated
   expect(sb.rows('mz_exercises').filter((r) => r.origin === 'apple_health')).toHaveLength(1)
 })
+
+// ── body weight ──────────────────────────────────────────────────────────────
+
+async function openWeight(page: Page) {
+  await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היסטוריה' }).click()
+  await page.getByRole('radio', { name: 'משקל' }).click()
+}
+
+test('weight: empty state, quick entry, same-day correction, edit, delete + undo, survives reload', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await onboard(page, '62')
+  await openWeight(page)
+
+  // friendly empty state, entry is right there
+  await expect(page.getByText('עוד אין שקילות')).toBeVisible()
+  await expect(page.getByTestId('weight-chart')).toHaveCount(0)
+  const entry = page.getByRole('form', { name: 'שקילה חדשה' })
+  const kg = entry.getByLabel('שקילה חדשה')
+  await expect(entry.getByRole('button', { name: 'שמור' })).toBeDisabled()
+  await kg.fill('5')
+  await kg.blur()
+  await expect(entry.getByText('משקל בין 20 ל-400 ק״ג')).toBeVisible()
+
+  // first weigh-in (comma decimal, as an iPhone keyboard types it)
+  await kg.fill('61,8')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect(page.getByTestId('weight-current')).toContainText('61.8')
+  await expect(page.getByText('השקילה הראשונה')).toBeVisible()
+  await expect.poll(() => sb.rows('mz_weights', u.id).length).toBe(1)
+  // the newest weigh-in also feeds the calorie model
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.weight_kg).toBe(61.8)
+
+  // a week earlier, picked with the date control
+  await entry.getByLabel('תאריך השקילה').fill('2026-09-29')
+  await kg.fill('62.4')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect(page.getByTestId('weight-change')).toContainText('−0.6')
+  await expect(page.getByTestId('weight-change')).toContainText('29.9')
+
+  // same day again = correction, not a duplicate
+  await kg.fill('61.6')
+  await expect(entry.getByRole('button', { name: 'עדכן' })).toBeVisible()
+  await expect(entry.getByText(/כבר יש שקילה ביום הזה/)).toBeVisible()
+  await entry.getByRole('button', { name: 'עדכן' }).click()
+  await expect(page.getByTestId('weight-current')).toContainText('61.6')
+  await expect.poll(() => sb.rows('mz_weights', u.id).filter((r) => !r.deleted_at).length).toBe(2)
+
+  // edit: change value and move it a day; the list and chart follow
+  await page.getByRole('button', { name: /29 בספטמבר.*62\.4/ }).click()
+  const d = page.getByRole('dialog', { name: 'עריכת שקילה' })
+  await d.getByLabel('משקל').fill('62.2')
+  await d.getByLabel('תאריך').fill('2026-09-30')
+  await d.getByRole('button', { name: 'שמירה' }).click()
+  await expect(page.getByRole('button', { name: /30 בספטמבר.*62\.2/ })).toBeVisible()
+  await expect.poll(() => sb.rows('mz_weights', u.id).filter((r) => !r.deleted_at).map((r) => r.date).sort()).toEqual(['2026-09-30', '2026-10-06'])
+
+  // delete with undo
+  await page.getByRole('button', { name: /30 בספטמבר/ }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'מחיקת השקילה' }).click()
+  await expect(page.getByTestId('weight-change')).toHaveCount(0)
+  await page.getByRole('button', { name: 'ביטול' }).last().click()
+  await expect(page.getByTestId('weight-change')).toContainText('−0.6')
+
+  await page.screenshot({ path: 'docs/screenshots/accounts-weight.png', fullPage: true })
+
+  // persisted: reload → same data, still there (local copy + server)
+  await page.reload()
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toContainText('61.6')
+  await expect(page.getByTestId('weight-chart')).toBeVisible()
+})
+
+test('weight: long history from the server, range filters, honest axis; other accounts see nothing', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  const other = sb.addUser('דנה', '654321')
+  ;(sb.tables.mz_profiles ??= []).push({ user_id: u.id, sex: 'male', age: 30, height_cm: 162, weight_kg: 61, protein_target_g: 120, deficit_min: 100, deficit_max: 300, updated_at: '2026-10-01T10:00:00Z' })
+  // 2 years of weekly weigh-ins drifting 66 → 61 kg
+  const start = Date.parse('2024-10-08T12:00:00Z')
+  for (let i = 0; i < 105; i++) {
+    const date = new Date(start + i * 7 * 86_400_000).toISOString().slice(0, 10)
+    ;(sb.tables.mz_weights ??= []).push({ user_id: u.id, date, weight_kg: Math.round((66 - i * 0.048 + (i % 3) * 0.2) * 10) / 10, created_at: `${date}T07:00:00Z`, updated_at: `${date}T07:00:00Z`, deleted_at: null })
+  }
+  ;(sb.tables.mz_weights ??= []).push({ user_id: other.id, date: '2026-10-05', weight_kg: 77.7, created_at: '2026-10-05T07:00:00Z', updated_at: '2026-10-05T07:00:00Z', deleted_at: null })
+
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toBeVisible()
+  await expect(page.getByText('77.7')).toHaveCount(0)
+
+  const chart = page.getByTestId('weight-chart')
+  const dots = chart.locator('circle')
+  await expect(dots).toHaveCount(14) // 3 months ≈ 13–14 weekly points
+  await page.getByRole('radio', { name: 'חודש' }).click()
+  await expect(dots).toHaveCount(5)
+  await page.getByRole('radio', { name: 'הכל' }).click()
+  await expect(dots).toHaveCount(105)
+  // axis labels are whole kilograms and span at least 4 kg
+  const ticks = (await chart.locator('svg > g > text').allTextContents()).map(Number)
+  expect(ticks.every((t) => Number.isInteger(t))).toBe(true)
+  expect(Math.max(...ticks) - Math.min(...ticks)).toBeGreaterThanOrEqual(4)
+  // the list starts short, can be expanded
+  await expect(page.getByRole('button', { name: 'כל השקילות (105)' })).toBeVisible()
+  await page.screenshot({ path: 'docs/screenshots/accounts-weight-history.png', fullPage: true })
+})

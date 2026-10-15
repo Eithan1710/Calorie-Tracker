@@ -7,8 +7,8 @@
  * import into an account.
  */
 
-const DB_VERSION = 2
-export const STORES = ['food', 'exercise', 'health', 'photos'] as const
+const DB_VERSION = 3
+export const STORES = ['food', 'exercise', 'health', 'photos', 'weights'] as const
 export type StoreName = (typeof STORES)[number]
 
 export const LEGACY_DB = 'maazan'
@@ -36,6 +36,8 @@ function open(name: string = current): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains('health')) db.createObjectStore('health', { keyPath: 'date' })
         // food photos waiting for upload / cached for offline viewing, keyed by storage path
         if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'path' })
+        // body-weight log, one record per day
+        if (!db.objectStoreNames.contains('weights')) db.createObjectStore('weights', { keyPath: 'date' })
       }
       req.onsuccess = () => {
         const db = req.result

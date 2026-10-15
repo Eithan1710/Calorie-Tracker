@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { ImagePlus, Loader2, RotateCcw, Search, Trash2, WifiOff, X } from 'lucide-react'
 import { Sheet, PrimaryButton, GhostButton } from '../primitives'
-import { Review } from './Review'
-import { FoodSearch } from './FoodSearch'
 import { analyzePhoto, analyzeText } from '../../services/ai'
+import { startPhotoFlow, type PhotoFlowTimer } from '../../services/perf'
 import { imageErrorMessage, prepareImage, type PreparedImage } from '../../services/image'
 import { deletePhoto, newPhotoPath, photoUnavailable, savePhoto, usePhotoUrl } from '../../services/photos'
 import { deleteFood, getState, recentMeals, restoreFood, upsertFood, useStore } from '../../data/store'
@@ -13,6 +12,21 @@ import { showToast } from '../toast'
 import { fmt, haptic, KCAL } from '../format'
 
 type Phase = 'input' | 'search' | 'analyzing' | 'review' | 'error'
+
+// Not needed to open the app or send a photo: loaded on demand, and preloaded the moment
+// an analysis starts so the result screen is ready before the answer arrives.
+const loadReview = () => import('./Review')
+const loadSearch = () => import('./FoodSearch')
+const Review = lazy(() => loadReview().then((m) => ({ default: m.Review })))
+const FoodSearch = lazy(() => loadSearch().then((m) => ({ default: m.FoodSearch })))
+const Loading = () => (
+  <div className="flex flex-col gap-3" aria-busy="true">
+    <div className="skeleton h-24" />
+    <div className="skeleton h-10" />
+  </div>
+)
+/** shown once a result is on screen (two frames later = painted) */
+const afterPaint = (fn: () => void) => requestAnimationFrame(() => requestAnimationFrame(fn))
 
 function entryFromAnalysis(a: Analysis, date: string, meal: Meal, rawText: string, base?: FoodEntry): FoodEntry {
   const now = new Date().toISOString()
@@ -140,8 +154,11 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
   /** From the dock: photo → straight to analysis (the original quick flow). */
   async function attachAndAnalyze(file: File) {
     setPhase('analyzing')
+    void loadReview()
+    const timer = startPhotoFlow(file.size)
     const img = await loadPhoto(file)
-    if (img) await runPhoto(img, '')
+    timer.prepared()
+    if (img) await runPhoto(img, '', timer)
     else {
       setError({ message: imageErrorMessage(file) })
       setPhase('error')
@@ -155,13 +172,18 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
     else if (phase === 'error') setPhase('input')
   }
 
+  /** one analysis at a time: a second tap / Enter while one runs does nothing */
+  const busyRef = useRef(false)
+
   async function runText() {
     const t = text.trim()
-    if (!t) return
+    if (!t || busyRef.current) return
+    busyRef.current = true
     lastRequest.current = runText
     setPhase('analyzing')
     setError(null)
-    const res = await analyzeText(t)
+    void loadReview()
+    const res = await analyzeText(t).finally(() => (busyRef.current = false))
     if (res.ok) {
       setAnalysis(res.analysis)
       setPhase('review')
@@ -172,17 +194,24 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
     }
   }
 
-  async function runPhoto(img: PreparedImage, note: string) {
+  async function runPhoto(img: PreparedImage, note: string, timer?: PhotoFlowTimer) {
+    if (busyRef.current) return
+    busyRef.current = true
     lastRequest.current = () => void runPhoto(img, note)
     setPhase('analyzing')
     setError(null)
-    const res = await analyzePhoto({ data: img.data, mimeType: img.mimeType }, note)
+    void loadReview()
+    const flow = timer ?? startPhotoFlow(img.blob.size)
+    if (!timer) flow.prepared()
+    const res = await analyzePhoto({ data: img.data, mimeType: img.mimeType }, note, flow).finally(() => (busyRef.current = false))
     if (res.ok) {
       setAnalysis(res.analysis)
       setPhase('review')
       haptic()
+      afterPaint(() => flow.finish(true))
       return
     }
+    flow.finish(false)
     // a description was typed too → the text engine can still do the job; the photo stays attached
     if (note) {
       const t = await analyzeText(note)
@@ -293,6 +322,7 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
         <MealPicker value={meal} onChange={setMeal} />
 
         {phase === 'search' && (
+          <Suspense fallback={<Loading />}>
           <FoodSearch
             onCancel={() => setPhase('input')}
             onPick={(item) => {
@@ -309,6 +339,7 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
               haptic()
             }}
           />
+          </Suspense>
         )}
 
         {phase === 'input' && (
@@ -392,7 +423,9 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
                 <ImagePlus className="size-4" aria-hidden /> צרף תמונה לארוחה
               </button>
             )}
-            <Review analysis={analysis} onChange={setAnalysis} originalText={text} />
+            <Suspense fallback={<Loading />}>
+              <Review analysis={analysis} onChange={setAnalysis} originalText={text} />
+            </Suspense>
           </>
         )}
 
@@ -480,7 +513,9 @@ export function EntrySheet({ entryId, onClose }: { entryId: string | null; onClo
         <MealPicker value={meal} onChange={setMeal} />
         <EntryPhotoEditor entry={entry} />
         {analysis ? (
-          <Review analysis={analysis} onChange={setAnalysis} originalText={entry.raw_text} />
+          <Suspense fallback={<Loading />}>
+            <Review analysis={analysis} onChange={setAnalysis} originalText={entry.raw_text} />
+          </Suspense>
         ) : (
           <div className="flex flex-col gap-3">
             <p className="rounded-3xl bg-surface-2 p-4 text-lg">{entry.raw_text}</p>

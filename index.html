@@ -14,9 +14,19 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Calorie Tracker</title>
+    <style>
+      /* shown until the app's script runs (replaced by React on first render): no blank or white flash */
+      html { background: #f5f3ee; }
+      @media (prefers-color-scheme: dark) { html { background: #0d0e10; } }
+      .boot { min-height: 100dvh; padding: max(12px, env(safe-area-inset-top)) 16px 0; max-width: 640px; margin: 0 auto; }
+      .boot i { display: block; border-radius: 22px; background: rgb(127 127 127 / 0.12); }
+      .boot .dock { position: fixed; inset: auto 12px max(16px, env(safe-area-inset-bottom)); max-width: 448px; margin: 0 auto; height: 70px; border-radius: 26px; }
+      @media (prefers-reduced-motion: no-preference) { .boot i { animation: bootp 1.2s ease-in-out infinite alternate; } }
+      @keyframes bootp { to { opacity: 0.55; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" aria-busy="true" aria-label="טוען"><i style="height:34px;width:40%;margin:8px 0 18px"></i><i style="height:150px"></i><i style="height:180px;margin-top:12px"></i><i class="dock"></i></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

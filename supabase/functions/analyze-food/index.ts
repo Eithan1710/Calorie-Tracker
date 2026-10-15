@@ -31,35 +31,51 @@ async function loadKeys(admin: any): Promise<Record<string, string>> {
   return values
 }
 
+/** members confirmed recently (per function instance): saves a database round trip per photo */
+const memberCache = new Map<string, number>()
+const MEMBER_TTL_MS = 10 * 60_000
+
+// deno-lint-ignore no-explicit-any
+async function authorize(admin: any, req: Request): Promise<{ userId: string | null } | { error: Response }> {
+  // Members only: the caller's access token identifies them, and the account
+  // must be listed in mz_members (anonymous / other-app accounts are refused).
+  // REQUIRE_AUTH=false turns this off for local experiments only.
+  if (Deno.env.get('REQUIRE_AUTH') === 'false') return { userId: null }
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+  const { data, error } = await admin.auth.getUser(token)
+  if (error || !data.user || data.user.is_anonymous) return { error: json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401) }
+  const id = data.user.id as string
+  if ((memberCache.get(id) ?? 0) > Date.now()) return { userId: id }
+  const { data: member } = await admin.from('mz_members').select('user_id').eq('user_id', id).maybeSingle()
+  if (!member) return { error: json({ error: 'unauthorized', message: 'לחשבון הזה אין גישה למאזן.' }, 403) }
+  memberCache.set(id, Date.now() + MEMBER_TTL_MS)
+  return { userId: id }
+}
+
+const BAD_BODY = Symbol('bad body')
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...corsHeaders, 'access-control-expose-headers': 'server-timing' } })
   if (req.method !== 'POST') return json({ error: 'bad_request', message: 'POST only' }, 405)
+  const t0 = performance.now()
 
   const url = Deno.env.get('SUPABASE_URL')!
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   const admin = createClient(url, serviceKey, { auth: { persistSession: false } })
-  const keys = await loadKeys(admin)
+
+  // independent → concurrently: who is calling, the AI keys, and the request body
+  let tAuth = 0
+  const [auth, keys, body] = await Promise.all([
+    authorize(admin, req).finally(() => (tAuth = performance.now() - t0)),
+    loadKeys(admin),
+    req.json().catch(() => BAD_BODY),
+  ])
+  const tReady = performance.now() - t0
+  if ('error' in auth) return auth.error
+  const userId = auth.userId
   const env = (k: string) => keys[k] ?? Deno.env.get(k)
 
-  // Members only: the caller's access token identifies them, and the account
-  // must be listed in mz_members (anonymous / other-app accounts are refused).
-  // REQUIRE_AUTH=false turns this off for local experiments only.
-  let userId: string | null = null
-  if (env('REQUIRE_AUTH') !== 'false') {
-    const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
-    const { data, error } = await admin.auth.getUser(token)
-    if (error || !data.user || data.user.is_anonymous) return json({ error: 'unauthorized', message: 'צריך להתחבר כדי להשתמש בניתוח החכם.' }, 401)
-    const { data: member } = await admin.from('mz_members').select('user_id').eq('user_id', data.user.id).maybeSingle()
-    if (!member) return json({ error: 'unauthorized', message: 'לחשבון הזה אין גישה למאזן.' }, 403)
-    userId = data.user.id
-  }
-
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
-    return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
-  }
+  if (body === BAD_BODY) return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
   const parsed = AnalyzeRequestSchema.safeParse(body)
   if (!parsed.success) return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
 
@@ -73,9 +89,11 @@ Deno.serve(async (req) => {
     return data.map((r: Record<string, unknown>) => toDbFood(r))
   }
 
+  const timing: Record<string, number> = {}
   const result = await analyzeFood(parsed.data, {
     env,
     searchFoods: env('FOOD_DB_DISABLED') === 'true' ? undefined : searchFoods,
+    timing,
     log: (entry) => {
       if (!userId) return
       // fire-and-forget; never store images, and only a truncated text
@@ -93,7 +111,14 @@ Deno.serve(async (req) => {
     },
   })
 
-  if (result.ok) return json(result.analysis)
+  // stage durations for the app's speed panel and the function logs (numbers only)
+  const total = performance.now() - t0
+  const stages = { auth: tAuth, prep: tReady, ai: timing.ai ?? 0, resolve: timing.resolve ?? 0, total }
+  const serverTiming = Object.entries(stages).map(([k, v]) => `${k};dur=${Math.round(v)}`).join(', ')
+  const headers = { 'server-timing': serverTiming, 'access-control-expose-headers': 'server-timing' }
+  console.log(JSON.stringify({ fn: 'analyze-food', kind: parsed.data.image ? 'photo' : parsed.data.mode, ok: result.ok, image_kb: parsed.data.image ? Math.round((parsed.data.image.data.length * 3) / 4 / 1024) : 0, ...Object.fromEntries(Object.entries(stages).map(([k, v]) => [`${k}_ms`, Math.round(v)])) }))
+
+  if (result.ok) return json(result.analysis, 200, headers)
   const status = result.error === 'unavailable' ? 503 : 422
-  return json({ error: result.error, message: result.message, clarification: result.clarification ?? null }, status)
+  return json({ error: result.error, message: result.message, clarification: result.clarification ?? null }, status, headers)
 })

@@ -11,8 +11,9 @@ on:
       migration:
         description: Migration file
         type: choice
-        default: 20261014000000_health_energy_samples.sql
+        default: 20261015000000_body_weight.sql
         options:
+          - 20261015000000_body_weight.sql
           - 20261014000000_health_energy_samples.sql
           - 20261012000000_health_energy_workouts.sql
           - 20261011000000_food_database.sql

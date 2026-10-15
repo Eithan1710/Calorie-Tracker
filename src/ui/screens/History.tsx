@@ -8,7 +8,7 @@ import { STATUS_STYLE } from './Today'
 
 type Range = 7 | 30
 
-export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
+export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => void; switcher?: ReactNode }) {
   const [range, setRange] = useState<Range>(7)
   const food = useStore((s) => s.food)
   const exercise = useStore((s) => s.exercise)
@@ -46,7 +46,8 @@ export function History({ onOpenDay }: { onOpenDay: (date: string) => void }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-36 lg:px-8">
-      <header className="safe-top flex items-center justify-between gap-3 pb-4">
+      {switcher && <div className="safe-top mx-auto max-w-xl pb-3">{switcher}</div>}
+      <header className={`${switcher ? '' : 'safe-top '}flex items-center justify-between gap-3 pb-4`}>
         <h1 className="text-[28px] leading-tight font-bold tracking-tight">היסטוריה</h1>
         <div className="w-44">
           <Segmented<'7' | '30'>

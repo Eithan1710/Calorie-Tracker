@@ -106,6 +106,8 @@ export interface PipelineDeps {
   log?: (entry: AnalysisLog) => void
   /** full food database search (public.mz_search_foods); absent → curated + USDA only */
   searchFoods?: SearchFoods
+  /** filled with stage durations (ms): ai = model calls, resolve = nutrient lookup */
+  timing?: Record<string, number>
 }
 
 export interface AnalysisLog {
@@ -323,9 +325,18 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
   let sawUnclear: string | null = null
   let sawNotFood = false
 
+  const budget = AbortSignal.timeout(timeoutMs)
+  const timing = deps.timing ?? {}
+  timing.ai = 0
   for (const provider of providers) {
     try {
-      const res = await provider.complete({ system, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, AbortSignal.timeout(timeoutMs))
+      const t0 = Date.now()
+      let res
+      try {
+        res = await provider.complete({ system, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, budget)
+      } finally {
+        timing.ai += Date.now() - t0
+      }
       const raw = extractJson(res.text)
       const parsed = AiParseSchema.safeParse(raw)
       if (!parsed.success) {
@@ -340,7 +351,9 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
         sawUnclear = parsed.data.clarification_he ?? ''
         break
       }
+      const t1 = Date.now()
       const analysis = await toAnalysis(parsed.data, provider.id, res.model, { env: deps.env, fetchFn, searchFoods: deps.searchFoods })
+      timing.resolve = Date.now() - t1
       if (!analysis) {
         attempts.push({ provider: provider.id, error: 'no_resolvable_items' })
         continue

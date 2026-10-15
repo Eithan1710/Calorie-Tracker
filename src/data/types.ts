@@ -82,6 +82,17 @@ export interface HealthDay {
   dirty?: boolean
 }
 
+/** One body-weight measurement per day (the date is the key: a second entry for a day corrects it). */
+export interface WeightEntry {
+  /** YYYY-MM-DD */
+  date: string
+  weight_kg: number
+  created_at: string
+  updated_at: string
+  deleted?: boolean
+  dirty?: boolean
+}
+
 export interface Settings {
   profile: Profile | null
   proteinTarget: number

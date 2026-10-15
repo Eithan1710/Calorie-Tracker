@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { getAll, putMany, clearAll, dbNameFor, dropDatabase, LEGACY_DB, useDatabase } from './idb'
-import { DEFAULT_SETTINGS, type Exercise, type FoodEntry, type HealthDay, type Settings } from './types'
+import { DEFAULT_SETTINGS, type Exercise, type FoodEntry, type HealthDay, type Settings, type WeightEntry } from './types'
 
 /**
  * Local-first store. Everything renders from memory; IndexedDB persists
@@ -21,6 +21,8 @@ export interface State {
   food: Record<string, FoodEntry>
   exercise: Record<string, Exercise>
   health: Record<string, HealthDay>
+  /** body weight by date */
+  weights: Record<string, WeightEntry>
 }
 
 const LEGACY_SETTINGS_KEY = 'maazan:settings'
@@ -41,7 +43,7 @@ function loadSettings(key: string): Settings {
   return readSettings(key) ?? { ...DEFAULT_SETTINGS }
 }
 
-let state: State = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {} }
+let state: State = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {}, weights: {} }
 const listeners = new Set<() => void>()
 const changeHooks = new Set<() => void>()
 
@@ -84,12 +86,13 @@ export async function initStore(userId: string | null = null): Promise<void> {
   settingsKey = settingsKeyFor(userId)
   useDatabase(dbNameFor(userId))
   // render settings immediately; records follow from IndexedDB
-  state = { ready: false, userId, settings: loadSettings(settingsKey), food: {}, exercise: {}, health: {} }
+  state = { ready: false, userId, settings: loadSettings(settingsKey), food: {}, exercise: {}, health: {}, weights: {} }
   emit()
-  const [food, exercise, health] = await Promise.all([
+  const [food, exercise, health, weights] = await Promise.all([
     getAll<FoodEntry>('food'),
     getAll<Exercise>('exercise'),
     getAll<HealthDay>('health'),
+    getAll<WeightEntry>('weights'),
   ])
   if (state.userId !== userId) return // account switched meanwhile
   state = {
@@ -98,13 +101,14 @@ export async function initStore(userId: string | null = null): Promise<void> {
     food: byId(food),
     exercise: byId(exercise),
     health: Object.fromEntries(health.map((h) => [h.date, h])),
+    weights: Object.fromEntries(weights.map((w) => [w.date, w])),
   }
   emit()
 }
 
 /** Forget the in-memory account (logout). */
 export function resetStore() {
-  state = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {} }
+  state = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {}, weights: {} }
   settingsKey = LEGACY_SETTINGS_KEY
   useDatabase(LEGACY_DB)
   emit()
@@ -112,7 +116,7 @@ export function resetStore() {
 
 /** True when the account's local copy has changes the server hasn't received. */
 export function hasUnsyncedChanges(s: State = state): boolean {
-  return [...Object.values(s.food), ...Object.values(s.exercise), ...Object.values(s.health)].some((r) => r.dirty)
+  return [...Object.values(s.food), ...Object.values(s.exercise), ...Object.values(s.health), ...Object.values(s.weights)].some((r) => r.dirty)
 }
 
 /** Delete an account's local copy from this device (after logout, once everything is synced). */
@@ -272,7 +276,65 @@ export function applyHealthRow(row: Omit<HealthDay, 'dirty'>) {
   void putMany('health', [rec])
 }
 
-export function markClean(kind: 'food' | 'exercise' | 'health', ids: string[]) {
+// ── body weight ───────────────────────────────────────────────────────────
+
+/** Live (not deleted) measurements, oldest first. */
+export function weightList(s: Pick<State, 'weights'>): WeightEntry[] {
+  return Object.values(s.weights)
+    .filter((w) => !w.deleted)
+    .sort((a, b) => a.date.localeCompare(b.date))
+}
+
+function putWeight(rec: WeightEntry, fromServer = false) {
+  state = { ...state, weights: { ...state.weights, [rec.date]: rec } }
+  emit()
+  void putMany('weights', [rec])
+  if (!fromServer) localChanged()
+}
+
+/** The newest measurement also becomes the weight used for the calorie estimates (BMR). */
+function syncProfileWeight() {
+  const latest = weightList(state).at(-1)
+  const p = state.settings.profile
+  if (!latest || !p || Math.abs(p.weightKg - latest.weight_kg) < 0.05) return
+  updateSettings({ profile: { ...p, weightKg: latest.weight_kg }, profileUpdatedAt: now() })
+}
+
+/**
+ * Save a measurement. One per day: saving a day that already has one corrects it.
+ * `previousDate` moves an entry to another day (the old day is removed).
+ */
+export function saveWeight(date: string, weightKg: number, previousDate?: string) {
+  const t = now()
+  const kg = Math.round(weightKg * 10) / 10
+  if (previousDate && previousDate !== date && state.weights[previousDate] && !state.weights[previousDate].deleted) {
+    putWeight({ ...state.weights[previousDate], deleted: true, updated_at: t, dirty: true })
+  }
+  const cur = state.weights[date]
+  putWeight({ date, weight_kg: kg, created_at: cur && !cur.deleted ? cur.created_at : t, updated_at: t, deleted: false, dirty: true })
+  syncProfileWeight()
+}
+
+export function deleteWeight(date: string) {
+  const cur = state.weights[date]
+  if (!cur || cur.deleted) return
+  putWeight({ ...cur, deleted: true, updated_at: now(), dirty: true })
+  syncProfileWeight()
+}
+
+export function restoreWeight(date: string) {
+  const cur = state.weights[date]
+  if (!cur || !cur.deleted) return
+  putWeight({ ...cur, deleted: false, updated_at: now(), dirty: true })
+  syncProfileWeight()
+}
+
+/** A row from the server (newer than the local copy). */
+export function applyWeightRow(rec: Omit<WeightEntry, 'dirty'>) {
+  putWeight({ ...rec, dirty: false }, true)
+}
+
+export function markClean(kind: 'food' | 'exercise' | 'health' | 'weights', ids: string[]) {
   if (!ids.length) return
   const coll = { ...state[kind] } as Record<string, { dirty?: boolean }>
   const changed: unknown[] = []
@@ -288,7 +350,7 @@ export function markClean(kind: 'food' | 'exercise' | 'health', ids: string[]) {
 
 export async function wipeLocalData() {
   await clearAll()
-  state = { ...state, food: {}, exercise: {}, health: {} }
+  state = { ...state, food: {}, exercise: {}, health: {}, weights: {} }
   emit()
 }
 

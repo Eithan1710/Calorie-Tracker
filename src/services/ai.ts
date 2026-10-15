@@ -1,7 +1,7 @@
-import { AnalysisSchema, type Analysis, type AnalyzeRequest } from '../../supabase/functions/_shared/schema.ts'
-import { parseLocally } from '../../supabase/functions/_shared/localParser.ts'
+import type { Analysis, AnalyzeRequest } from '../../supabase/functions/_shared/schema.ts'
 import { API_BASE, SUPABASE_ANON_KEY } from './config'
 import { getAccessToken } from './auth'
+import type { PhotoFlowTimer } from './perf'
 
 export type AnalyzeOutcome =
   | { ok: true; analysis: Analysis; offline?: boolean }
@@ -12,9 +12,16 @@ const MSG = {
   offline: 'אין חיבור כרגע. שמרתי את מה שכתבת — ננתח אוטומטית כשהחיבור יחזור.',
   unavailable: 'הניתוח לא זמין כרגע. נסה שוב בעוד רגע.',
   photoOffline: 'אין חיבור כרגע, וניתוח תמונה דורש אינטרנט. אפשר לכתוב מה אכלת.',
+  slow: 'הניתוח לוקח יותר מדי זמן. נסה שוב בעוד רגע.',
 }
 
-function localFallback(text: string, reason: 'offline' | 'unavailable'): AnalyzeOutcome {
+// Not needed to open the app or send a photo: zod (response validation) and the offline
+// parser (with its food table) load in the background — the response takes seconds anyway.
+const schemaModule = () => import('../../supabase/functions/_shared/schema.ts')
+const parserModule = () => import('../../supabase/functions/_shared/localParser.ts')
+
+async function localFallback(text: string, reason: 'offline' | 'unavailable'): Promise<AnalyzeOutcome> {
+  const { parseLocally } = await parserModule()
   const local = parseLocally(text)
   if (local.analysis && local.unmatched.length === 0) return { ok: true, analysis: local.analysis, offline: true }
   if (local.analysis) {
@@ -24,7 +31,7 @@ function localFallback(text: string, reason: 'offline' | 'unavailable'): Analyze
   return { ok: false, code: reason, message: reason === 'offline' ? MSG.offline : MSG.unavailable, canQueue: true }
 }
 
-async function post(body: AnalyzeRequest, timeoutMs = 35000): Promise<Response> {
+async function post(body: AnalyzeRequest, timeoutMs: number, timer?: PhotoFlowTimer): Promise<Response> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (SUPABASE_ANON_KEY) {
     // the analyze function only serves signed-in users: send the session's access token
@@ -32,24 +39,51 @@ async function post(body: AnalyzeRequest, timeoutMs = 35000): Promise<Response> 
     headers.authorization = `Bearer ${token ?? SUPABASE_ANON_KEY}`
     headers.apikey = SUPABASE_ANON_KEY
   }
-  return fetch(`${API_BASE}/analyze-food`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) })
+  const payload = JSON.stringify(body)
+  timer?.sent(payload.length)
+  return fetch(`${API_BASE}/analyze-food`, { method: 'POST', headers, body: payload, signal: AbortSignal.timeout(timeoutMs) })
 }
 
-async function call(body: AnalyzeRequest): Promise<AnalyzeOutcome> {
+const isTimeout = (e: unknown) => (e as Error)?.name === 'TimeoutError' || (e as Error)?.name === 'AbortError'
+
+/** identical requests in flight share one network call (double taps, retries racing) */
+const inflight = new Map<string, Promise<AnalyzeOutcome>>()
+
+async function call(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<AnalyzeOutcome> {
+  const key = JSON.stringify([body.mode, body.text, body.correction, body.image?.data.length, body.image?.data.slice(-64)])
+  const running = inflight.get(key)
+  if (running) return running
+  const p = callOnce(body, timer).finally(() => inflight.delete(key))
+  inflight.set(key, p)
+  return p
+}
+
+async function callOnce(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<AnalyzeOutcome> {
   const isPhoto = Boolean(body.image)
   const text = body.text ?? ''
+  void schemaModule() // warm up while the request is in flight
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     if (isPhoto) return { ok: false, code: 'offline', message: MSG.photoOffline }
     if (body.mode === 'analyze') return localFallback(text, 'offline')
     return { ok: false, code: 'offline', message: MSG.offline }
   }
-  let res: Response
-  try {
-    res = await post(body)
-  } catch {
-    if (isPhoto) return { ok: false, code: 'offline', message: MSG.photoOffline }
-    return body.mode === 'analyze' ? localFallback(text, 'offline') : { ok: false, code: 'offline', message: MSG.unavailable }
+  let res: Response | null = null
+  // one quick retry when the connection drops (mobile networks); never after a timeout
+  for (let attempt = 0; attempt < 2 && !res; attempt++) {
+    try {
+      res = await post(body, 30_000, timer)
+    } catch (e) {
+      if (isTimeout(e)) return isPhoto || body.mode !== 'analyze' ? { ok: false, code: 'timeout', message: MSG.slow } : localFallback(text, 'unavailable')
+      if (attempt === 0 && navigator.onLine !== false) {
+        await new Promise((r) => setTimeout(r, 700))
+        continue
+      }
+      if (isPhoto) return { ok: false, code: 'offline', message: MSG.photoOffline }
+      return body.mode === 'analyze' ? localFallback(text, 'offline') : { ok: false, code: 'offline', message: MSG.unavailable }
+    }
   }
+  if (!res) return { ok: false, code: 'unavailable', message: MSG.unavailable }
+  timer?.received(res.headers.get('server-timing'))
   let json: unknown = null
   try {
     json = await res.json()
@@ -58,6 +92,7 @@ async function call(body: AnalyzeRequest): Promise<AnalyzeOutcome> {
   }
   if (res.ok) {
     // the server is trusted more than the model, but still validate before saving
+    const { AnalysisSchema } = await schemaModule()
     const parsed = AnalysisSchema.safeParse(json)
     if (parsed.success) return { ok: true, analysis: parsed.data }
     return body.mode === 'analyze' && !isPhoto ? localFallback(text, 'unavailable') : { ok: false, code: 'invalid', message: MSG.unclear }
@@ -65,7 +100,7 @@ async function call(body: AnalyzeRequest): Promise<AnalyzeOutcome> {
   const err = (json ?? {}) as { error?: string; message?: string; clarification?: string | null }
   if ((res.status === 401 || res.status === 404 || res.status >= 500) && body.mode === 'analyze' && !isPhoto) {
     // auth missing / no backend deployed / provider outage → deterministic parser still helps
-    const fb = localFallback(text, 'unavailable')
+    const fb = await localFallback(text, 'unavailable')
     if (fb.ok) return fb
   }
   return {
@@ -80,8 +115,8 @@ export function analyzeText(text: string) {
   return call({ mode: 'analyze', text })
 }
 
-export function analyzePhoto(image: { data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' }, note = '') {
-  return call({ mode: 'analyze', text: note, image })
+export function analyzePhoto(image: { data: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' }, note = '', timer?: PhotoFlowTimer) {
+  return call({ mode: 'analyze', text: note, image }, timer)
 }
 
 export function correctAnalysis(previous: Analysis, correction: string, originalText = '') {

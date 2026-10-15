@@ -10,14 +10,8 @@ import { newId } from '../../../supabase/functions/_shared/nutrition.ts'
 import { fmt, fmtPace, haptic, KCAL } from '../format'
 import { showToast } from '../toast'
 
-export const EXERCISE_META: Record<ExerciseType, { label: string; emoji: string }> = {
-  strength: { label: 'כוח', emoji: '🏋️' },
-  run: { label: 'ריצה', emoji: '🏃' },
-  walk: { label: 'הליכה', emoji: '🚶' },
-  cycling: { label: 'אופניים', emoji: '🚴' },
-  swimming: { label: 'שחייה', emoji: '🏊' },
-  other: { label: 'קרדיו / אחר', emoji: '⚡' },
-}
+import { EXERCISE_META } from '../exerciseMeta'
+export { EXERCISE_META }
 
 const INTENSITY: { value: Intensity; label: string }[] = [
   { value: 'low', label: 'קלה' },

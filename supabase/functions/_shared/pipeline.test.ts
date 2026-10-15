@@ -201,6 +201,30 @@ describe('providers', () => {
     expect((bodies[1].generationConfig as Record<string, unknown>).thinkingConfig).toBeUndefined()
   })
 
+  it('Gemini: a stuck model is abandoned after its slot and the next model answers', async () => {
+    const calls: string[] = []
+    const fetchFn = vi.fn((url: string, init: RequestInit) => {
+      calls.push(url)
+      if (url.includes('slow')) {
+        // never answers; only the abort ends it
+        return new Promise<Response>((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal!.reason)))
+      }
+      return Promise.resolve(okGemini('{"ok":2}'))
+    }) as unknown as typeof fetch
+    const t0 = Date.now()
+    const r = await new GeminiProvider('key', ['slow', 'fast'], fetchFn, 60).complete({ system: 's', user: 'u', jsonSchema: {} }, AbortSignal.timeout(5000))
+    expect(r).toEqual({ text: '{"ok":2}', model: 'fast' })
+    expect(Date.now() - t0).toBeLessThan(2000)
+  })
+
+  it('Gemini: when the overall budget runs out it stops (no endless model hopping)', async () => {
+    const fetchFn = vi.fn((_url: string, init: RequestInit) =>
+      new Promise<Response>((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal!.reason))),
+    ) as unknown as typeof fetch
+    await expect(new GeminiProvider('key', ['a', 'b', 'c'], fetchFn, 1000).complete({ system: 's', user: 'u', jsonSchema: {} }, AbortSignal.timeout(50))).rejects.toMatchObject({ kind: 'timeout' })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
   it('Gemini: auth errors are not retried across models', async () => {
     const fetchFn = vi.fn(async () => new Response('denied', { status: 403 })) as unknown as typeof fetch
     await expect(new GeminiProvider('bad', ['a', 'b'], fetchFn).complete({ system: 's', user: 'u', jsonSchema: {} })).rejects.toMatchObject({ kind: 'auth' })

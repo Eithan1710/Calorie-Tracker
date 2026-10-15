@@ -130,3 +130,9 @@ jobs:
           grep -q 'health ingest checks passed' health.log
           $P -f supabase/tests/health_samples.sql 2>&1 | tee samples.log
           grep -q 'health samples checks passed' samples.log
+      - name: Body weight (migration twice + one-per-day + owner-only RLS)
+        run: |
+          set -e
+          P="psql -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/weights.sql 2>&1 | tee weights.log
+          grep -q 'weight checks passed' weights.log

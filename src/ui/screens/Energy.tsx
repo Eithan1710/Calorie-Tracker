@@ -7,7 +7,7 @@ import { paceSecPerKm } from '../../domain/energy'
 import { useStore } from '../../data/store'
 import { AnimatedNumber } from '../primitives'
 import { fmt, fmtPace, KCAL } from '../format'
-import { EXERCISE_META } from '../sheets/ExerciseSheet'
+import { EXERCISE_META } from '../exerciseMeta'
 
 const timeHM = (iso: string) => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
 

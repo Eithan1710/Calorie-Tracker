@@ -4,7 +4,7 @@ export interface PreparedImage {
   mimeType: 'image/jpeg'
   /** same JPEG as a Blob — stored / uploaded */
   blob: Blob
-  /** data: URL for an instant preview */
+  /** object/data URL for an instant preview */
   previewUrl: string
   width: number
   height: number
@@ -12,12 +12,14 @@ export interface PreparedImage {
 
 /**
  * Downscale + re-encode a photo picked from the camera or the photo library.
- * A 12–48 MP phone photo (3–15 MB, sometimes HEIC) becomes a ~1280 px JPEG of
- * roughly 150–300 KB: plenty for recognising food and for viewing on a phone,
- * fast to upload, cheap to store. EXIF orientation is applied, and re-encoding
- * also drops the photo's metadata (location etc.) before anything is uploaded.
+ * A 12–48 MP phone photo (3–15 MB, sometimes HEIC) becomes a ~1024 px JPEG of
+ * roughly 100–200 KB: plenty for recognising food and judging portions, and
+ * small enough to upload in well under a second on mobile data. EXIF
+ * orientation is applied, and re-encoding drops the photo's metadata
+ * (location etc.) before anything is uploaded. Encoding is asynchronous
+ * (toBlob), so the screen stays responsive meanwhile.
  */
-export async function prepareImage(file: File, maxSide = 1280, quality = 0.8): Promise<PreparedImage> {
+export async function prepareImage(file: File, maxSide = 1024, quality = 0.8): Promise<PreparedImage> {
   const bitmap = await loadBitmap(file)
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
@@ -27,11 +29,18 @@ export async function prepareImage(file: File, maxSide = 1280, quality = 0.8): P
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('canvas unavailable')
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(bitmap as CanvasImageSource, 0, 0, w, h)
   if ('close' in bitmap && typeof bitmap.close === 'function') bitmap.close()
-  const dataUrl = canvas.toDataURL('image/jpeg', quality)
-  const data = dataUrl.split(',')[1]
-  return { data, mimeType: 'image/jpeg', blob: base64ToBlob(data, 'image/jpeg'), previewUrl: dataUrl, width: w, height: h }
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+  if (!blob) {
+    // very old engines: synchronous fallback
+    const dataUrl = canvas.toDataURL('image/jpeg', quality)
+    const data = dataUrl.split(',')[1]
+    return { data, mimeType: 'image/jpeg', blob: base64ToBlob(data, 'image/jpeg'), previewUrl: dataUrl, width: w, height: h }
+  }
+  const data = await blobToBase64(blob)
+  return { data, mimeType: 'image/jpeg', blob, previewUrl: URL.createObjectURL(blob), width: w, height: h }
 }
 
 export function base64ToBlob(b64: string, type: string): Blob {

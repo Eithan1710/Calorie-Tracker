@@ -4,8 +4,8 @@ export const corsHeaders: Record<string, string> = {
   'access-control-allow-methods': 'GET, POST, OPTIONS',
 }
 
-export function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8' } })
+export function json(body: unknown, status = 200, extra: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'content-type': 'application/json; charset=utf-8', ...extra } })
 }
 
 /** Constant-time-ish string comparison for secrets. */

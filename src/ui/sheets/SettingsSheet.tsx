@@ -15,6 +15,7 @@ import { HealthConnect } from './StepsSheet'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
 import { fmt, KCAL } from '../format'
+import { getPerf, median } from '../../services/perf'
 
 export function ProfileFields({ value, onChange }: { value: Partial<Profile>; onChange: (p: Partial<Profile>) => void }) {
   return (
@@ -164,6 +165,8 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
         <InstallApp variant="row" />
 
+        <SpeedInfo />
+
         <HowItWorks />
       </div>
     </Sheet>
@@ -296,6 +299,45 @@ function HowItWorks() {
             מחושבת ע״י AI. כל המספרים הם הערכות (בדרך כלל ±20–30%) — העקביות חשובה יותר מהדיוק.
           </p>
         </div>
+      )}
+    </section>
+  )
+}
+
+/** Measured on this phone: launch → upload buttons usable, and photo → result (median of recent ones). */
+function SpeedInfo() {
+  const [open, setOpen] = useState(false)
+  const p = open ? getPerf() : null
+  const sec = (ms: number | null) => (ms === null ? '—' : `${(ms / 1000).toFixed(1)} שנ׳`)
+  const flows = p?.flows.filter((f) => f.ok) ?? []
+  const m = (k: 'prepare_ms' | 'request_ms' | 'render_ms' | 'total_ms') => median(flows.map((f) => f[k]))
+  const server = (k: string) => median(flows.map((f) => f.server?.[k]).filter((v): v is number => typeof v === 'number'))
+  return (
+    <section className="rounded-2xl bg-surface-2">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex min-h-12 w-full items-center justify-between px-4 font-semibold">
+        מהירות
+        <ChevronDown className={`size-4 text-ink-3 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {p && (
+        <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 px-4 pb-4 text-sm" data-testid="speed-info">
+          <dt className="text-ink-2">פתיחה עד שאפשר לצלם</dt>
+          <dd className="num">{sec(median(p.launches.map((l) => l.ready_ms)))}</dd>
+          <dt className="text-ink-2">תמונה → תוצאה (סה״כ)</dt>
+          <dd className="num font-semibold">{sec(m('total_ms'))}</dd>
+          <dt className="ps-3 text-ink-3">הכנת התמונה בטלפון</dt>
+          <dd className="num text-ink-3">{sec(m('prepare_ms'))}</dd>
+          <dt className="ps-3 text-ink-3">שליחה + ניתוח</dt>
+          <dd className="num text-ink-3">{sec(m('request_ms'))}</dd>
+          {server('ai') !== null && (
+            <>
+              <dt className="ps-6 text-ink-3">מתוכם AI</dt>
+              <dd className="num text-ink-3">{sec(server('ai'))}</dd>
+            </>
+          )}
+          <dt className="ps-3 text-ink-3">הצגה</dt>
+          <dd className="num text-ink-3">{sec(m('render_ms'))}</dd>
+          <dd className="col-span-2 pt-1 text-xs text-ink-3">חציון של {flows.length} תמונות ו-{p.launches.length} פתיחות אחרונות במכשיר הזה.</dd>
+        </dl>
       )}
     </section>
   )

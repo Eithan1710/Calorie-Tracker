@@ -2,9 +2,9 @@ import { useSyncExternalStore } from 'react'
 import { getSupabase } from './supabase'
 import { hasSupabase } from './config'
 import {
-  applyHealthRow, exercisesForDate, foodForDate, getState, markClean, onLocalChange, updateSettings, upsertExercise, upsertFood,
+  applyHealthRow, applyWeightRow, exercisesForDate, foodForDate, getState, markClean, onLocalChange, updateSettings, upsertExercise, upsertFood,
 } from '../data/store'
-import type { Exercise, FoodEntry, HealthDay } from '../data/types'
+import type { Exercise, FoodEntry, HealthDay, WeightEntry } from '../data/types'
 import { summarizeDay } from '../domain/day'
 import { isValidProfile } from '../domain/energy'
 import { isValidTarget } from '../domain/goal'
@@ -147,6 +147,11 @@ const rowToEx = (r: ExRow): Exercise => ({
 type HealthRow = Pick<HealthDay, 'date' | 'steps' | 'source' | 'updated_at'> & { active_kcal?: number | string | null; resting_kcal?: number | string | null; health_as_of?: string | null }
 const numOrNull = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v))
 
+interface WeightRow { date: string; weight_kg: number | string; created_at: string; updated_at: string; deleted_at: string | null }
+/** mz_weights comes with 20261015000000_body_weight.sql: until it is applied, weights stay on this device (still dirty) */
+const weightsTableMissing = (e: { code?: string; message?: string } | null) =>
+  Boolean(e && (e.code === 'PGRST205' || e.code === '42P01' || /mz_weights/.test(e.message ?? '')))
+
 async function push() {
   const sb = await getSupabase()
   const userId = currentUser()
@@ -182,6 +187,22 @@ async function push() {
     )
     if (error) throw error
     markClean('health', dirtyHealth.map((h) => h.date))
+  }
+  const dirtyWeights = Object.values(s.weights).filter((w) => w.dirty)
+  if (dirtyWeights.length) {
+    const { error } = await sb.from('mz_weights').upsert(
+      dirtyWeights.map((w: WeightEntry) => ({
+        user_id: userId,
+        date: w.date,
+        weight_kg: w.weight_kg,
+        created_at: w.created_at,
+        updated_at: w.updated_at,
+        deleted_at: w.deleted ? w.updated_at : null,
+      })),
+      { onConflict: 'user_id,date' },
+    )
+    if (error && !weightsTableMissing(error)) throw error
+    if (!error) markClean('weights', dirtyWeights.map((w) => w.date))
   }
 
   // cached per-day numbers: used by the reminder job ("already logged today?") and server-side history
@@ -224,14 +245,16 @@ async function pull() {
   const sinceIso = since ? new Date(new Date(since).getTime() - 120_000).toISOString() : '1970-01-01T00:00:00Z'
   const startedAt = new Date().toISOString()
 
-  const [food, ex, health] = await Promise.all([
+  const [food, ex, health, weights] = await Promise.all([
     sb.from('mz_food_entries').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
     sb.from('mz_exercises').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
     sb.from('mz_health_data').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
+    sb.from('mz_weights').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
   ])
   if (food.error) throw food.error
   if (ex.error) throw ex.error
   if (health.error) throw health.error
+  if (weights.error && !weightsTableMissing(weights.error)) throw weights.error
 
   const s = getState()
   if (s.userId !== userId) return // signed out / switched account meanwhile
@@ -257,6 +280,11 @@ async function pull() {
       resting_kcal: numOrNull(row.resting_kcal),
       health_as_of: row.health_as_of ?? null,
     })
+  }
+  for (const row of (weights.error ? [] : weights.data ?? []) as WeightRow[]) {
+    const local = s.weights[row.date]
+    if (local && local.updated_at >= row.updated_at) continue
+    applyWeightRow({ date: row.date, weight_kg: Number(row.weight_kg), created_at: row.created_at, updated_at: row.updated_at, deleted: Boolean(row.deleted_at) })
   }
   updateSettings({ lastPulledAt: startedAt })
 }
