@@ -17,6 +17,8 @@ type Phase = 'input' | 'search' | 'analyzing' | 'review' | 'error'
 // an analysis starts so the result screen is ready before the answer arrives.
 const loadReview = () => import('./Review')
 const loadSearch = () => import('./FoodSearch')
+/** after startup: fetch the result + search screens so they also work if the connection drops */
+export const preloadFoodScreens = () => Promise.all([loadReview(), loadSearch()]).then(() => {}, () => {})
 const Review = lazy(() => loadReview().then((m) => ({ default: m.Review })))
 const FoodSearch = lazy(() => loadSearch().then((m) => ({ default: m.FoodSearch })))
 const Loading = () => (

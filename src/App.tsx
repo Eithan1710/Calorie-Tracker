@@ -6,7 +6,7 @@ import { toDateKey } from './domain/goal'
 import { Today } from './ui/screens/Today'
 import { useAuth } from './services/auth'
 import { useProfileChecked } from './services/sync'
-import { AddFoodSheet } from './ui/sheets/FoodSheet'
+import { AddFoodSheet, preloadFoodScreens } from './ui/sheets/FoodSheet'
 import { Toaster, showToast } from './ui/toast'
 import { Segmented } from './ui/primitives'
 import { analyzeText, preloadOffline } from './services/ai'
@@ -248,7 +248,7 @@ function ReadyMark() {
     requestAnimationFrame(() => {
       markReady()
       // right after the first paint: what offline logging needs
-      setTimeout(() => void preloadOffline(), 0)
+      setTimeout(() => void preloadOffline([preloadFoodScreens()]), 0)
     })
   }, [])
   return null

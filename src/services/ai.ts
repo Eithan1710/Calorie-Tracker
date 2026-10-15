@@ -24,8 +24,8 @@ const parserModule = () => import('../../supabase/functions/_shared/localParser.
  * Load the offline parser + validation right after the first screen is up, so logging
  * still works if the connection drops later (the installed app also has them cached).
  */
-export function preloadOffline(): Promise<void> {
-  return Promise.all([schemaModule(), parserModule()]).then(
+export function preloadOffline(extra: Promise<unknown>[] = []): Promise<void> {
+  return Promise.all([schemaModule(), parserModule(), ...extra]).then(
     () => {
       ;(window as unknown as { __mzOfflineReady?: boolean }).__mzOfflineReady = true
     },

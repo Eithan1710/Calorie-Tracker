@@ -464,6 +464,9 @@ test.describe('layout & a11y', () => {
 
   test('layout: one column on mobile, two on desktop', async ({ page }, info) => {
     await page.goto('/')
+    await expect(hero(page)).toBeVisible()
+    // measure after the cards' entrance animation (they slide up 10 px)
+    await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished)))
     const heroBox = (await hero(page).boundingBox())!
     const logBox = (await page.getByRole('region', { name: 'מה אכלתי' }).boundingBox())!
     if (info.project.name === 'desktop') expect(Math.abs(heroBox.y - logBox.y)).toBeLessThan(5)
