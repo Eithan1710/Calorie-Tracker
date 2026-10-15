@@ -1,0 +1,22 @@
+{
+  "runs": [
+    {
+      "photo_mb": 3.8,
+      "select_to_request_ms": 494,
+      "response_to_result_ms": 90,
+      "request_kb": 465
+    },
+    {
+      "photo_mb": 3.8,
+      "select_to_request_ms": 399,
+      "response_to_result_ms": 239,
+      "request_kb": 465
+    },
+    {
+      "photo_mb": 3.8,
+      "select_to_request_ms": 273,
+      "response_to_result_ms": 183,
+      "request_kb": 465
+    }
+  ]
+}

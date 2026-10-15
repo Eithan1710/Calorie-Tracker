@@ -1,0 +1,62 @@
+{
+  "throttled": "CPU 4x, 150 ms RTT, 9 Mbps",
+  "median": {
+    "fcp": 124,
+    "root_child": 23.5,
+    "camera_ready": 85,
+    "longtask_ms": 0,
+    "js_kb_decoded": 773
+  },
+  "runs": [
+    {
+      "fcp": 160,
+      "dom_content_loaded": 37.39999999999418,
+      "root_child": 24.099999999976717,
+      "camera_ready": 98.39999999999418,
+      "longtask_ms": 0,
+      "js_kb_transferred": 0,
+      "js_kb_decoded": 773,
+      "requests_during_start": 29
+    },
+    {
+      "fcp": 120,
+      "dom_content_loaded": 40.69999999998254,
+      "root_child": 20.29999999998836,
+      "camera_ready": 81.5,
+      "longtask_ms": 0,
+      "js_kb_transferred": 0,
+      "js_kb_decoded": 773,
+      "requests_during_start": 29
+    },
+    {
+      "fcp": 124,
+      "dom_content_loaded": 42,
+      "root_child": 23.5,
+      "camera_ready": 85,
+      "longtask_ms": 0,
+      "js_kb_transferred": 0,
+      "js_kb_decoded": 773,
+      "requests_during_start": 29
+    },
+    {
+      "fcp": 116,
+      "dom_content_loaded": 41.19999999998254,
+      "root_child": 20.60000000000582,
+      "camera_ready": 77.39999999999418,
+      "longtask_ms": 0,
+      "js_kb_transferred": 0,
+      "js_kb_decoded": 773,
+      "requests_during_start": 29
+    },
+    {
+      "fcp": 132,
+      "dom_content_loaded": 46.30000000001746,
+      "root_child": 29.70000000001164,
+      "camera_ready": 88.20000000001164,
+      "longtask_ms": 0,
+      "js_kb_transferred": 0,
+      "js_kb_decoded": 773,
+      "requests_during_start": 29
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+[WebServer] [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/ui/sheets/FoodSheet.tsx is dynamically imported by src/App.tsx but also statically imported by src/App.tsx, dynamic import will not move module into another chunk.
+[WebServer] [39m
+[WebServer] [warn] `inlineDynamicImports` option is deprecated, please use `codeSplitting: false` instead.
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+
+Running 10 tests using 1 worker
+
+  ✓   1 [android-chromium] › tests/perf/diag.spec.ts:48:1 › boot: the app renders (login screen) and reports no errors (4.2s)
+  ✓   2 [android-chromium] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (4.4s)
+  ✓   3 [android-chromium] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) (10.0s)
+  ✓   4 [android-chromium] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result (8.7s)
+  ✓   5 [android-chromium] › tests/perf/diag.spec.ts:264:1 › prepare variants: decode + resize + encode (2.7s)
+  ✓   6 [iphone-webkit] › tests/perf/diag.spec.ts:48:1 › boot: the app renders (login screen) and reports no errors (5.6s)
+  ✘   7 [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (8.9s)
+  ✘   8 [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) (1.5m)
+  ✓   9 [iphone-webkit] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result (7.2s)
+  ✓  10 [iphone-webkit] › tests/perf/diag.spec.ts:264:1 › prepare variants: decode + resize + encode (3.5s)
+
+
+  1) [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work ──────
+
+    Error: mouse.wheel: Mouse wheel is not supported in mobile WebKit
+
+      131 |     await chooser
+      132 |   })
+    > 133 |   await page.mouse.wheel(0, 3000)
+          |                    ^
+      134 |   await page.waitForTimeout(300)
+      135 |   report.hit_after_scroll = await hitTest(page)
+      136 |   await attempt('history_after_scroll', async () => {
+        at /home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:133:20
+
+    Error Context: test-results/diag-nav-dock-buttons-are-hittable-and-work-iphone-webkit/error-context.md
+
+  2) [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) 
+
+    [31mTest timeout of 90000ms exceeded.[39m
+
+    Error: page.reload: Target page, context or browser has been closed
+
+      162 |     return Boolean(r)
+      163 |   }).catch(() => false)
+    > 164 |   await page.reload()
+          |              ^
+      165 |   await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+      166 |   await page.addInitScript(() => {
+      167 |     const w = window as unknown as { __mz: Record<string, number> }
+        at /home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:164:14
+
+    Error Context: test-results/diag-startup-repeat-launch-c4e7d-ed-app-warm-service-worker--iphone-webkit/error-context.md
+
+  2 failed
+    [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work ───────
+    [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) 
+  8 passed (2.5m)

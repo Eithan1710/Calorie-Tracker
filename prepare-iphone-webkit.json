@@ -1,0 +1,43 @@
+{
+  "file_mb": "2.86",
+  "A old: full decode, 1280, toDataURL": {
+    "ms": [
+      259,
+      179,
+      171
+    ],
+    "b64_kb": 195
+  },
+  "B decode→1024 (resizeWidth high), toBlob": {
+    "ms": [
+      279,
+      159,
+      199
+    ],
+    "b64_kb": 134
+  },
+  "C full decode, 1024, toBlob": {
+    "ms": [
+      210,
+      168,
+      170
+    ],
+    "b64_kb": 134
+  },
+  "D full decode, 1024, toDataURL": {
+    "ms": [
+      156,
+      156,
+      159
+    ],
+    "b64_kb": 134
+  },
+  "E decode→1024 (resizeWidth low), toDataURL": {
+    "ms": [
+      148,
+      134,
+      135
+    ],
+    "b64_kb": 119
+  }
+}

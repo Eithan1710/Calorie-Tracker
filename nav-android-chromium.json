@@ -1,0 +1,126 @@
+{
+  "viewport": {
+    "width": 412,
+    "height": 839
+  },
+  "hit_initial": [
+    {
+      "button": "היום",
+      "rect": [
+        329,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-house lucide-home size-[22px]"
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        159,
+        760,
+        164,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "button.pressable flex min-h-14 flex-1 items-center justify-center g"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        19,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-chart-line lucide-line-chart size-[22px]"
+    }
+  ],
+  "history": "ok",
+  "today": "ok",
+  "add": "ok",
+  "camera": "ok",
+  "hit_after_scroll": [
+    {
+      "button": "היום",
+      "rect": [
+        329,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-house lucide-home size-[22px]"
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        159,
+        760,
+        164,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "button.pressable flex min-h-14 flex-1 items-center justify-center g"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        19,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-chart-line lucide-line-chart size-[22px]"
+    }
+  ],
+  "history_after_scroll": "ok",
+  "hit_with_toast": [
+    {
+      "button": "היום",
+      "rect": [
+        329,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-house lucide-home size-[22px]"
+    },
+    {
+      "button": "הוסף אוכל",
+      "rect": [
+        159,
+        760,
+        164,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "button.pressable flex min-h-14 flex-1 items-center justify-center g"
+    },
+    {
+      "button": "היסטוריה",
+      "rect": [
+        19,
+        760,
+        64,
+        56
+      ],
+      "inViewport": true,
+      "hitIsButton": true,
+      "hit": "svg.lucide lucide-chart-line lucide-line-chart size-[22px]"
+    }
+  ],
+  "history_with_toast": "ok"
+}
