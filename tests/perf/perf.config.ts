@@ -21,6 +21,7 @@ export default defineConfig({
     url: 'http://localhost:4320',
     reuseExistingServer: true,
     timeout: 240_000,
+    cwd: '../..',
     env: { VITE_CACHE_DIR: 'node_modules/.vite-perf', VITE_SUPABASE_URL: 'https://mock.supabase.test', VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test' },
   },
 })
