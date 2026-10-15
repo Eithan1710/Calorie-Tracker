@@ -1,0 +1,86 @@
+[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+[36mvite v8.3.3 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 2084 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-size/manifest.webmanifest                              0.73 kB
+dist-size/index.html                                        2.46 kB │ gzip:  1.02 kB
+dist-size/assets/rubik-hebrew-wght-normal-BIkpbuMU.woff2    9.34 kB
+dist-size/assets/rubik-latin-wght-normal-CnQIisVs.woff2    35.34 kB
+dist-size/assets/index-BT9DdMJY.css                        35.44 kB │ gzip:  7.93 kB
+dist-size/assets/minus-CNpyTUUK.js                          0.15 kB │ gzip:  0.15 kB
+dist-size/assets/supabase-I9oz9a9K.js                       0.86 kB │ gzip:  0.54 kB
+dist-size/assets/virtual_pwa-register-CX-ifbJ6.js           1.18 kB │ gzip:  0.61 kB
+dist-size/assets/preload-helper-Ci8rE3Tp.js                 1.39 kB │ gzip:  0.76 kB
+dist-size/assets/LegacyImportSheet-C947MR1g.js              1.56 kB │ gzip:  0.87 kB
+dist-size/assets/nutrition-DqiL6wE8.js                      1.61 kB │ gzip:  0.78 kB
+dist-size/assets/Onboarding-wYjMf03C.js                     2.45 kB │ gzip:  1.20 kB
+dist-size/assets/Login-Ak4Z8l9Y.js                          3.96 kB │ gzip:  1.71 kB
+dist-size/assets/workbox-window.prod.es5-Bd17z0YL.js        5.65 kB │ gzip:  2.20 kB
+dist-size/assets/localParser-B-1FC0AZ.js                    6.19 kB │ gzip:  2.80 kB
+dist-size/assets/History-DIWfuaQj.js                        8.09 kB │ gzip:  3.30 kB
+dist-size/assets/StepsSheet-bmpkf29V.js                     9.60 kB │ gzip:  3.34 kB
+dist-size/assets/Review-BfvfoCon.js                        11.17 kB │ gzip:  4.19 kB
+dist-size/assets/ExerciseSheet-Cig7mH97.js                 12.40 kB │ gzip:  4.46 kB
+dist-size/assets/SettingsSheet-c--H92Lv.js                 13.57 kB │ gzip:  4.65 kB
+dist-size/assets/Weight-CydWI0-K.js                        13.72 kB │ gzip:  5.10 kB
+dist-size/assets/FoodSearch-BtEEtPbk.js                    16.67 kB │ gzip:  6.07 kB
+dist-size/assets/primitives-CL8zLotn.js                    24.56 kB │ gzip:  9.07 kB
+dist-size/assets/foodDb-BhHW7RGJ.js                        79.64 kB │ gzip: 19.53 kB
+dist-size/assets/schema-C3YuOEZQ.js                        85.75 kB │ gzip: 24.59 kB
+dist-size/assets/dist-DvjAMUvs.js                         214.18 kB │ gzip: 55.01 kB
+dist-size/assets/index-CK7B8Guk.js                        305.57 kB │ gzip: 95.49 kB
+
+[33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/ui/sheets/FoodSheet.tsx is dynamically imported by src/App.tsx but also statically imported by src/App.tsx, dynamic import will not move module into another chunk.
+[39m
+[32m✓ built in 466ms[39m
+
+[36mPWA v2.0.0[39m
+Building [35msrc/sw.ts[39m service worker ("[35mes[39m" format)...
+[36mvite v8.3.3 [32mbuilding client environment for production...[36m[39m
+[warn] `inlineDynamicImports` option is deprecated, please use `codeSplitting: false` instead.
+transforming...
+✓ 59 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-size/sw.mjs  17.22 kB │ gzip: 5.86 kB
+
+[32m✓ built in 35ms[39m
+
+[36mPWA v2.0.0[39m
+mode      [35minjectManifest[39m
+format:   [35mes[39m
+precache  [32m40 entries[39m [2m(942.06 KiB)[22m
+files generated
+  [2mdist-size/sw.js[22m
+total 940
+drwxr-xr-x 2 runner runner   4096 Oct 15 18:44 .
+drwxr-xr-x 3 runner runner   4096 Oct 15 18:44 ..
+-rw-r--r-- 1 runner runner  12400 Oct 15 18:44 ExerciseSheet-Cig7mH97.js
+-rw-r--r-- 1 runner runner  16677 Oct 15 18:44 FoodSearch-BtEEtPbk.js
+-rw-r--r-- 1 runner runner   8098 Oct 15 18:44 History-DIWfuaQj.js
+-rw-r--r-- 1 runner runner   1566 Oct 15 18:44 LegacyImportSheet-C947MR1g.js
+-rw-r--r-- 1 runner runner   3960 Oct 15 18:44 Login-Ak4Z8l9Y.js
+-rw-r--r-- 1 runner runner   2458 Oct 15 18:44 Onboarding-wYjMf03C.js
+-rw-r--r-- 1 runner runner  11179 Oct 15 18:44 Review-BfvfoCon.js
+-rw-r--r-- 1 runner runner  13576 Oct 15 18:44 SettingsSheet-c--H92Lv.js
+-rw-r--r-- 1 runner runner   9604 Oct 15 18:44 StepsSheet-bmpkf29V.js
+-rw-r--r-- 1 runner runner  13721 Oct 15 18:44 Weight-CydWI0-K.js
+-rw-r--r-- 1 runner runner 214183 Oct 15 18:44 dist-DvjAMUvs.js
+-rw-r--r-- 1 runner runner  79645 Oct 15 18:44 foodDb-BhHW7RGJ.js
+-rw-r--r-- 1 runner runner  35446 Oct 15 18:44 index-BT9DdMJY.css
+-rw-r--r-- 1 runner runner 305570 Oct 15 18:44 index-CK7B8Guk.js
+-rw-r--r-- 1 runner runner   6195 Oct 15 18:44 localParser-B-1FC0AZ.js
+-rw-r--r-- 1 runner runner    151 Oct 15 18:44 minus-CNpyTUUK.js
+-rw-r--r-- 1 runner runner   1615 Oct 15 18:44 nutrition-DqiL6wE8.js
+-rw-r--r-- 1 runner runner   1399 Oct 15 18:44 preload-helper-Ci8rE3Tp.js
+-rw-r--r-- 1 runner runner  24565 Oct 15 18:44 primitives-CL8zLotn.js
+-rw-r--r-- 1 runner runner   9348 Oct 15 18:44 rubik-hebrew-wght-normal-BIkpbuMU.woff2
+-rw-r--r-- 1 runner runner  35348 Oct 15 18:44 rubik-latin-wght-normal-CnQIisVs.woff2
+-rw-r--r-- 1 runner runner  85753 Oct 15 18:44 schema-C3YuOEZQ.js
+-rw-r--r-- 1 runner runner    861 Oct 15 18:44 supabase-I9oz9a9K.js
+-rw-r--r-- 1 runner runner   1184 Oct 15 18:44 virtual_pwa-register-CX-ifbJ6.js
+-rw-r--r-- 1 runner runner   5653 Oct 15 18:44 workbox-window.prod.es5-Bd17z0YL.js

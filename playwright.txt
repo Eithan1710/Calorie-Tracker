@@ -1,0 +1,16 @@
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+[WebServer] [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/ui/sheets/FoodSheet.tsx is dynamically imported by src/App.tsx but also statically imported by src/App.tsx, dynamic import will not move module into another chunk.
+[WebServer] [39m
+[WebServer] [warn] `inlineDynamicImports` option is deprecated, please use `codeSplitting: false` instead.
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+
+Running 2 tests using 1 worker
+
+  ✓  1 [android-chromium] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (5.1s)
+  ✓  2 [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (16.9s)
+
+  2 passed (28.6s)
