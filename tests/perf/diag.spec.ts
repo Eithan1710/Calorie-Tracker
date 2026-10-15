@@ -74,11 +74,11 @@ async function hitTest(page: Page) {
   return page.evaluate(() => {
     const nav = document.querySelector('nav[aria-label="ניווט ראשי"]')
     if (!nav) return [{ error: 'no nav' }]
-    return [...nav.querySelectorAll('button')].map((b) => {
+    return [...nav.querySelectorAll('button, label[aria-label]')].map((b) => {
       const r = b.getBoundingClientRect()
       const x = r.left + r.width / 2, y = r.top + r.height / 2
       const hit = document.elementFromPoint(x, y)
-      const owner = hit?.closest('button')
+      const owner = hit?.closest('button, label')
       return {
         button: b.getAttribute('aria-label') || b.textContent?.trim(),
         rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],

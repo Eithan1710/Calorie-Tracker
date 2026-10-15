@@ -291,7 +291,8 @@ function Dock({ tab, onToday, onHistory, onAdd, onPhoto }: { tab: Tab; onToday: 
             accept="image/*"
             /* the dock opens the camera directly; the gallery stays available via "הוסף תמונה" in the food sheet */
             capture="environment"
-            className="absolute size-px opacity-0"
+            /* clipped to nothing: WebKit gives an opacity-0 file input real size, which then covered the next button */
+            className="sr-only"
             tabIndex={-1}
             aria-hidden
             data-testid="dock-photo-input"
