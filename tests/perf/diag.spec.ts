@@ -101,15 +101,30 @@ test('nav: dock buttons are hittable and work', async ({ page }, info) => {
     else await b.click({ timeout: 5000 })
   }
   const attempt = async (label: string, fn: () => Promise<void>) => {
+    await page.evaluate(() => ((window as unknown as { __ev: string[] }).__ev = []))
     try {
       await fn()
       report[label] = 'ok'
     } catch (e) {
       report[label] = `FAIL: ${(e as Error).message.split('\n')[0]}`
+      report[`${label}_events`] = await page.evaluate(() => (window as unknown as { __ev: string[] }).__ev)
+      report[`${label}_scrollY`] = await page.evaluate(() => window.scrollY)
       await page.screenshot({ path: `${OUT}/nav-${info.project.name}-${label}.png` })
       await page.keyboard.press('Escape').catch(() => {})
     }
   }
+  await page.evaluate(() => {
+    const w = window as unknown as { __ev: string[] }
+    w.__ev = []
+    const d = (e: Event) => {
+      const t = e.target as Element | null
+      const b = t?.closest?.('button,label')
+      w.__ev.push(`${e.type}:${t?.tagName.toLowerCase()}${b ? `→${b.getAttribute('aria-label') ?? b.textContent?.trim().slice(0, 12)}` : ''}${e.defaultPrevented ? ' (prevented)' : ''}`)
+    }
+    for (const t of ['pointerdown', 'touchstart', 'touchend', 'pointerup', 'click']) document.addEventListener(t, d, { capture: true, passive: true })
+    // after React's handlers: was the default prevented / propagation stopped?
+    for (const t of ['touchend', 'click']) window.addEventListener(t, (e) => w.__ev.push(`${t}@window${e.defaultPrevented ? ' (prevented)' : ''}`))
+  })
   report.hit_initial = await hitTest(page)
   await attempt('history', async () => {
     await tap('היסטוריה')
@@ -130,7 +145,7 @@ test('nav: dock buttons are hittable and work', async ({ page }, info) => {
     await tap('צלם אוכל')
     await chooser
   })
-  await page.mouse.wheel(0, 3000)
+  await page.evaluate(() => window.scrollTo(0, 3000))
   await page.waitForTimeout(300)
   report.hit_after_scroll = await hitTest(page)
   await attempt('history_after_scroll', async () => {
@@ -151,6 +166,13 @@ test('nav: dock buttons are hittable and work', async ({ page }, info) => {
   })
   await page.screenshot({ path: `${OUT}/nav-${info.project.name}.png` })
   save(`nav-${info.project.name}`, report)
+  // also with a plain click (no touch emulation) in WebKit, to separate touch handling from the button
+  if (info.project.use.hasTouch) {
+    const b = page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היסטוריה' })
+    await b.click()
+    report.history_plain_click = (await page.getByRole('heading', { name: 'היסטוריה' }).isVisible().catch(() => false)) ? 'ok' : 'FAIL'
+    save(`nav-${info.project.name}`, report)
+  }
 })
 
 test('startup: repeat launches (installed app, warm service worker)', async ({ page }, info) => {

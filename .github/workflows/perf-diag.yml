@@ -36,7 +36,9 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - name: Navigation + startup + client photo overhead
         continue-on-error: true
-        run: npx playwright test -c tests/perf/perf.config.ts 2>&1 | tee perf-out/playwright.txt
+        run: |
+          G=""; case "$GITHUB_REF_NAME" in *nav*) G="-g nav";; esac
+          npx playwright test -c tests/perf/perf.config.ts $G 2>&1 | tee perf-out/playwright.txt
       - name: AI benchmark
         if: ${{ inputs.ai || startsWith(github.ref_name, 'perf/ai') }}
         continue-on-error: true
