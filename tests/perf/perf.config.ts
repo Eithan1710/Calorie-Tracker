@@ -14,7 +14,8 @@ export default defineConfig({
   use: { baseURL: 'http://localhost:4320', locale: 'he-IL', timezoneId: 'Asia/Jerusalem' },
   projects: [
     { name: 'android-chromium', use: { ...devices['Pixel 7'] } },
-    { name: 'iphone-webkit', use: { ...devices['iPhone 14'] } },
+    // WebKit: Playwright can't route requests made through a service worker → run without it
+    { name: 'iphone-webkit', use: { ...devices['iPhone 14'], serviceWorkers: 'block' } },
   ],
   webServer: {
     command: 'npx vite build --outDir dist-perf && npx vite preview --outDir dist-perf --port 4320 --strictPort',

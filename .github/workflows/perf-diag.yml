@@ -1,6 +1,6 @@
 # Performance / navigation diagnostics and the AI photo benchmark.
 # Manual (Actions → "Perf diagnostics" → Run workflow) or by pushing a perf/* branch.
-# Results are pushed to the ci/perf branch (perf-out/: JSON, Markdown, screenshots).
+# Results are pushed to the ci/perf-<branch> branch (perf-out/: JSON, Markdown, screenshots).
 name: Perf diagnostics
 
 on:
@@ -36,7 +36,9 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - name: Navigation + startup + client photo overhead
         continue-on-error: true
-        run: npx playwright test -c tests/perf/perf.config.ts 2>&1 | tee perf-out/playwright.txt
+        run: |
+          G=""; case "$GITHUB_REF_NAME" in *nav*) G="-g nav";; esac
+          npx playwright test -c tests/perf/perf.config.ts $G 2>&1 | tee perf-out/playwright.txt
       - name: AI benchmark
         if: ${{ inputs.ai || startsWith(github.ref_name, 'perf/ai') }}
         continue-on-error: true
@@ -50,6 +52,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd perf-out
-          git init -q -b ci/perf && git config user.name 'github-actions[bot]' && git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          B="ci/perf-${GITHUB_REF_NAME//\//-}"; git init -q -b "$B" && git config user.name 'github-actions[bot]' && git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A && git commit -qm "perf ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci/perf
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$B"
