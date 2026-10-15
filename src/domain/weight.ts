@@ -21,7 +21,7 @@ export const RANGE_DAYS: Record<WeightRange, number | null> = { '1m': 31, '3m': 
 export const MIN_SPAN_KG = 4
 
 const DAY = 86_400_000
-export const dayNum = (key: string) => Math.round(Date.parse(`${key}T12:00:00Z`) / DAY)
+export const dayNum = (key: string) => Math.floor(Date.parse(`${key}T00:00:00Z`) / DAY)
 
 /** Points inside the range ending today (all-time = everything). Sorted oldest → newest. */
 export function inRange(points: WeightPoint[], range: WeightRange, today: string): WeightPoint[] {

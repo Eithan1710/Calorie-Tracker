@@ -67,7 +67,9 @@ export function Sheet({
 
   if (!mounted) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="presentation">
+    // while closing (and the two frames before opening) the layer must not swallow taps:
+    // otherwise the first tap on the dock right after closing a sheet does nothing
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="presentation" style={{ pointerEvents: shown ? 'auto' : 'none' }}>
       <div
         className="absolute inset-0 bg-black/35 backdrop-blur-[2px] transition-opacity duration-250"
         style={{ opacity: shown ? 1 : 0 }}

@@ -32,7 +32,7 @@ export function Toaster() {
     () => toasts,
   )
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite" role="status">
+    <div className="pointer-events-none fixed inset-x-0 bottom-32 z-[60] flex flex-col items-center gap-2 px-4" aria-live="polite" role="status">
       {list.map((t) => (
         <div key={t.id} className="animate-rise pointer-events-auto flex min-h-12 max-w-md items-center gap-3 rounded-2xl bg-ink py-2 ps-4 pe-2 text-inverse shadow-[var(--shadow-2)]">
           <span className="text-[15px]">{t.text}</span>

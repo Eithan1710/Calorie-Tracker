@@ -20,7 +20,7 @@ export interface PreparedImage {
  * (toBlob), so the screen stays responsive meanwhile.
  */
 export async function prepareImage(file: File, maxSide = 1024, quality = 0.8): Promise<PreparedImage> {
-  const bitmap = await loadBitmap(file)
+  const bitmap = await loadBitmap(file, maxSide)
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
   const h = Math.max(1, Math.round(bitmap.height * scale))
@@ -66,8 +66,15 @@ export function imageErrorMessage(file: File | null): string {
   return 'לא הצלחתי לקרוא את התמונה. אפשר לנסות תמונה אחרת או לכתוב מה אכלת.'
 }
 
-async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {
+async function loadBitmap(file: File, maxSide: number): Promise<ImageBitmap | HTMLImageElement> {
   if ('createImageBitmap' in window) {
+    // decoding straight to the target width is far cheaper than decoding 12–48 MP and
+    // shrinking afterwards (the decoder can skip detail); the canvas step caps the long side
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image', resizeWidth: maxSide, resizeQuality: 'high' })
+    } catch {
+      /* resize options unsupported → full decode */
+    }
     try {
       return await createImageBitmap(file, { imageOrientation: 'from-image' })
     } catch {

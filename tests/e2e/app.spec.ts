@@ -369,6 +369,8 @@ test.describe('resilience', () => {
 
   test('offline: known foods still log instantly; unknown text is queued and analysed when back online', async ({ page, context }) => {
     await page.goto('/')
+    // like a real launch: the app loads its offline parser right after the first screen
+    await page.waitForFunction(() => (window as unknown as { __mzOfflineReady?: boolean }).__mzOfflineReady === true)
     await context.setOffline(true)
     await addText(page, '3 ביצים')
     await expect(page.getByRole('dialog').getByText('חושב מהמאגר בלי AI')).toBeVisible()

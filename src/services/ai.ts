@@ -20,8 +20,23 @@ const MSG = {
 const schemaModule = () => import('../../supabase/functions/_shared/schema.ts')
 const parserModule = () => import('../../supabase/functions/_shared/localParser.ts')
 
+/**
+ * Load the offline parser + validation right after the first screen is up, so logging
+ * still works if the connection drops later (the installed app also has them cached).
+ */
+export function preloadOffline(): Promise<void> {
+  return Promise.all([schemaModule(), parserModule()]).then(
+    () => {
+      ;(window as unknown as { __mzOfflineReady?: boolean }).__mzOfflineReady = true
+    },
+    () => {},
+  )
+}
+
 async function localFallback(text: string, reason: 'offline' | 'unavailable'): Promise<AnalyzeOutcome> {
-  const { parseLocally } = await parserModule()
+  const mod = await parserModule().catch(() => null)
+  if (!mod) return { ok: false, code: reason, message: reason === 'offline' ? MSG.offline : MSG.unavailable, canQueue: true }
+  const { parseLocally } = mod
   const local = parseLocally(text)
   if (local.analysis && local.unmatched.length === 0) return { ok: true, analysis: local.analysis, offline: true }
   if (local.analysis) {
@@ -61,7 +76,7 @@ async function call(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<Analy
 async function callOnce(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<AnalyzeOutcome> {
   const isPhoto = Boolean(body.image)
   const text = body.text ?? ''
-  void schemaModule() // warm up while the request is in flight
+  void schemaModule().catch(() => {}) // warm up while the request is in flight
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     if (isPhoto) return { ok: false, code: 'offline', message: MSG.photoOffline }
     if (body.mode === 'analyze') return localFallback(text, 'offline')
@@ -92,8 +107,9 @@ async function callOnce(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<A
   }
   if (res.ok) {
     // the server is trusted more than the model, but still validate before saving
-    const { AnalysisSchema } = await schemaModule()
-    const parsed = AnalysisSchema.safeParse(json)
+    const schema = await schemaModule().catch(() => null)
+    if (!schema) return { ok: false, code: 'unavailable', message: MSG.unavailable }
+    const parsed = schema.AnalysisSchema.safeParse(json)
     if (parsed.success) return { ok: true, analysis: parsed.data }
     return body.mode === 'analyze' && !isPhoto ? localFallback(text, 'unavailable') : { ok: false, code: 'invalid', message: MSG.unclear }
   }

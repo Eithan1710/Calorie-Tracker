@@ -9,7 +9,7 @@ import { useProfileChecked } from './services/sync'
 import { AddFoodSheet } from './ui/sheets/FoodSheet'
 import { Toaster, showToast } from './ui/toast'
 import { Segmented } from './ui/primitives'
-import { analyzeText } from './services/ai'
+import { analyzeText, preloadOffline } from './services/ai'
 import { ingestFromUrl } from './services/health'
 import { scheduleLocalReminder, shouldShowInAppReminder } from './services/notifications'
 import { markReady } from './services/perf'
@@ -245,7 +245,11 @@ export default function App() {
 /** Records "the upload buttons are usable" for the launch timing (Settings → מהירות). */
 function ReadyMark() {
   useEffect(() => {
-    requestAnimationFrame(() => markReady())
+    requestAnimationFrame(() => {
+      markReady()
+      // right after the first paint: what offline logging needs
+      setTimeout(() => void preloadOffline(), 0)
+    })
   }, [])
   return null
 }

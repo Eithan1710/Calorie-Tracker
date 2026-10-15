@@ -346,7 +346,7 @@ test('weight: long history from the server, range filters, honest axis; other ac
   const chart = page.getByTestId('weight-chart')
   const dots = chart.locator('circle')
   await expect(dots).toHaveCount(14) // 3 months ≈ 13–14 weekly points
-  await page.getByRole('radio', { name: 'חודש' }).click()
+  await page.getByRole('radio', { name: 'חודש', exact: true }).click()
   await expect(dots).toHaveCount(5)
   await page.getByRole('radio', { name: 'הכל' }).click()
   await expect(dots).toHaveCount(105)
