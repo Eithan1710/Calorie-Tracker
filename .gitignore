@@ -13,3 +13,6 @@ supabase/.branches
 dist-e2e
 build/
 __pycache__/
+dist-perf
+dist-size
+perf-out

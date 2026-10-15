@@ -1,0 +1,55 @@
+# Performance / navigation diagnostics and the AI photo benchmark.
+# Manual (Actions → "Perf diagnostics" → Run workflow) or by pushing a perf/* branch.
+# Results are pushed to the ci/perf branch (perf-out/: JSON, Markdown, screenshots).
+name: Perf diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      ai:
+        description: Also run the AI photo benchmark (uses the Gemini/Groq free tier, ~35 calls)
+        type: boolean
+        default: false
+  push:
+    branches: ['perf/**']
+
+permissions:
+  contents: write
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Bundle sizes (production build, as deployed)
+        run: |
+          mkdir -p perf-out
+          VITE_BASE=/Calorie-Tracker/ VITE_SUPABASE_URL=https://kjfihzskaqcboeejnkak.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_x \
+            npx vite build --outDir dist-size 2>&1 | tee perf-out/build.txt
+          ls -la dist-size/assets | tee -a perf-out/build.txt
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Navigation + startup + client photo overhead
+        continue-on-error: true
+        run: npx playwright test -c tests/perf/perf.config.ts 2>&1 | tee perf-out/playwright.txt
+      - name: AI benchmark
+        if: ${{ inputs.ai || startsWith(github.ref_name, 'perf/ai') }}
+        continue-on-error: true
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: node scripts/perf/bench-ai.mjs 2>&1 | tail -60
+      - name: Publish → ci/perf
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd perf-out
+          git init -q -b ci/perf && git config user.name 'github-actions[bot]' && git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A && git commit -qm "perf ${GITHUB_SHA::7} (${GITHUB_REF_NAME})"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci/perf
