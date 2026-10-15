@@ -86,6 +86,8 @@ export default function App() {
   const [sheet, setSheet] = useState<SheetName>(null)
   const [entryId, setEntryId] = useState<string | null>(null)
   const [photo, setPhoto] = useState<File | null>(null)
+  /** a fresh add sheet per opening: never a frame of the previous meal's result */
+  const [addKey, setAddKey] = useState(0)
   const [reminder, setReminder] = useState(false)
   const idle = useIdle()
 
@@ -106,6 +108,7 @@ export default function App() {
     if (imported) showToast(`עודכנו ${fmt(imported.steps)} צעדים`)
     const params = new URLSearchParams(window.location.search)
     if (params.get('add') === '1') {
+      setAddKey((k) => k + 1)
       setSheet('add')
       window.history.replaceState(null, '', window.location.pathname)
     }
@@ -128,10 +131,12 @@ export default function App() {
 
   const openAdd = useCallback(() => {
     setPhoto(null)
+    setAddKey((k) => k + 1)
     setSheet('add')
   }, [])
   const onPhoto = useCallback((f: File) => {
     setPhoto(f)
+    setAddKey((k) => k + 1)
     setSheet('add')
   }, [])
   const closeSheet = useCallback(() => setSheet(null), [])
@@ -221,7 +226,7 @@ export default function App() {
       <Dock tab={tab} onToday={goToday} onHistory={goHistory} onAdd={openAdd} onPhoto={onPhoto} />
       <ReadyMark />
 
-      <AddFoodSheet open={sheet === 'add'} onClose={closeSheet} date={date} initialPhoto={photo} />
+      <AddFoodSheet key={addKey} open={sheet === 'add'} onClose={closeSheet} date={date} initialPhoto={photo} />
       <Later when={entryId !== null || idle}>
         <EntrySheet entryId={entryId} onClose={() => setEntryId(null)} />
       </Later>
