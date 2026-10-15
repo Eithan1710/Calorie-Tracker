@@ -1,0 +1,17 @@
+[31mTest timeout of 90000ms exceeded.[39m
+
+[requestfailed] https://mock.supabase.test/auth/v1/token?grant_type=password Error resolving “mock.supabase.test”: Name or service not known
+[error] Failed to load resource: Error resolving “mock.supabase.test”: Name or service not known
+
+BODY:
+מאזן
+כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.
+התחברות
+שם משתמש
+
+סיסמה
+
+אין חיבור לאינטרנט. התחברות דורשת חיבור — נסה שוב כשתהיה מחובר.
+כניסה
+הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.
+התקן את האפליקציה

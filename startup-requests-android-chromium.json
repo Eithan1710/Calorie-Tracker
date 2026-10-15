@@ -1,0 +1,16 @@
+[
+  "http://localhost:4320/",
+  "http://localhost:4320/assets/index-cKMAIX15.css",
+  "http://localhost:4320/assets/index-BTtmnGli.js",
+  "http://localhost:4320/assets/virtual_pwa-register-DectyiIO.js",
+  "http://localhost:4320/assets/dist-DvjAMUvs.js",
+  "https://mock.supabase.test/rest/v1/mz_members",
+  "https://mock.supabase.test/rest/v1/mz_profiles",
+  "http://localhost:4320/pwa-192.png",
+  "http://localhost:4320/assets/workbox-window.prod.es5-Bd17z0YL.js",
+  "http://localhost:4320/assets/rubik-latin-wght-normal-CnQIisVs.woff2",
+  "http://localhost:4320/assets/rubik-hebrew-wght-normal-BIkpbuMU.woff2",
+  "https://mock.supabase.test/rest/v1/mz_food_entries",
+  "https://mock.supabase.test/rest/v1/mz_exercises",
+  "https://mock.supabase.test/rest/v1/mz_health_data"
+]

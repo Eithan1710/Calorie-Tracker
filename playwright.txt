@@ -1,0 +1,93 @@
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+[WebServer] [33m[plugin builtin:vite-reporter] [33;1m
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[0m[39m
+[WebServer] [warn] `inlineDynamicImports` option is deprecated, please use `codeSplitting: false` instead.
+[WebServer] [33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+[WebServer]   - import "./dev/apiPlugin" without a file extension (vite.config.ts:6:27). Add the file extension
+[WebServer] Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+
+Running 8 tests using 1 worker
+
+  ✓  1 [android-chromium] › tests/perf/diag.spec.ts:48:1 › boot: the app renders (login screen) and reports no errors (4.3s)
+  ✓  2 [android-chromium] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (5.0s)
+  ✓  3 [android-chromium] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) (11.0s)
+  ✓  4 [android-chromium] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result (12.5s)
+  ✓  5 [iphone-webkit] › tests/perf/diag.spec.ts:48:1 › boot: the app renders (login screen) and reports no errors (8.9s)
+  ✘  6 [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work (1.5m)
+  ✘  7 [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) (1.5m)
+  ✘  8 [iphone-webkit] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result (1.5m)
+
+
+  1) [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work ──────
+
+    [31mTest timeout of 90000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 90000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel('גיל')[22m
+
+
+      63 |   await page.getByLabel('סיסמה', { exact: true }).fill('123456')
+      64 |   await page.getByRole('button', { name: 'כניסה' }).click()
+    > 65 |   await page.getByLabel('גיל').fill('30')
+         |                                ^
+      66 |   await page.getByLabel('גובה').fill('162')
+      67 |   await page.getByLabel('משקל').fill('61')
+      68 |   await page.getByRole('button', { name: 'בוא נתחיל' }).click()
+        at signIn (/home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:65:32)
+        at /home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:96:3
+
+    Error Context: test-results/diag-nav-dock-buttons-are-hittable-and-work-iphone-webkit/error-context.md
+
+  2) [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) 
+
+    [31mTest timeout of 90000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 90000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel('גיל')[22m
+
+
+      63 |   await page.getByLabel('סיסמה', { exact: true }).fill('123456')
+      64 |   await page.getByRole('button', { name: 'כניסה' }).click()
+    > 65 |   await page.getByLabel('גיל').fill('30')
+         |                                ^
+      66 |   await page.getByLabel('גובה').fill('162')
+      67 |   await page.getByLabel('משקל').fill('61')
+      68 |   await page.getByRole('button', { name: 'בוא נתחיל' }).click()
+        at signIn (/home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:65:32)
+        at /home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:158:3
+
+    Error Context: test-results/diag-startup-repeat-launch-c4e7d-ed-app-warm-service-worker--iphone-webkit/error-context.md
+
+  3) [iphone-webkit] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result 
+
+    [31mTest timeout of 90000ms exceeded.[39m
+
+    Error: locator.fill: Test timeout of 90000ms exceeded.
+    Call log:
+    [2m  - waiting for getByLabel('גיל')[22m
+
+
+      63 |   await page.getByLabel('סיסמה', { exact: true }).fill('123456')
+      64 |   await page.getByRole('button', { name: 'כניסה' }).click()
+    > 65 |   await page.getByLabel('גיל').fill('30')
+         |                                ^
+      66 |   await page.getByLabel('גובה').fill('162')
+      67 |   await page.getByLabel('משקל').fill('61')
+      68 |   await page.getByRole('button', { name: 'בוא נתחיל' }).click()
+        at signIn (/home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:65:32)
+        at /home/runner/work/Calorie-Tracker/Calorie-Tracker/tests/perf/diag.spec.ts:222:3
+
+    Error Context: test-results/diag-photo-client-overhead-0fe9a-a-12-MP-photo-to-the-result-iphone-webkit/error-context.md
+
+  3 failed
+    [iphone-webkit] › tests/perf/diag.spec.ts:93:1 › nav: dock buttons are hittable and work ───────
+    [iphone-webkit] › tests/perf/diag.spec.ts:156:1 › startup: repeat launches (installed app, warm service worker) 
+    [iphone-webkit] › tests/perf/diag.spec.ts:219:1 › photo: client overhead from picking a 12 MP photo to the result 
+  5 passed (5.3m)
