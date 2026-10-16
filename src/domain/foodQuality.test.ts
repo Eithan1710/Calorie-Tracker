@@ -1,14 +1,13 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { classifyFood, CURATED_CLASSES } from './foodQuality'
+import { FOODS } from '../../supabase/functions/_shared/foodDb.ts'
 
 const P = (kcal: number, protein_g: number, fat_g: number, carbs_g: number, extra: { sugar_g?: number } = {}) => ({ kcal, protein_g, fat_g, carbs_g, ...extra })
 const food = (name: string, per100: ReturnType<typeof P>, db_key: string | null = null, ref?: string) => ({ name, per100, db_key, ref })
 
 describe('every food of the in-app table has an explicit class', () => {
   it('no curated key is left unclassified', () => {
-    const src = readFileSync(new URL('../../supabase/functions/_shared/foodDb.generated.ts', import.meta.url), 'utf8')
-    const keys = [...src.matchAll(/"key": "([^"]+)"/g)].map((m) => m[1])
+    const keys = FOODS.map((f) => f.key)
     expect(keys.length).toBeGreaterThan(150)
     expect(keys.filter((k) => !(k in CURATED_CLASSES))).toEqual([])
   })
