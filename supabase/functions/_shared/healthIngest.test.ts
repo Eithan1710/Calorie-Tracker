@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DAY_TZ, parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, workoutType } from './healthIngest.ts'
+import { classifyBody, DAY_TZ, parseDailyTotals, parseDayLoose, parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, splitJsonObjects, workoutType } from './healthIngest.ts'
 
 const TZ = 'Asia/Jerusalem'
 const NOW = new Date('2026-10-11T18:30:00Z') // 21:30 in Israel
@@ -259,5 +259,117 @@ describe('timestamped energy samples', () => {
     expect(v).toMatchObject({ date: '2026-10-14', steps: 7013, resting_kcal: 1284.8, active_kcal: null })
     expect(v.samples.active).toHaveLength(2)
     expect(v.samples.resting).toHaveLength(0)
+  })
+})
+
+// ── per-day totals sent as text (Shortcuts: Group by Day → Sum → Text of dictionaries) ──
+
+// exactly what the Shortcut showed on 16 Oct 2026 at 10:40 (Israel)
+const SHORTCUT_TEXT = `{
+  "date" : "15 Oct 2026 at 0:06",
+  "active_kcal" : "421.9529999999997"
+}
+{
+  "date" : "13 Oct 2026 at 0:41",
+  "resting_kcal" : "1557.049"
+}
+{
+  "date" : "14 Oct 2026 at 0:43",
+  "resting_kcal" : "1512.907999999998"
+}
+{
+  "date" : "15 Oct 2026 at 0:04",
+  "resting_kcal" : "1590.059000000001"
+}
+{
+  "date" : "15 Oct 2026",
+  "steps" : 7892
+}
+{
+  "date" : "2026-10-16",
+  "steps" : 18
+}
+{
+  "date" : "13 Oct 2026 at 8:36",
+  "active_kcal" : "136.608"
+}
+{
+  "date" : "14 Oct 2026 at 8:54",
+  "active_kcal" : "417.3609999999998"
+}`
+const AT_1040 = new Date('2026-10-16T07:40:00Z')
+
+describe('per-day totals', () => {
+  it('Shortcuts date formats → the calendar day as written', () => {
+    const today = '2026-10-16'
+    expect(parseDayLoose('15 Oct 2026 at 0:06', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('13 Oct 2026 at 23:59', TZ, today)).toBe('2026-10-13')
+    expect(parseDayLoose('Oct 15, 2026 at 12:06 AM', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('Thursday, 15 October 2026', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('15 באוק׳ 2026 ב-0:06', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('יום חמישי, 15 באוקטובר 2026', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('15/10/2026', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('2026-10-16', TZ, today)).toBe('2026-10-16')
+    expect(parseDayLoose('2026-10-15T00:06:00', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('2026-10-14T22:30:00Z', TZ, today)).toBe('2026-10-15') // 01:30 in Israel
+    expect(parseDayLoose('yesterday', TZ, today)).toBe('2026-10-15')
+    expect(parseDayLoose('31 Feb 2026', TZ, today)).toBe(null)
+    expect(parseDayLoose('soon', TZ, today)).toBe(null)
+  })
+
+  it('objects back to back / per line / comma-separated / in an array are all read', () => {
+    expect(splitJsonObjects(SHORTCUT_TEXT)).toHaveLength(8)
+    expect(splitJsonObjects('{"a":1}{"b":"}{"}, {"c":3}')).toEqual([{ a: 1 }, { b: '}{' }, { c: 3 }])
+    expect(splitJsonObjects('{"a":1} junk')).toBe(null)
+    expect(classifyBody(SHORTCUT_TEXT)).toMatchObject({ mode: 'daily' })
+    expect(classifyBody('[{"date":"2026-10-15","steps":5}]')).toMatchObject({ mode: 'daily' })
+    expect(classifyBody('{"days": "{\\"date\\":\\"2026-10-15\\",\\"steps\\":5}"}')).toMatchObject({ mode: 'daily' })
+    expect(classifyBody('{"date" : "2026-10-16", "steps" : 18}')).toMatchObject({ mode: 'daily' })
+  })
+
+  it('the original formats are still the original snapshot', () => {
+    expect(classifyBody('{"steps": 7842}')).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody('{"steps": "7,842", "active_kcal": 512, "resting_kcal": 1203, "as_of": "2026-10-11T21:15:00+03:00"}')).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody('{"date": "2026-10-12", "workouts": 0, "steps": 5}')).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody('{"active_samples": [{"start": "2026-10-11T00:00:00+03:00", "kcal": 5}]}')).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody('not json')).toMatchObject({ mode: 'invalid' })
+  })
+
+  it('the screenshot text → one entry per day, kinds merged, values rounded, past days final', () => {
+    const b = classifyBody(SHORTCUT_TEXT)
+    if (b.mode !== 'daily') throw new Error('not daily')
+    const r = parseDailyTotals(b.items, { tz: TZ, now: AT_1040 })
+    if (!r.ok) throw new Error(r.error)
+    expect(r.value.days).toEqual([
+      { date: '2026-10-13', steps: null, active_kcal: 136.6, resting_kcal: 1557, as_of: '2026-10-16T07:40:00.000Z', final: true },
+      { date: '2026-10-14', steps: null, active_kcal: 417.4, resting_kcal: 1512.9, as_of: '2026-10-16T07:40:00.000Z', final: true },
+      { date: '2026-10-15', steps: 7892, active_kcal: 422, resting_kcal: 1590.1, as_of: '2026-10-16T07:40:00.000Z', final: true },
+      { date: '2026-10-16', steps: 18, active_kcal: null, resting_kcal: null, as_of: '2026-10-16T07:40:00.000Z', final: false },
+    ])
+    expect(r.value.warnings).toEqual([])
+  })
+
+  it('bad objects are skipped with a reason, the rest is kept', () => {
+    const items = splitJsonObjects(`{"date":"2026-10-17","steps":5}{"date":"someday","steps":5}{"date":"2026-10-15","active_kcal":"9999999"}{"date":"2026-10-15","steps":"7,892"}{"date":"2026-05-01","steps":10}`)!
+    const r = parseDailyTotals(items, { tz: TZ, now: AT_1040 })
+    if (!r.ok) throw new Error(r.error)
+    expect(r.value.days).toEqual([expect.objectContaining({ date: '2026-10-15', steps: 7892, active_kcal: null })])
+    expect(r.value.warnings.join(' | ')).toMatch(/future/)
+    expect(r.value.warnings.join(' | ')).toMatch(/readable date/)
+    expect(r.value.warnings.join(' | ')).toMatch(/active ignored/)
+    expect(r.value.warnings.join(' | ')).toMatch(/older than 90 days/)
+  })
+
+  it('kJ and duplicates: converted; the same day and kind twice → the last one, with a warning', () => {
+    const r = parseDailyTotals([{ date: '2026-10-15', active_kcal: '2092 kJ' }, { date: '2026-10-15', active_kcal: 300 }, { date: '2026-10-14', resting_kcal: 6276, unit: 'kJ' }], { tz: TZ, now: AT_1040 })
+    if (!r.ok) throw new Error(r.error)
+    expect(r.value.days.find((d) => d.date === '2026-10-15')?.active_kcal).toBe(300)
+    expect(r.value.days.find((d) => d.date === '2026-10-14')?.resting_kcal).toBe(1500)
+    expect(r.value.warnings.join(' ')).toMatch(/sent twice/)
+  })
+
+  it('nothing valid → a clear error', () => {
+    const r = parseDailyTotals([{ date: 'x', steps: 1 }], { tz: TZ, now: AT_1040 })
+    expect(r.ok).toBe(false)
   })
 })

@@ -220,6 +220,11 @@ The original steps-only automation keeps working unchanged.
   + 10% TEF) is used and labelled as an estimate. Partial days project resting energy to 24 h.
 - **Sync safety:** newest snapshot wins, partial updates, idempotent workouts (stable ids), deleted workouts stay
   deleted, user time zone for "today", 14-day window, range checks.
+- **Per-day totals (most accurate):** the Shortcut can send, for each day, the full sum of Active Energy, Resting
+  Energy and Steps (Find Health Samples → Group by Day → Calculate Sum), as a text of JSON objects
+  `{"date": "15 Oct 2026 at 0:06", "active_kcal": "421.95"}` (back to back, one per line, or an array). Each one
+  **overwrites** that day's value of that kind; a total read after the day ended is final (later snapshots and
+  sample sums never replace it). Any date Shortcuts prints works ("15 Oct 2026 at 0:06", "2026-10-16", Hebrew).
 - Details, research and the exact Shortcut steps: [docs/apple-health.md](docs/apple-health.md).
 
 Other bridges: open-with-URL (`/?steps=7842&date=…`, Safari only on iOS) and manual entry.

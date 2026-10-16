@@ -5,11 +5,14 @@
 //                       "as_of": "<ISO time>", "date": "2026-10-06" | "yesterday", "workouts": [...],
 //                       "active_samples": [{"start", "end", "kcal", "source"}], "resting_samples": [...]}
 //   See _shared/healthIngest.ts for the full format. The original {"steps": N} still works.
+// Per-day totals (most accurate; each overwrites that day): the body is one or more
+//   {"date": "15 Oct 2026 at 0:06" | "2026-10-16", "active_kcal" | "resting_kcal" | "steps": …}
+//   objects — back to back as text, one per line, or a JSON array.
 // Calendar days are Asia/Jerusalem days (override with the MZ_DAY_TZ secret).
 // Only a SHA-256 hash of the token is stored; the token itself never touches the DB.
 import { createClient } from '@supabase/supabase-js'
 import { corsHeaders, json, sha256Hex } from '../_shared/http.ts'
-import { DAY_TZ, parseIngest, type EnergyKind } from '../_shared/healthIngest.ts'
+import { classifyBody, DAY_TZ, parseDailyTotals, parseIngest, type EnergyKind, type ParsedDay } from '../_shared/healthIngest.ts'
 
 // two days of raw samples (~150 bytes each) fit comfortably
 const MAX_BODY = 1_000_000
@@ -29,13 +32,9 @@ Deno.serve(async (req) => {
     log('warn', null, 'rejected', { error: 'body too large', bytes: text.length })
     return json({ error: 'body too large' }, 413)
   }
-  let raw: unknown
-  try {
-    // Shortcuts sometimes sends the number with locale separators ("7,842") — handled leniently later
-    raw = JSON.parse(text)
-  } catch {
-    return json({ error: 'invalid JSON' }, 400)
-  }
+  // Shortcuts sometimes sends the number with locale separators ("7,842") — handled leniently later
+  const body = classifyBody(text)
+  if (body.mode === 'invalid') return json({ error: body.error }, 400)
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
   const { data: owner } = await admin.from('mz_health_ingest_tokens').select('user_id').eq('token_hash', await sha256Hex(token)).maybeSingle()
@@ -47,7 +46,9 @@ Deno.serve(async (req) => {
   // day boundaries: Israel's calendar day, for every request (not the phone's or the profile's zone)
   const tz = Deno.env.get('MZ_DAY_TZ') || DAY_TZ
 
-  const parsed = await parseIngest(raw, { userId: user, tz })
+  if (body.mode === 'daily') return ingestDays(admin, user, tz, body.items)
+
+  const parsed = await parseIngest(body.raw, { userId: user, tz })
   if (!parsed.ok) {
     log('warn', user, 'rejected', { error: parsed.error })
     return json({ error: parsed.error }, 400)
@@ -144,3 +145,51 @@ Deno.serve(async (req) => {
   log('log', user, 'ok', { date: p.date, tz, steps: p.steps, active_kcal: p.active_kcal, resting_kcal: p.resting_kcal, workouts: p.workouts.length, ...aggregate, warnings })
   return json(result)
 })
+
+/** Per-day totals: each day/kind sent overwrites what was stored for that day. */
+// deno-lint-ignore no-explicit-any
+async function ingestDays(admin: any, user: string, tz: string, items: Record<string, unknown>[]): Promise<Response> {
+  const parsed = parseDailyTotals(items, { tz })
+  if (!parsed.ok) {
+    log('warn', user, 'rejected', { mode: 'daily', error: parsed.error, objects: items.length })
+    return json({ error: parsed.error }, 400)
+  }
+  const { days, received, warnings } = parsed.value
+  const rows = days.map((d: ParsedDay) => ({ date: d.date, steps: d.steps, active: d.active_kcal, resting: d.resting_kcal, as_of: d.as_of, final: d.final }))
+  const { data, error } = await admin.rpc('mz_ingest_health_days', { p_user: user, p_days: rows })
+  let db: Record<string, unknown> = (data ?? {}) as Record<string, unknown>
+  if (error) {
+    if (!/mz_ingest_health_days/.test(error.message)) {
+      log('error', user, 'write_failed', { step: 'days', error: error.message })
+      return json({ error: 'write failed' }, 500)
+    }
+    // database not migrated yet: write each day as a fresh snapshot (newest wins) so nothing is lost
+    for (const d of days) {
+      const { error: e2 } = await admin.rpc('mz_ingest_health', {
+        p_user: user, p_date: d.date, p_steps: d.steps, p_active: d.active_kcal, p_resting: d.resting_kcal, p_as_of: new Date().toISOString(), p_workouts: [],
+      })
+      if (e2) {
+        log('error', user, 'write_failed', { step: 'days_fallback', error: e2.message })
+        return json({ error: 'write failed' }, 500)
+      }
+    }
+    warnings.push('day totals stored as snapshots: the 20261016 migration is not applied yet')
+    db = {}
+  }
+  const result = {
+    ok: true,
+    mode: 'daily',
+    objects: received,
+    days: Object.fromEntries(days.map((d) => [d.date, {
+      ...(d.steps !== null ? { steps: d.steps } : {}),
+      ...(d.active_kcal !== null ? { active_kcal: d.active_kcal } : {}),
+      ...(d.resting_kcal !== null ? { resting_kcal: d.resting_kcal } : {}),
+      final: d.final,
+    }])),
+    ...('new_days' in db ? { new_days: db.new_days, changed_days: db.changed_days, unchanged_days: db.unchanged_days } : {}),
+    ...(warnings.length ? { warnings } : {}),
+  }
+  // numbers and dates only (no tokens, nothing else about the user)
+  log('log', user, 'ok', { mode: 'daily', tz, objects: received, days: db.days ?? result.days, warnings })
+  return json(result)
+}

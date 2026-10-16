@@ -338,6 +338,252 @@ export async function parseSamples(
   return { samples, stats }
 }
 
+// ── per-day totals (the most accurate format) ────────────────────────────────
+//
+// Shortcuts: Find Health Samples (Active Energy / Resting Energy / Steps) → Group by Day →
+// Calculate Sum → Dictionary {date, active_kcal | resting_kcal | steps} per day → a Text
+// of all of them as the request body:
+//
+//   { "date" : "15 Oct 2026 at 0:06", "active_kcal" : "421.9529999999997" }
+//   { "date" : "13 Oct 2026 at 0:41", "resting_kcal" : "1557.049" }
+//   { "date" : "2026-10-16", "steps" : 18 }
+//
+// Each object is the FULL total of that kind for that calendar day, so it overwrites what
+// was stored for that day (snapshots, sample sums). Objects may come back to back, one per
+// line, comma-separated or as a JSON array; several kinds of one day may be in one object
+// or in separate objects. The time in "date" (the first sample of the group) is ignored —
+// only the calendar day counts.
+
+export interface ParsedDay {
+  date: string
+  steps: number | null
+  active_kcal: number | null
+  resting_kcal: number | null
+  /** when the totals were read (the request time unless the object says otherwise) */
+  as_of: string
+  /** read after that day had ended → complete; nothing but another day total may change it */
+  final: boolean
+}
+
+export type DailyResult = { ok: true; value: { days: ParsedDay[]; received: number; warnings: string[] } } | { ok: false; error: string }
+
+export const DAILY_LIMITS = { objects: 500, past_days: 90 }
+
+const MONTHS: [RegExp, number][] = [
+  [/^jan/i, 1], [/^feb/i, 2], [/^mar/i, 3], [/^apr/i, 4], [/^may/i, 5], [/^jun/i, 6], [/^jul/i, 7], [/^aug/i, 8], [/^sep/i, 9], [/^oct/i, 10], [/^nov/i, 11], [/^dec/i, 12],
+  [/^ינו/, 1], [/^פבר/, 2], [/^מר[ץס]/, 3], [/^אפר/, 4], [/^מאי/, 5], [/^יונ/, 6], [/^יול/, 7], [/^אוג/, 8], [/^ספט/, 9], [/^אוק/, 10], [/^נוב/, 11], [/^דצמ/, 12],
+]
+const monthOf = (s: string): number | null => {
+  const t = s.replace(/^ב-?/, '').replace(/[׳'.]/g, '')
+  for (const [re, m] of MONTHS) if (re.test(t)) return m
+  return null
+}
+const ymd = (y: number, m: number, d: number): string | null => {
+  const t = Date.UTC(y, m - 1, d)
+  const dt = new Date(t)
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null
+  return dt.toISOString().slice(0, 10)
+}
+
+/**
+ * The calendar day a Shortcuts date stands for, as written (local wall time, no zone
+ * conversion): "15 Oct 2026 at 0:06", "Oct 15, 2026 at 12:06 AM", "15 באוק׳ 2026 ב-0:06",
+ * "יום חמישי, 15 באוקטובר 2026", "15/10/2026", "2026-10-15", ISO with offset, today/yesterday.
+ */
+export function parseDayLoose(v: unknown, tz: string, today: string): string | null {
+  if (v === undefined || v === null) return null
+  let s = String(v).trim()
+  if (!s) return null
+  const kw = s.toLowerCase()
+  if (kw === 'today' || kw === 'היום') return today
+  if (kw === 'yesterday' || kw === 'אתמול') return shiftDay(today, -1)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return ymd(+s.slice(0, 4), +s.slice(5, 7), +s.slice(8, 10))
+  // ISO date-time: with an offset → that instant's day in tz; without → the written day
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) return ymd(+s.slice(0, 4), +s.slice(5, 7), +s.slice(8, 10))
+    const inst = parseInstant(s)
+    return inst ? localDateKey(inst, tz) : null
+  }
+  // leading weekday: "Thursday, 15 Oct 2026" / "יום חמישי, 15 באוקטובר 2026"
+  // (a comma is required in English, so "Oct 15, 2026" keeps its month)
+  s = s.replace(/^(?:יום\s+[֐-׿]+,?|[A-Za-z֐-׿]+,)\s+(?=\d)/, '')
+  let m = s.match(/^(\d{1,2})[\s.\-/]*([A-Za-z֐-׿][A-Za-z֐-׿׳'.-]*)[\s.,\-/]*(\d{4})/)
+  if (m) {
+    const mon = monthOf(m[2])
+    if (mon) return ymd(+m[3], mon, +m[1])
+  }
+  m = s.match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})/)
+  if (m) {
+    const mon = monthOf(m[1])
+    if (mon) return ymd(+m[3], mon, +m[2])
+  }
+  // numeric: Israeli order D/M/Y (swapped only when it can't be a day/month)
+  m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/)
+  if (m) {
+    let d = +m[1], mo = +m[2]
+    if (mo > 12 && d <= 12) [d, mo] = [mo, d]
+    return ymd(+m[3], mo, d)
+  }
+  const inst = parseInstant(s)
+  return inst ? localDateKey(inst, tz) : null
+}
+
+/**
+ * Several JSON objects in one text — back to back, one per line, or comma-separated (what a
+ * Shortcuts Text of a list of dictionaries looks like). null if the text isn't only that.
+ */
+export function splitJsonObjects(text: string): Obj[] | null {
+  const out: Obj[] = []
+  let depth = 0, start = -1, inStr = false, esc = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') {
+      if (depth === 0) return null
+      inStr = true
+    } else if (ch === '{') {
+      if (depth === 0) start = i
+      depth++
+    } else if (ch === '}') {
+      depth--
+      if (depth < 0) return null
+      if (depth === 0) {
+        try {
+          const v = JSON.parse(text.slice(start, i + 1))
+          if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+          out.push(v as Obj)
+        } catch {
+          return null
+        }
+      }
+    } else if (depth === 0 && !/[\s,\[\]]/.test(ch)) {
+      return null // something other than objects and separators
+    }
+  }
+  return depth === 0 && !inStr && out.length ? out : null
+}
+
+const METRIC_KEYS = {
+  steps: ['steps'],
+  active: ['active_kcal', 'active', 'active_energy'],
+  resting: ['resting_kcal', 'resting', 'resting_energy', 'basal_kcal'],
+}
+const SNAPSHOT_ONLY_KEYS = ['as_of', 'asOf', 'time', 'workouts', ...SAMPLE_FIELDS.active, ...SAMPLE_FIELDS.resting]
+const hasAny = (o: Obj, keys: string[]) => keys.some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '')
+
+/** One per-day object: a date and at least one total, nothing that belongs to a snapshot. */
+export function isDayObject(o: Obj): boolean {
+  return hasAny(o, ['date', 'day']) && hasAny(o, [...METRIC_KEYS.steps, ...METRIC_KEYS.active, ...METRIC_KEYS.resting]) && !hasAny(o, SNAPSHOT_ONLY_KEYS)
+}
+
+export type IngestBody = { mode: 'daily'; items: Obj[] } | { mode: 'snapshot'; raw: unknown } | { mode: 'invalid'; error: string }
+
+/**
+ * Which format a request body is:
+ *  - per-day totals: several objects (array / back to back / one per line), a {"days": [...]}
+ *    wrapper, or a single object with only a date and totals;
+ *  - otherwise the original snapshot object (steps / active_kcal / resting_kcal / as_of /
+ *    workouts / *_samples) — unchanged.
+ */
+export function classifyBody(text: string): IngestBody {
+  const t = text.trim()
+  if (!t) return { mode: 'invalid', error: 'empty body' }
+  let raw: unknown
+  try {
+    raw = JSON.parse(t)
+  } catch {
+    const objs = splitJsonObjects(t)
+    if (!objs) return { mode: 'invalid', error: 'invalid JSON' }
+    if (objs.length === 1 && !isDayObject(objs[0])) return { mode: 'snapshot', raw: objs[0] }
+    return { mode: 'daily', items: objs }
+  }
+  if (Array.isArray(raw)) return { mode: 'daily', items: asObjList(raw) }
+  if (raw && typeof raw === 'object') {
+    const o = raw as Obj
+    const wrapped = pick(o, 'days', 'daily', 'totals')
+    if (wrapped !== undefined) {
+      const items = typeof wrapped === 'string' ? (splitJsonObjects(wrapped) ?? asObjList(wrapped)) : asObjList(wrapped)
+      return { mode: 'daily', items }
+    }
+    if (isDayObject(o)) return { mode: 'daily', items: [o] }
+  }
+  return { mode: 'snapshot', raw }
+}
+
+/** Per-day totals → one entry per calendar day (kinds of the same day merged). */
+export function parseDailyTotals(items: Obj[], opts: { tz: string; now?: Date; unit?: string | null }): DailyResult {
+  const now = opts.now ?? new Date()
+  const today = localDateKey(now, opts.tz)
+  const warnings: string[] = []
+  if (!items.length) return { ok: false, error: 'no day objects in the body' }
+  if (items.length > DAILY_LIMITS.objects) return { ok: false, error: `at most ${DAILY_LIMITS.objects} day objects per request` }
+
+  type Acc = { steps: number | null; active: number | null; resting: number | null; asOf: Date }
+  const byDay = new Map<string, Acc>()
+  let invalidDate = 0, future = 0, tooOld = 0, dupes = 0
+  for (const o of items) {
+    const day = parseDayLoose(pick(o, 'date', 'day', 'start', 'startDate'), opts.tz, today)
+    if (!day) {
+      invalidDate++
+      continue
+    }
+    const ago = dayDiff(today, day)
+    if (ago < 0) {
+      future++
+      continue
+    }
+    if (ago > DAILY_LIMITS.past_days) {
+      tooOld++
+      continue
+    }
+    const unitRaw = pick(o, 'unit', 'energy_unit')
+    const unit = typeof unitRaw === 'string' ? unitRaw : (opts.unit ?? null)
+    const ownAsOf = parseInstant(pick(o, 'as_of', 'asOf'))
+    const asOf = ownAsOf && ownAsOf.getTime() <= now.getTime() + 5 * 60_000 ? ownAsOf : now
+    const acc = byDay.get(day) ?? { steps: null, active: null, resting: null, asOf }
+    if (asOf > acc.asOf) acc.asOf = asOf
+    const take = (kind: 'steps' | 'active' | 'resting', max: number, parse: (v: unknown) => number | null) => {
+      const v = pick(o, ...METRIC_KEYS[kind])
+      if (v === undefined) return
+      const n = parse(v)
+      if (n === null || n < 0 || n > max) {
+        warnings.push(`${day}: ${kind} ignored (not a number or out of range: ${String(v).slice(0, 30)})`)
+        return
+      }
+      if (acc[kind] !== null) dupes++ // the same day and kind twice: the last one wins
+      acc[kind] = n
+    }
+    take('steps', LIMITS.steps, parseNumber)
+    take('active', LIMITS.active_kcal, (v) => parseEnergy(v, unit))
+    take('resting', LIMITS.resting_kcal, (v) => parseEnergy(v, unit))
+    byDay.set(day, acc)
+  }
+  if (invalidDate) warnings.push(`${invalidDate} object(s) without a readable date skipped`)
+  if (future) warnings.push(`${future} object(s) dated in the future skipped`)
+  if (tooOld) warnings.push(`${tooOld} object(s) older than ${DAILY_LIMITS.past_days} days skipped`)
+  if (dupes) warnings.push(`${dupes} value(s) sent twice for the same day — the last one was used`)
+
+  const r1 = (x: number | null) => (x === null ? null : Math.round(x * 10) / 10)
+  const days: ParsedDay[] = [...byDay.entries()]
+    .filter(([, a]) => a.steps !== null || a.active !== null || a.resting !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, a]) => ({
+      date,
+      steps: a.steps === null ? null : Math.round(a.steps),
+      active_kcal: r1(a.active),
+      resting_kcal: r1(a.resting),
+      as_of: new Date(Math.floor(a.asOf.getTime() / 1000) * 1000).toISOString(),
+      final: a.asOf.getTime() >= zonedMidnight(shiftDay(date, 1), opts.tz).getTime(),
+    }))
+  if (!days.length) return { ok: false, error: `nothing to import: ${warnings.join('; ') || 'no totals in the day objects'}` }
+  return { ok: true, value: { days, received: items.length, warnings } }
+}
+
 export async function parseIngest(raw: unknown, opts: { userId: string; tz: string; now?: Date }): Promise<IngestResult> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: 'body must be a JSON object' }
   const o = raw as Obj

@@ -83,3 +83,26 @@ Recommended — yesterday + today as day buckets (accurate across midnight):
    JSON: `steps` (Number), `resting_kcal` (Number), `active_samples` (Array → `ActiveDays`)
 
 Still supported: `{"steps", "active_kcal", "resting_kcal", "as_of", "date"}` aggregates and `workouts`.
+
+### Per-day totals as text (the most accurate — overwrites those days)
+
+For each kind (Active Energy, Resting Energy, Steps): **Find Health Samples** where Start Date is in the last
+N days · **Group by Day** · then for each group a **Dictionary** `{"date": <group date>, "active_kcal" |
+"resting_kcal" | "steps": <Sum>}` → **Add to Variable** `Days`. Then **Text** with `Days` and **Get Contents of
+URL** — POST, header `Authorization: Bearer <token>`, Request Body **File** = that Text.
+
+```
+{ "date" : "15 Oct 2026 at 0:06", "active_kcal" : "421.9529999999997" }
+{ "date" : "13 Oct 2026 at 0:41", "resting_kcal" : "1557.049" }
+{ "date" : "2026-10-16", "steps" : 18 }
+```
+
+- Each object is the full total of that kind for that calendar day and **replaces** what was stored for it
+  (snapshots, sample sums, older totals). Kinds that aren't sent are left alone.
+- Only the day of `date` counts (the time is the first sample of the group). Shortcuts' English and Hebrew
+  formats, `YYYY-MM-DD`, ISO 8601, `today` / `yesterday` all work; numbers may be strings.
+- Objects may be back to back, one per line, comma-separated, a JSON array, or `{"days": [...]}`.
+- A total read after its day ended is **final**: later snapshots and sample sums never replace it, only another
+  day total. Today's total is partial, so a newer reading of today may still update it.
+- Up to 90 days back, 500 objects per request; future days and unreadable dates are skipped and listed in
+  `warnings` in the response (`{"ok": true, "mode": "daily", "days": {...}}`).
