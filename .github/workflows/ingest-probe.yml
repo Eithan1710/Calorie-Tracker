@@ -11,6 +11,9 @@ jobs:
         run: |
           U=https://kjfihzskaqcboeejnkak.supabase.co/functions/v1/health-ingest
           T="Bearer mz_000000000000000000000000000000000000000000000000"
-          echo "per-day text:";   curl -sS -X POST "$U" -H "authorization: $T" -H 'content-type: text/plain' --data-binary @probe-body.txt -w ' [%{http_code}]\n'
-          echo "garbage:";        curl -sS -X POST "$U" -H "authorization: $T" --data-binary 'hello {' -w ' [%{http_code}]\n'
-          echo "old snapshot:";   curl -sS -X POST "$U" -H "authorization: $T" -H 'content-type: application/json' -d '{"steps":7842,"active_kcal":512,"resting_kcal":1203,"as_of":"2026-10-16T10:00:00+03:00"}' -w ' [%{http_code}]\n'
+          a=$(curl -sS -X POST "$U" -H "authorization: $T" -H 'content-type: text/plain' --data-binary @probe-body.txt -w ' [%{http_code}]')
+          b=$(curl -sS -X POST "$U" -H "authorization: $T" --data-binary 'hello {' -w ' [%{http_code}]')
+          c=$(curl -sS -X POST "$U" -H "authorization: $T" -H 'content-type: application/json' -d '{"steps":7842,"active_kcal":512,"resting_kcal":1203,"as_of":"2026-10-16T10:00:00+03:00"}' -w ' [%{http_code}]')
+          echo "::notice title=per-day text::$a"
+          echo "::notice title=garbage::$b"
+          echo "::notice title=old snapshot::$c"
