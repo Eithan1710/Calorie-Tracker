@@ -11,6 +11,13 @@ const FOODS = {
   oats: { name: 'שיבולת שועל', per100: P(379, 13, 6.5, 68), grams: 50 },
   cottage: { name: 'קוטג׳ 5%', per100: P(93, 11, 5, 1.5), grams: 125 },
   schnitzel: { name: 'שניצל', per100: P(260, 18, 14, 15), grams: 200 },
+  chips: { name: 'תפוצ׳יפס', per100: P(542, 5.9, 34, 53), grams: 50 },
+  cookies: { name: 'עוגיות שוקולד צ׳יפס', per100: P(457, 5.5, 22.1, 61.4), grams: 60 },
+  candy: { name: 'סוכריות גומי', per100: P(330, 1, 0, 80), grams: 40 },
+  cola: { name: 'קולה', per100: P(37, 0.1, 0, 9.6), grams: 330 },
+  proteinBar: { name: 'חטיף חלבון', per100: P(339, 35.7, 7.6, 34.4), grams: 60 },
+  mystery: { name: 'מנה מיוחדת', per100: P(160, 20, 4, 10), grams: 250 },
+  eggs: { name: 'ביצה קשה', per100: P(143, 12.6, 9.5, 0.7), grams: 100 },
 }
 type FoodName = keyof typeof FOODS
 
@@ -177,5 +184,49 @@ describe('grounded in the log', () => {
     expect(r.kind === 'suggestions' && r.items.length).toBeLessThan(4)
     const names = r.kind === 'suggestions' ? r.items.map((s) => s.name) : []
     expect(new Set(names).size).toBe(names.length)
+  })
+})
+
+describe('only nutritious foods are ever suggested', () => {
+  // evenings full of junk, eaten MORE often than the healthy dinners
+  const JUNKY_EVENINGS: FoodEntry[] = [
+    ...['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07'].flatMap((d) => [
+      entry(d, '20:05', ['chips', 'cookies', 'cola']),
+      entry(d, '20:30', ['candy', 'proteinBar', 'mystery']),
+    ]),
+    entry('2026-10-03', '19:50', ['eggs']),
+    entry('2026-10-06', '20:10', ['tuna']),
+  ]
+  const now = at('2026-10-10', '20:00')
+
+  it('chips, cookies, candy, cola, protein bars and unknown dishes never appear — even when eaten most often and macros fit', () => {
+    // protein low AND carbs low: candy/cookies would "fit" carbs, protein bar fits protein, the mystery dish both
+    const r = suggest({ history: JUNKY_EVENINGS, intake: { calories: 900, protein_g: 50, carbs_g: 60, fat_g: 30 }, targets: T, now })
+    expect(r.kind).toBe('suggestions')
+    const names = r.kind === 'suggestions' ? r.items.map((s) => s.name) : []
+    for (const junk of ['תפוצ׳יפס', 'עוגיות שוקולד צ׳יפס', 'סוכריות גומי', 'קולה', 'חטיף חלבון', 'מנה מיוחדת']) expect(names).not.toContain(junk)
+    expect(names.sort()).toEqual(['ביצה קשה', 'טונה במים'].sort())
+    expect(r.kind === 'suggestions' && r.items.every((s) => s.quality > 0)).toBe(true)
+  })
+
+  it('only junk around this hour → "nothing suitable", not a junk suggestion and not other meal times', () => {
+    const onlyJunk = JUNKY_EVENINGS.filter((e) => !e.items.some((i) => i.name === 'ביצה קשה' || i.name === 'טונה במים'))
+    const withBreakfast = [...onlyJunk, entry('2026-10-04', '08:00', ['yogurt'], 'breakfast'), entry('2026-10-05', '08:00', ['yogurt'], 'breakfast')]
+    const r = suggest({ history: withBreakfast, intake: EVENING_INTAKE, targets: T, now })
+    expect(r.kind).toBe('nothing_fits')
+    expect(r.kind === 'nothing_fits' && r.excluded).toBeGreaterThan(3)
+  })
+
+  it('schnitzel (fried) is filtered out; chicken breast and tuna remain for the same need', () => {
+    const r = suggest({ history: HISTORY, intake: EVENING_INTAKE, targets: T, now })
+    const names = r.kind === 'suggestions' ? r.items.map((s) => s.name) : []
+    expect(names).not.toContain('שניצל')
+    expect(names).toContain('טונה במים')
+  })
+
+  it('nutritional quality breaks ties: same fit and habit → the leaner protein first', () => {
+    const h = ['2026-10-01', '2026-10-02', '2026-10-03'].flatMap((d) => [entry(d, '20:00', [item('chicken', 150)]), entry(d, '20:00', [item('eggs', 210)])])
+    const r = suggest({ history: h, intake: EVENING_INTAKE, targets: T, now })
+    expect(r.kind === 'suggestions' && r.items[0].name).toBe('חזה עוף')
   })
 })

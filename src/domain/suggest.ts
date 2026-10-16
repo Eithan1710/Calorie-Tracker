@@ -11,12 +11,16 @@
  *     ranges derived from the day's calorie target (fat 20–35 % of kcal, carbs
  *     = what's left after protein and fat); calories vs. the room left in the
  *     user's deficit band. Nothing missing → no suggestion.
- *  3. Ranking: time closeness (gate + weight) → macro fit → calorie fit →
- *     familiarity (how often, how recently) → data reliability.
- *  4. The serving is the user's own usual amount (median of the matching
+ *  3. Eligibility (hard filter, see foodQuality.ts): only foods positively recognised as
+ *     nutritious — never sweets, snacks, sugary drinks, alcohol, fast food, deep-fried or
+ *     refined bakery, condiments, or anything unrecognised.
+ *  4. Ranking: time closeness (gate + weight) → macro fit → calorie fit → nutritional
+ *     quality → familiarity (how often, how recently) → data reliability.
+ *  5. The serving is the user's own usual amount (median of the matching
  *     occurrences); nutrients are the recorded per-100 g values — never invented.
  */
 import type { FoodEntry, FoodItem, Meal } from '../data/types'
+import { classifyFood, type FoodClass } from './foodQuality'
 
 /** ±minutes around "now" that count as the same time of day */
 export const WINDOW_MIN = 90
@@ -74,6 +78,9 @@ export interface Suggestion {
   carbs_g: number
   /** how many times it was logged around this time of day */
   timesAtThisHour: number
+  /** nutritional class and quality (0–1) from the eligibility filter */
+  cls: FoodClass
+  quality: number
   score: number
 }
 
@@ -81,7 +88,8 @@ export type SuggestResult =
   | { kind: 'suggestions'; needs: Needs; items: Suggestion[] }
   | { kind: 'balanced'; needs: Needs }
   | { kind: 'not_enough_history'; needs: Needs }
-  | { kind: 'nothing_fits'; needs: Needs }
+  /** foods were eaten around this time, but none is both nutritious and a fit for what's missing */
+  | { kind: 'nothing_fits'; needs: Needs; excluded: number }
 
 // ── what's missing today ────────────────────────────────────────────────────
 
@@ -222,10 +230,17 @@ export function suggest(opts: {
   )
 
   const scored: Suggestion[] = []
+  let excluded = 0
   for (const [key, list] of byKey) {
-    if (recentlyEaten.has(key)) continue
     const latest = list.reduce((a, b) => (b.at > a.at ? b : a))
     const item = latest.item
+    // hard filter first: nothing ranks a food in that isn't nutritious
+    const q = classifyFood(item)
+    if (!q.eligible) {
+      excluded++
+      continue
+    }
+    if (recentlyEaten.has(key)) continue
     const grams = Math.round(median(list.map((o) => o.item.grams)))
     const k = grams / 100
     const m = {
@@ -243,10 +258,10 @@ export function suggest(opts: {
     const days = new Set(list.map((o) => o.date)).size
     const ageDays = (now.getTime() - latest.at) / 86_400_000
     const familiarity = Math.min(1, days / 4) * 0.7 + Math.max(0, 1 - ageDays / HISTORY_DAYS) * 0.3
-    const score = timeScore * (0.55 * fit + 0.2 * kcalFit + 0.15 * familiarity + 0.1 * reliability(item))
-    scored.push({ key, name: item.name, emoji: item.emoji, item, grams, ...m, timesAtThisHour: days, score: Math.round(score * 1000) / 1000 })
+    const score = timeScore * (0.45 * fit + 0.2 * kcalFit + 0.15 * q.quality + 0.12 * familiarity + 0.08 * reliability(item))
+    scored.push({ key, name: item.name, emoji: item.emoji, item, grams, ...m, timesAtThisHour: days, cls: q.cls, quality: q.quality, score: Math.round(score * 1000) / 1000 })
   }
   scored.sort((a, b) => b.score - a.score || b.timesAtThisHour - a.timesAtThisHour || a.name.localeCompare(b.name))
   const items = scored.slice(0, opts.limit ?? 3)
-  return items.length ? { kind: 'suggestions', needs, items } : { kind: 'nothing_fits', needs }
+  return items.length ? { kind: 'suggestions', needs, items } : { kind: 'nothing_fits', needs, excluded }
 }

@@ -61,6 +61,14 @@ export function Suggestions({ s, date }: { s: DaySummary; date: string }) {
       </p>
     )
   }
+  if (result.kind === 'nothing_fits') {
+    return (
+      <p className="animate-rise rounded-2xl bg-surface-2 px-4 py-3 text-sm leading-relaxed text-ink-3" data-testid="suggestions-none">
+        <Sparkles className="me-1.5 inline size-4 align-[-2px]" aria-hidden />
+        אין כרגע הצעה מתאימה מהאוכל שאכלת בשעות האלה.
+      </p>
+    )
+  }
   if (result.kind !== 'suggestions') return null
 
   return (

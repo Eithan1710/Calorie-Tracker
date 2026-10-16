@@ -396,6 +396,12 @@ test('suggestions: only foods from my own log, around this time of day, by what 
     foodRow(u.id, '2026-10-04', '20:20', 'dinner', 'טונה במים', 120, TUNA),
     // today: a big carb-heavy lunch → protein is what's missing tonight
     foodRow(u.id, '2026-10-06', '12:30', 'lunch', 'פסטה', 400, PASTA),
+    // evening junk, eaten as often as the healthy dinners: never suggested
+    foodRow(u.id, '2026-10-01', '20:30', 'dinner', 'במבה', 60, { kcal: 534, protein_g: 17.5, fat_g: 34, carbs_g: 39.5 }),
+    foodRow(u.id, '2026-10-02', '20:20', 'dinner', 'במבה', 60, { kcal: 534, protein_g: 17.5, fat_g: 34, carbs_g: 39.5 }),
+    foodRow(u.id, '2026-10-03', '20:05', 'dinner', 'עוגיית שוקולד צ׳יפס', 50, { kcal: 457, protein_g: 5.5, fat_g: 22.1, carbs_g: 61.4 }),
+    foodRow(u.id, '2026-10-04', '20:00', 'dinner', 'עוגיית שוקולד צ׳יפס', 50, { kcal: 457, protein_g: 5.5, fat_g: 22.1, carbs_g: 61.4 }),
+    foodRow(u.id, '2026-10-02', '19:55', 'dinner', 'חטיף חלבון', 60, { kcal: 339, protein_g: 35.7, fat_g: 7.6, carbs_g: 34.4 }),
     // someone else's evening food never shows up
     foodRow(other.id, '2026-10-02', '20:00', 'dinner', 'סטייק של דנה', 250, { kcal: 250, protein_g: 26, fat_g: 15, carbs_g: 0 }),
   )
@@ -418,6 +424,9 @@ test('suggestions: only foods from my own log, around this time of day, by what 
   await expect(card).toContainText('טונה במים')
   await expect(card).not.toContainText('יוגורט') // a breakfast food, not at 20:00
   await expect(card).not.toContainText('סטייק של דנה')
+  await expect(card).not.toContainText('במבה')
+  await expect(card).not.toContainText('עוגיית')
+  await expect(card).not.toContainText('חטיף')
   await expect(card.getByRole('listitem')).toHaveCount(2)
   await page.screenshot({ path: 'docs/screenshots/accounts-suggestions.png', fullPage: true })
 
