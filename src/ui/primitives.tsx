@@ -69,7 +69,15 @@ export function Sheet({
   return (
     // while closing (and the two frames before opening) the layer must not swallow taps:
     // otherwise the first tap on the dock right after closing a sheet does nothing
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="presentation" style={{ pointerEvents: shown ? 'auto' : 'none' }}>
+    // a sheet that is closing is no longer a dialog for assistive tech either (it is still
+    // on screen for its 260 ms exit animation, and the next sheet may already be open)
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+      role="presentation"
+      style={{ pointerEvents: shown ? 'auto' : 'none' }}
+      aria-hidden={open ? undefined : true}
+      inert={open ? undefined : true}
+    >
       <div
         className="absolute inset-0 bg-black/35 backdrop-blur-[2px] transition-opacity duration-250"
         style={{ opacity: shown ? 1 : 0 }}
