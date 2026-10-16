@@ -469,9 +469,9 @@ export function splitJsonObjects(text: string): Obj[] | null {
 }
 
 const METRIC_KEYS = {
-  steps: ['steps'],
-  active: ['active_kcal', 'active', 'active_energy'],
-  resting: ['resting_kcal', 'resting', 'resting_energy', 'basal_kcal'],
+  steps: ['steps', 'step_count'],
+  active: ['active_kcal', 'active', 'active_energy', 'active_calories', 'active_energy_burned'],
+  resting: ['resting_kcal', 'resting', 'resting_energy', 'resting_calories', 'basal_kcal', 'basal_energy', 'basal_energy_burned'],
 }
 const SNAPSHOT_ONLY_KEYS = ['as_of', 'asOf', 'time', 'workouts', ...SAMPLE_FIELDS.active, ...SAMPLE_FIELDS.resting]
 const hasAny = (o: Obj, keys: string[]) => keys.some((k) => o[k] !== undefined && o[k] !== null && o[k] !== '')
@@ -482,6 +482,59 @@ export function isDayObject(o: Obj): boolean {
 }
 
 export type IngestBody = { mode: 'daily'; items: Obj[] } | { mode: 'snapshot'; raw: unknown } | { mode: 'invalid'; error: string }
+
+/** "Active Calories" / "activeKcal" / " Date " → active_calories / activekcal / date (day objects only) */
+const normKey = (k: string) => k.trim().toLowerCase().replace(/[\s-]+/g, '_')
+const lowerKeys = (o: Obj): Obj => Object.fromEntries(Object.entries(o).map(([k, v]) => [normKey(k), v]))
+
+/**
+ * Day objects anywhere in a value: the value itself, items of a list, fields of a wrapper
+ * ({"text": "<the objects>"} — what Shortcuts sends when the Text goes into a JSON field),
+ * or JSON text inside a string. Keys are compared case-insensitively.
+ */
+export function findDayObjects(v: unknown, depth = 0): Obj[] {
+  if (depth > 4 || v === null || v === undefined) return []
+  if (typeof v === 'string') {
+    const t = v.trim()
+    if (!t.includes('{')) return []
+    const objs = splitJsonObjects(t)
+    if (objs) return objs.flatMap((o) => findDayObjects(o, depth + 1))
+    try {
+      return findDayObjects(JSON.parse(t), depth + 1)
+    } catch {
+      return []
+    }
+  }
+  if (Array.isArray(v)) return v.flatMap((x) => findDayObjects(x, depth + 1))
+  if (typeof v === 'object') {
+    const o = lowerKeys(v as Obj)
+    if (isDayObject(o)) return [o]
+    return Object.values(o).flatMap((x) => findDayObjects(x, depth + 1))
+  }
+  return []
+}
+
+/** What a body looked like, for logs and error messages — keys, types and sizes only, never values. */
+export function describeBody(text: string): string {
+  const t = text.trim()
+  if (!t) return 'empty body'
+  const shape = (v: unknown, depth: number): string => {
+    if (Array.isArray(v)) return `array(${v.length})${v.length && depth < 2 ? ` of ${shape(v[0], depth + 1)}` : ''}`
+    if (v && typeof v === 'object') {
+      const e = Object.entries(v as Obj)
+      return depth >= 2 ? `object(${e.length} keys)` : `{${e.slice(0, 12).map(([k, x]) => `${k.slice(0, 30)}: ${shape(x, depth + 1)}`).join(', ')}${e.length > 12 ? ', …' : ''}}`
+    }
+    if (typeof v === 'string') return `string(${v.length})`
+    return typeof v
+  }
+  try {
+    return `${shape(JSON.parse(t), 0)} (${t.length} chars)`
+  } catch {
+    const objs = splitJsonObjects(t)
+    if (objs) return `${objs.length} objects back to back: ${shape(objs[0], 1)}… (${t.length} chars)`
+    return `not JSON, starts with ${JSON.stringify(t.slice(0, 12))} (${t.length} chars)`
+  }
+}
 
 /**
  * Which format a request body is:
@@ -499,18 +552,22 @@ export function classifyBody(text: string): IngestBody {
   } catch {
     const objs = splitJsonObjects(t)
     if (!objs) return { mode: 'invalid', error: 'invalid JSON' }
-    if (objs.length === 1 && !isDayObject(objs[0])) return { mode: 'snapshot', raw: objs[0] }
-    return { mode: 'daily', items: objs }
+    if (objs.length === 1 && !findDayObjects(objs[0]).length) return { mode: 'snapshot', raw: objs[0] }
+    const days = findDayObjects(objs)
+    return { mode: 'daily', items: days.length ? days : objs.map(lowerKeys) }
   }
-  if (Array.isArray(raw)) return { mode: 'daily', items: asObjList(raw) }
+  if (Array.isArray(raw)) {
+    const days = findDayObjects(raw)
+    return { mode: 'daily', items: days.length ? days : asObjList(raw).map(lowerKeys) }
+  }
   if (raw && typeof raw === 'object') {
     const o = raw as Obj
-    const wrapped = pick(o, 'days', 'daily', 'totals')
-    if (wrapped !== undefined) {
-      const items = typeof wrapped === 'string' ? (splitJsonObjects(wrapped) ?? asObjList(wrapped)) : asObjList(wrapped)
-      return { mode: 'daily', items }
+    // an original snapshot (its own steps / energy / workouts / samples at the top level) stays one
+    const isSnapshot = hasAny(o, [...METRIC_KEYS.steps, ...METRIC_KEYS.active, ...METRIC_KEYS.resting, ...SNAPSHOT_ONLY_KEYS]) && !isDayObject(lowerKeys(o))
+    if (!isSnapshot) {
+      const days = findDayObjects(o)
+      if (days.length) return { mode: 'daily', items: days }
     }
-    if (isDayObject(o)) return { mode: 'daily', items: [o] }
   }
   return { mode: 'snapshot', raw }
 }
@@ -527,7 +584,7 @@ export function parseDailyTotals(items: Obj[], opts: { tz: string; now?: Date; u
   const byDay = new Map<string, Acc>()
   let invalidDate = 0, future = 0, tooOld = 0, dupes = 0
   for (const o of items) {
-    const day = parseDayLoose(pick(o, 'date', 'day', 'start', 'startDate'), opts.tz, today)
+    const day = parseDayLoose(pick(o, 'date', 'day', 'start', 'start_date', 'startdate', 'startDate'), opts.tz, today)
     if (!day) {
       invalidDate++
       continue
@@ -543,7 +600,7 @@ export function parseDailyTotals(items: Obj[], opts: { tz: string; now?: Date; u
     }
     const unitRaw = pick(o, 'unit', 'energy_unit')
     const unit = typeof unitRaw === 'string' ? unitRaw : (opts.unit ?? null)
-    const ownAsOf = parseInstant(pick(o, 'as_of', 'asOf'))
+    const ownAsOf = parseInstant(pick(o, 'as_of', 'asof', 'asOf'))
     const asOf = ownAsOf && ownAsOf.getTime() <= now.getTime() + 5 * 60_000 ? ownAsOf : now
     const acc = byDay.get(day) ?? { steps: null, active: null, resting: null, asOf }
     if (asOf > acc.asOf) acc.asOf = asOf

@@ -12,7 +12,7 @@
 // Only a SHA-256 hash of the token is stored; the token itself never touches the DB.
 import { createClient } from '@supabase/supabase-js'
 import { corsHeaders, json, sha256Hex } from '../_shared/http.ts'
-import { classifyBody, DAY_TZ, parseDailyTotals, parseIngest, type EnergyKind, type ParsedDay } from '../_shared/healthIngest.ts'
+import { classifyBody, DAY_TZ, describeBody, parseDailyTotals, parseIngest, type EnergyKind, type ParsedDay } from '../_shared/healthIngest.ts'
 
 // two days of raw samples (~150 bytes each) fit comfortably
 const MAX_BODY = 1_000_000
@@ -34,7 +34,10 @@ Deno.serve(async (req) => {
   }
   // Shortcuts sometimes sends the number with locale separators ("7,842") — handled leniently later
   const body = classifyBody(text)
-  if (body.mode === 'invalid') return json({ error: body.error }, 400)
+  if (body.mode === 'invalid') {
+    log('warn', null, 'rejected', { error: body.error, body: describeBody(text) })
+    return json({ error: body.error, received: describeBody(text) }, 400)
+  }
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
   const { data: owner } = await admin.from('mz_health_ingest_tokens').select('user_id').eq('token_hash', await sha256Hex(token)).maybeSingle()
@@ -46,12 +49,13 @@ Deno.serve(async (req) => {
   // day boundaries: Israel's calendar day, for every request (not the phone's or the profile's zone)
   const tz = Deno.env.get('MZ_DAY_TZ') || DAY_TZ
 
-  if (body.mode === 'daily') return ingestDays(admin, user, tz, body.items)
+  if (body.mode === 'daily') return ingestDays(admin, user, tz, body.items, text)
 
   const parsed = await parseIngest(body.raw, { userId: user, tz })
   if (!parsed.ok) {
-    log('warn', user, 'rejected', { error: parsed.error })
-    return json({ error: parsed.error }, 400)
+    // the shape of what arrived (keys / types / sizes, no values) makes a wrong Shortcut easy to spot
+    log('warn', user, 'rejected', { error: parsed.error, body: describeBody(text) })
+    return json({ error: parsed.error, received: describeBody(text) }, 400)
   }
   const p = parsed.value
   const warnings = [...p.warnings]
@@ -148,11 +152,11 @@ Deno.serve(async (req) => {
 
 /** Per-day totals: each day/kind sent overwrites what was stored for that day. */
 // deno-lint-ignore no-explicit-any
-async function ingestDays(admin: any, user: string, tz: string, items: Record<string, unknown>[]): Promise<Response> {
+async function ingestDays(admin: any, user: string, tz: string, items: Record<string, unknown>[], text: string): Promise<Response> {
   const parsed = parseDailyTotals(items, { tz })
   if (!parsed.ok) {
-    log('warn', user, 'rejected', { mode: 'daily', error: parsed.error, objects: items.length })
-    return json({ error: parsed.error }, 400)
+    log('warn', user, 'rejected', { mode: 'daily', error: parsed.error, objects: items.length, body: describeBody(text) })
+    return json({ error: parsed.error, received: describeBody(text) }, 400)
   }
   const { days, received, warnings } = parsed.value
   const rows = days.map((d: ParsedDay) => ({ date: d.date, steps: d.steps, active: d.active_kcal, resting: d.resting_kcal, as_of: d.as_of, final: d.final }))

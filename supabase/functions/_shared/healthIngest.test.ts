@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyBody, DAY_TZ, parseDailyTotals, parseDayLoose, parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, splitJsonObjects, workoutType } from './healthIngest.ts'
+import { classifyBody, DAY_TZ, describeBody, parseDailyTotals, parseDayLoose, parseDistanceKm, parseDurationMin, parseEnergy, parseIngest, parseNumber, splitJsonObjects, workoutType } from './healthIngest.ts'
 
 const TZ = 'Asia/Jerusalem'
 const NOW = new Date('2026-10-11T18:30:00Z') // 21:30 in Israel
@@ -371,5 +371,43 @@ describe('per-day totals', () => {
   it('nothing valid → a clear error', () => {
     const r = parseDailyTotals([{ date: 'x', steps: 1 }], { tz: TZ, now: AT_1040 })
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('per-day totals inside a JSON field (Shortcuts: Request Body JSON, one field = the Text)', () => {
+  const days = (body: string) => {
+    const b = classifyBody(body)
+    if (b.mode !== 'daily') throw new Error(`not daily: ${b.mode}`)
+    const r = parseDailyTotals(b.items, { tz: TZ, now: AT_1040 })
+    if (!r.ok) throw new Error(r.error)
+    return r.value.days
+  }
+  it('{"text": "<the objects>"} — any field name', () => {
+    for (const key of ['text', 'Text', 'data', 'body', 'days', 'x']) {
+      const d = days(JSON.stringify({ [key]: SHORTCUT_TEXT }))
+      expect(d.map((x) => x.date)).toEqual(['2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'])
+      expect(d.find((x) => x.date === '2026-10-13')?.resting_kcal).toBe(1557)
+    }
+  })
+  it('a list of dictionaries in a field, nested wrappers, capitalised keys', () => {
+    const d = days(JSON.stringify({ Days: [{ Date: '15 Oct 2026 at 0:06', 'Active Calories': '421.95' }, { DATE: '2026-10-16', Steps: 18 }] }))
+    expect(d).toEqual([
+      expect.objectContaining({ date: '2026-10-15', active_kcal: 422 }),
+      expect.objectContaining({ date: '2026-10-16', steps: 18 }),
+    ])
+    expect(days(JSON.stringify({ payload: { items: [SHORTCUT_TEXT] } }))).toHaveLength(4)
+    expect(days(`{"Date" : "13 Oct 2026 at 0:41", "Resting Energy" : "1557.049"}`)).toEqual([expect.objectContaining({ date: '2026-10-13', resting_kcal: 1557 })])
+  })
+  it('the original snapshot formats are not mistaken for day totals', () => {
+    expect(classifyBody(JSON.stringify({ steps: 7842, active_kcal: 512, as_of: '2026-10-16T10:00:00+03:00' }))).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody(JSON.stringify({ steps: 100, workouts: [{ type: 'Run', start: '2026-10-16T07:00:00+03:00' }] }))).toMatchObject({ mode: 'snapshot' })
+    expect(classifyBody(JSON.stringify({ active_samples: [{ start: '2026-10-16T00:00:00+03:00', kcal: 5 }] }))).toMatchObject({ mode: 'snapshot' })
+  })
+  it('a wrapper with nothing usable stays an error, and says what arrived (shape only, no values)', () => {
+    expect(classifyBody(JSON.stringify({ text: 'hello' }))).toMatchObject({ mode: 'snapshot' })
+    const shape = describeBody(JSON.stringify({ text: 'secret 123', n: 5 }))
+    expect(shape).toBe('{text: string(10), n: number} (27 chars)')
+    expect(shape).not.toMatch(/secret|123/)
+    expect(describeBody(SHORTCUT_TEXT)).toMatch(/^8 objects back to back/)
   })
 })
