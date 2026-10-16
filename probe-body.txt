@@ -1,0 +1,32 @@
+{
+  "date" : "15 Oct 2026 at 0:06",
+  "active_kcal" : "421.9529999999997"
+}
+{
+  "date" : "13 Oct 2026 at 0:41",
+  "resting_kcal" : "1557.049"
+}
+{
+  "date" : "14 Oct 2026 at 0:43",
+  "resting_kcal" : "1512.907999999998"
+}
+{
+  "date" : "15 Oct 2026 at 0:04",
+  "resting_kcal" : "1590.059000000001"
+}
+{
+  "date" : "15 Oct 2026",
+  "steps" : 7892
+}
+{
+  "date" : "2026-10-16",
+  "steps" : 18
+}
+{
+  "date" : "13 Oct 2026 at 8:36",
+  "active_kcal" : "136.608"
+}
+{
+  "date" : "14 Oct 2026 at 8:54",
+  "active_kcal" : "417.3609999999998"
+}
