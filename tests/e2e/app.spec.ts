@@ -623,6 +623,8 @@ test.describe('custom calorie range', () => {
     await expect(hero(page)).toContainText('2,200')
     await expect(hero(page)).toContainText('מעל טווח היעד')
     await expect(hero(page)).toContainText('100 קק״ל מעל')
+    // ate more than burned → the balance is positive
+    await expect(hero(page)).toContainText('+')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.waitForTimeout(900) // the sheet's exit and the number's count-up

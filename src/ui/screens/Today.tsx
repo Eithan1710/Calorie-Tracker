@@ -304,7 +304,8 @@ function IntakeHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
           <div>
             <p className="text-sm text-ink-3">מאזן (נכנסו פחות נשרפו)</p>
             <p className="num text-[28px] font-semibold tracking-tight">
-              <span className="ltr">{fmtBalance(-goal.deficit)}</span>
+              {/* fmtBalance takes the deficit (burned − eaten) and prints eaten − burned */}
+              <span className="ltr">{fmtBalance(goal.deficit)}</span>
             </p>
           </div>
           <div>
