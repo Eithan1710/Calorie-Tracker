@@ -552,6 +552,92 @@ test.describe('layout & a11y', () => {
   })
 })
 
+test.describe('custom calorie range', () => {
+  test.beforeEach(async ({ page }) => {
+    await seedProfile(page)
+    await at(page, '2026-10-06T13:00:00')
+  })
+
+  test('phase + custom range work together: save, validate, switch phase and mode, survive a reload, judge the day', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    let d = page.getByRole('dialog')
+    // the phases are still there, automatic mode by default
+    const phases = d.getByRole('radiogroup', { name: 'היעד היומי' })
+    for (const name of ['ריקומפ', 'ירידה במשקל', 'שמירה', 'עלייה נקייה']) await expect(phases.getByRole('radio', { name: new RegExp(name) })).toBeVisible()
+    await expect(phases.getByRole('radio', { name: /ריקומפ/ })).toHaveAttribute('aria-checked', 'true')
+    await expect(d.getByRole('radio', { name: 'אוטומטי' })).toHaveAttribute('aria-checked', 'true')
+    await expect(d.getByTestId('auto-target')).toContainText('קק״ל')
+
+    // custom: any values
+    await d.getByRole('radio', { name: 'מותאם אישית' }).click()
+    await d.getByLabel('מינימום').fill('1900')
+    await d.getByLabel('מקסימום').fill('2100')
+    await expect(d.getByTestId('custom-target')).toContainText('1,900–2,100')
+    // invalid input is refused with a reason; the saved range stays
+    await d.getByLabel('מינימום').fill('2200')
+    await expect(d.getByRole('alert')).toContainText('המינימום צריך להיות נמוך מהמקסימום')
+    await expect(d.getByRole('alert')).toContainText('1,900–2,100')
+    await d.getByLabel('מינימום').fill('1900')
+    await page.screenshot({ path: shot('settings-custom-range', test.info().project.name) })
+    await page.keyboard.press('Escape')
+
+    // Today shows the range
+    await expect(page.getByTestId('calorie-target')).toContainText('יעד יומי: 1,900–2,100')
+
+    // a different phase does not overwrite the custom range
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    d = page.getByRole('dialog')
+    await d.getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /ירידה במשקל/ }).click()
+    await expect(d.getByLabel('מינימום')).toHaveValue('1900')
+    await expect(d.getByLabel('מקסימום')).toHaveValue('2100')
+    // automatic → the phase's band again; back to custom → the values are still there
+    await d.getByRole('radio', { name: 'אוטומטי' }).click()
+    await expect(d.getByTestId('auto-target')).toBeVisible()
+    await d.getByRole('radio', { name: 'מותאם אישית' }).click()
+    await expect(d.getByLabel('מינימום')).toHaveValue('1900')
+    await expect(d.getByLabel('מקסימום')).toHaveValue('2100')
+    await page.keyboard.press('Escape')
+
+    // persisted after a reload, for this account's settings
+    await page.reload()
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('maazan:settings') ?? '{}'))
+    expect(saved).toMatchObject({ calorieMode: 'custom', customKcal: { min: 1900, max: 2100 }, goalPhase: 'cut', deficitTarget: { min: 300, max: 500 } })
+    await expect(page.getByTestId('calorie-target')).toContainText('1,900–2,100')
+
+    // the day is judged against the whole range
+    await mockAnalyze(page, analysis([item('m', 'ארוחה גדולה', 600, { kcal: 300, protein_g: 20, fat_g: 10, carbs_g: 30 })], { title: 'ארוחה גדולה' }))
+    await addText(page, 'ארוחה גדולה')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('1,800') // eaten
+    await expect(hero(page)).toContainText('יש מקום') // 13:00, below the range: room to eat
+    await expect(hero(page)).toContainText('100–300')
+    await mockAnalyze(page, analysis([item('s', 'חטיף', 100, { kcal: 200, protein_g: 5, fat_g: 5, carbs_g: 30 })], { title: 'חטיף' }))
+    await addText(page, 'חטיף')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('2,000')
+    await expect(hero(page)).toContainText('בטווח היעד')
+    await addText(page, 'חטיף')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('2,200')
+    await expect(hero(page)).toContainText('מעל טווח היעד')
+    await expect(hero(page)).toContainText('100 קק״ל מעל')
+    await page.screenshot({ path: shot('today-custom-range', test.info().project.name) })
+
+    // history: days in target against the same range
+    await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היסטוריה' }).click()
+    await expect(page.getByText('קלוריות ביום')).toBeVisible()
+    await expect(page.getByText(/1,900–2,100/).first()).toBeVisible()
+
+    // automatic again: the original balance view is back
+    await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היום' }).click()
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    await page.getByRole('dialog').getByRole('radio', { name: 'אוטומטי' }).click()
+    await page.keyboard.press('Escape')
+    await expect(hero(page)).toContainText('מאזן היום')
+  })
+})
+
 test.describe('install as an app', () => {
   const fakeInstallEvent = (outcome: 'accepted' | 'dismissed') =>
     `(() => {

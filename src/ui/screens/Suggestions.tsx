@@ -40,15 +40,21 @@ export function Suggestions({ s, date }: { s: DaySummary; date: string }) {
   const food = useStore((st) => st.food)
   const deficit = useStore((st) => st.settings.deficitTarget)
   const now = useNow()
+  // the day's intake range — the custom one, or burned − band — expressed as the band suggest() expects
+  const kcalMin = s.intakeRange?.min
+  const kcalMax = s.intakeRange?.max
   const result = useMemo(
     () =>
       suggest({
         history: Object.values(food),
         intake: { calories: s.eaten, protein_g: s.protein, fat_g: s.fat, carbs_g: s.carbs },
-        targets: { burned: s.burned, deficitMin: deficit.min, deficitMax: deficit.max, proteinTarget: s.proteinTarget },
+        targets:
+          kcalMin !== undefined && kcalMax !== undefined
+            ? { burned: kcalMax, deficitMin: 0, deficitMax: kcalMax - kcalMin, proteinTarget: s.proteinTarget }
+            : { burned: s.burned, deficitMin: deficit.min, deficitMax: deficit.max, proteinTarget: s.proteinTarget },
         now,
       }),
-    [food, s.eaten, s.protein, s.fat, s.carbs, s.burned, s.proteinTarget, deficit.min, deficit.max, now],
+    [food, s.eaten, s.protein, s.fat, s.carbs, s.burned, s.proteinTarget, deficit.min, deficit.max, kcalMin, kcalMax, now],
   )
   const hasAnyHistory = useMemo(() => Object.values(food).some((f) => !f.deleted && f.status === 'ok' && f.date !== date), [food, date])
 

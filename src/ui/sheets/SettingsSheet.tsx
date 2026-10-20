@@ -3,7 +3,7 @@ import { ChevronDown, Cloud, CloudOff, Loader2, LogOut, UserRound } from 'lucide
 import { Sheet, NumberField, Segmented } from '../primitives'
 import { hasUnsyncedChanges, updateSettings, useStore } from '../../data/store'
 import { isValidProfile, type Profile, type Sex } from '../../domain/energy'
-import { TARGET_PRESETS } from '../../domain/goal'
+import { intakeRangeFor, isValidKcalRange, KCAL_LIMITS, kcalRangeError, phaseOf, range, TARGET_PRESETS, type CalorieMode, type KcalRange } from '../../domain/goal'
 import { hasSupabase } from '../../services/config'
 import { useAuth } from '../../services/auth'
 import { logout } from '../../services/session'
@@ -61,8 +61,6 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  const presetId = TARGET_PRESETS.find((t) => t.target.min === settings.deficitTarget.min && t.target.max === settings.deficitTarget.max)?.id ?? 'recomp'
-
   const toggleReminders = async () => {
     if (settings.remindersEnabled) {
       await disableReminders()
@@ -110,28 +108,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
           )}
         </section>
 
-        <section className="flex flex-col gap-2">
-          <h3 className="font-semibold">היעד היומי</h3>
-          <div role="radiogroup" aria-label="היעד היומי" className="grid grid-cols-2 gap-2">
-            {TARGET_PRESETS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="radio"
-                aria-checked={presetId === t.id}
-                onClick={() => {
-                  updateSettings({ deficitTarget: t.target })
-                  void pushProfile()
-                }}
-                className={`pressable flex min-h-16 flex-col items-start justify-center rounded-2xl px-4 py-2 text-start transition-colors ${presetId === t.id ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink'}`}
-              >
-                <span className="font-semibold">{t.label}</span>
-                <span className={`text-sm ${presetId === t.id ? 'opacity-80' : 'text-ink-3'}`}>{t.hint}</span>
-              </button>
-            ))}
-          </div>
-          <p className="text-sm text-ink-3">המאזן היומי נבדק מול הטווח הזה. אין כאן יעדים קיצוניים.</p>
-        </section>
+        <CalorieTargetSection />
 
         <section className="flex flex-col gap-2">
           <div className="flex min-h-14 items-center justify-between gap-3">
@@ -339,6 +316,113 @@ function SpeedInfo() {
           <dd className="col-span-2 pt-1 text-xs text-ink-3">חציון של {flows.length} תמונות ו-{p.launches.length} פתיחות אחרונות במכשיר הזה.</dd>
         </dl>
       )}
+    </section>
+  )
+}
+
+const round50 = (n: number) => Math.round(n / 50) * 50
+
+/**
+ * Daily target: the fitness phase (as before) + how calories are set.
+ *  - אוטומטי: the phase's deficit band against the day's burn (the original behaviour);
+ *  - מותאם אישית: the user's own min–max intake.
+ * Phase and custom range are saved independently: changing one never overwrites the other.
+ */
+function CalorieTargetSection() {
+  const settings = useStore((s) => s.settings)
+  const phase = phaseOf(settings)
+  const mode: CalorieMode = settings.calorieMode ?? 'auto'
+  const { summary } = useDaySummary(toDateKey(new Date()))
+  const autoToday = summary.burn ? intakeRangeFor({ kind: 'deficit', ...settings.deficitTarget }, summary.burned) : null
+  const saved = isValidKcalRange(settings.customKcal) ? settings.customKcal : null
+  const fallback: KcalRange = saved ?? (autoToday ? { min: round50(autoToday.min), max: round50(autoToday.max) } : { min: 1900, max: 2100 })
+  const [kMin, setKMin] = useState<number | ''>(fallback.min)
+  const [kMax, setKMax] = useState<number | ''>(fallback.max)
+  const error = kcalRangeError(kMin, kMax)
+  // a range that arrives from the account (another device) replaces what the fields show
+  useEffect(() => {
+    if (saved) {
+      setKMin(saved.min)
+      setKMax(saved.max)
+    }
+  }, [saved?.min, saved?.max])
+
+  const save = (patch: Parameters<typeof updateSettings>[0]) => {
+    updateSettings(patch)
+    void pushProfile()
+  }
+  const changeRange = (min: number | '', max: number | '') => {
+    setKMin(min)
+    setKMax(max)
+    if (kcalRangeError(min, max) === null) save({ customKcal: { min: Number(min), max: Number(max) } })
+  }
+  const chooseMode = (m: CalorieMode) => {
+    // first time custom: start from what the fields show, so the target never jumps to nothing
+    if (m === 'custom' && !saved && error === null) save({ calorieMode: m, customKcal: { min: Number(kMin), max: Number(kMax) } })
+    else save({ calorieMode: m })
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="font-semibold">היעד היומי</h3>
+      <div role="radiogroup" aria-label="היעד היומי" className="grid grid-cols-2 gap-2">
+        {TARGET_PRESETS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={phase === t.id}
+            // the phase sets the automatic band; a custom range stays exactly as it is
+            onClick={() => save({ goalPhase: t.id, deficitTarget: t.target })}
+            className={`pressable flex min-h-16 flex-col items-start justify-center rounded-2xl px-4 py-2 text-start transition-colors ${phase === t.id ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink'}`}
+          >
+            <span className="font-semibold">{t.label}</span>
+            <span className={`text-sm ${phase === t.id ? 'opacity-80' : 'text-ink-3'}`}>{t.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-2xl bg-surface-2 p-3">
+        <Segmented<CalorieMode>
+          label="יעד קלוריות"
+          value={mode}
+          onChange={chooseMode}
+          options={[
+            { value: 'auto', label: 'אוטומטי' },
+            { value: 'custom', label: 'מותאם אישית' },
+          ]}
+        />
+        {mode === 'auto' ? (
+          <p className="px-1 text-sm text-ink-2" data-testid="auto-target">
+            {autoToday ? (
+              <>
+                לפי השלב והשריפה של היום: <span className="font-semibold">{range(autoToday.min, autoToday.max)} {KCAL}</span>
+              </>
+            ) : (
+              'מחושב כל יום לפי השלב והשריפה בפועל.'
+            )}
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <NumberField label="מינימום" unit={KCAL} value={kMin} inputMode="numeric" min={KCAL_LIMITS.min} max={KCAL_LIMITS.max} onChange={(v) => changeRange(v, kMax)} />
+              <NumberField label="מקסימום" unit={KCAL} value={kMax} inputMode="numeric" min={KCAL_LIMITS.min} max={KCAL_LIMITS.max} onChange={(v) => changeRange(kMin, v)} />
+            </div>
+            {error ? (
+              <p role="alert" className="px-1 text-sm text-surplus">
+                {error}
+                {saved ? ` · נשמר: ${range(saved.min, saved.max)}` : ''}
+              </p>
+            ) : (
+              <p className="px-1 text-sm text-ink-2" data-testid="custom-target">
+                יעד יומי: <span className="font-semibold">{range(Number(kMin), Number(kMax))} {KCAL}</span>
+              </p>
+            )}
+            {autoToday && <p className="px-1 text-xs text-ink-3">לפי השלב והשריפה של היום: {range(autoToday.min, autoToday.max)}</p>}
+          </>
+        )}
+      </div>
+      <p className="text-sm text-ink-3">{mode === 'custom' ? 'כל הטווח נחשב ביעד — לא רק האמצע. השלב נשמר, והמעבר בין המצבים לא מוחק את הערכים.' : 'המאזן היומי נבדק מול הטווח הזה. אין כאן יעדים קיצוניים.'}</p>
     </section>
   )
 }

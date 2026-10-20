@@ -141,3 +141,9 @@ jobs:
           P="psql -v ON_ERROR_STOP=1 -q"
           $P -f supabase/tests/weights.sql 2>&1 | tee weights.log
           grep -q 'weight checks passed' weights.log
+      - name: Calorie range (migration twice + constraints)
+        run: |
+          set -e
+          P="psql -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/calorie_range.sql 2>&1 | tee range.log
+          grep -q 'calorie range checks passed' range.log

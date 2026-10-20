@@ -442,3 +442,42 @@ test('suggestions: only foods from my own log, around this time of day, by what 
     .poll(() => sb.rows('mz_food_entries', u.id).filter((r) => r.provider === 'history').map((r) => [r.title, r.date, r.meal, r.calories, (r.items as { grams: number }[])[0].grams]))
     .toEqual([['חזה עוף', '2026-10-06', 'dinner', 314, 190]])
 })
+
+test('custom calorie range is saved to the account and comes back after logout / on another device', async ({ page, browser }) => {
+  const u = sb.addUser('איתן', '123456')
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await onboard(page, '62')
+  await page.getByRole('button', { name: 'הגדרות' }).click()
+  const d = page.getByRole('dialog')
+  await d.getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /שמירה/ }).click()
+  await d.getByRole('radio', { name: 'מותאם אישית' }).click()
+  await d.getByLabel('מינימום').fill('1950')
+  await d.getByLabel('מקסימום').fill('2150')
+  await expect
+    .poll(() => {
+      const r = sb.rows('mz_profiles', u.id)[0]
+      return r && [r.goal_phase, r.calorie_mode, r.kcal_min, r.kcal_max, r.deficit_min, r.deficit_max]
+    })
+    .toEqual(['maintain', 'custom', 1950, 2150, -100, 100])
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('calorie-target')).toContainText('1,950–2,150')
+
+  // log out and back in
+  await logout(page)
+  await login(page, 'איתן', '123456')
+  await expect(page.getByTestId('calorie-target')).toContainText('1,950–2,150')
+
+  // another device: pulled from the account
+  const other = await browser.newContext()
+  await sb.install(other)
+  const p2 = await other.newPage()
+  await p2.clock.install({ time: new Date('2026-10-06T13:00:00+03:00') })
+  await p2.goto('/')
+  await login(p2, 'איתן', '123456')
+  await expect(p2.getByTestId('calorie-target')).toContainText('1,950–2,150')
+  await p2.getByRole('button', { name: 'הגדרות' }).click()
+  await expect(p2.getByRole('dialog').getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /שמירה/ })).toHaveAttribute('aria-checked', 'true')
+  await expect(p2.getByRole('dialog').getByLabel('מינימום')).toHaveValue('1950')
+  await other.close()
+})
