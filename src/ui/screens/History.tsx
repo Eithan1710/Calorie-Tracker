@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore, foodForDate, exercisesForDate } from '../../data/store'
 import { summarizeDay, type DaySummary } from '../../domain/day'
-import { addDays, dayTarget, isDayFinal, toDateKey } from '../../domain/goal'
+import { addDays, bandLabel, dayTarget, isDayFinal, toDateKey } from '../../domain/goal'
 import { Segmented } from '../primitives'
 import { dateLong, dateShort, fmt, fmtBalance, KCAL, weekdayShort } from '../format'
 import { STATUS_STYLE } from './Today'
@@ -35,8 +35,7 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
   }, [food, exercise, health, settings, range, today, target])
 
   const { min: TARGET_MIN, max: TARGET_MAX } = target
-  const custom = target.kind === 'intake'
-  const targetHint = custom ? `\u2066${fmt(TARGET_MIN)}–${fmt(TARGET_MAX)}\u2069 ${KCAL}` : `גירעון \u2066${TARGET_MIN}–${TARGET_MAX}\u2069`
+  const targetHint = bandLabel(target)
   const logged = days.filter((d) => d.hasFood)
   const finished = logged.filter((d) => isDayFinal(d.date))
   const inTarget = finished.filter((d) => d.goal?.status === 'success').length
@@ -74,46 +73,24 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {custom ? (
-          <ChartCard title="קלוריות ביום" subtitle={`נכנסו · הפס הירוק = טווח היעד שלך (${targetHint})`}>
-            <BarChart
-              days={days}
-              value={(d) => (d.hasFood ? d.eaten : null)}
-              color={(d) => (d.goal ? STATUS_STYLE[d.goal.status].color : 'var(--ink-3)')}
-              band={[TARGET_MIN, TARGET_MAX]}
-              minDomain={[0, TARGET_MAX * 1.2]}
-              format={(v) => fmt(v)}
-              tooltip={(d) => (
-                <>
-                  <b>
-                    {fmt(d.eaten)} {KCAL}
-                  </b>
-                  <span>{d.goal?.title}</span>
-                </>
-              )}
-              onSelect={onOpenDay}
-            />
-          </ChartCard>
-        ) : (
-          <ChartCard title="מאזן יומי" subtitle={`נכנסו פחות נשרפו · הפס הירוק = היעד שלך (גירעון \u2066${TARGET_MIN}–${TARGET_MAX}\u2069)`}>
-            <BarChart
-              days={days}
-              value={(d) => (d.hasFood && d.burn ? d.eaten - d.burned : null)}
-              color={(d) => (d.goal ? STATUS_STYLE[d.goal.status].color : 'var(--ink-3)')}
-              band={[-TARGET_MAX, -TARGET_MIN]}
-              minDomain={[-500, 200]}
-              format={(v) => fmtBalance(-v)}
-              tooltip={(d) => (
-                <>
-                  <b>{fmtBalance(d.goal!.deficit)} {KCAL}</b>
-                  <span>נכנסו {fmt(d.eaten)} · נשרפו {fmt(d.burned)}</span>
-                  <span>{d.goal!.title}</span>
-                </>
-              )}
-              onSelect={onOpenDay}
-            />
-          </ChartCard>
-        )}
+        <ChartCard title="מאזן יומי" subtitle={`נכנסו פחות נשרפו · הפס הירוק = היעד שלך (${targetHint})`}>
+          <BarChart
+            days={days}
+            value={(d) => (d.hasFood && d.burn ? d.eaten - d.burned : null)}
+            color={(d) => (d.goal ? STATUS_STYLE[d.goal.status].color : 'var(--ink-3)')}
+            band={[-TARGET_MAX, -TARGET_MIN]}
+            minDomain={[-500, 200]}
+            format={(v) => fmtBalance(-v)}
+            tooltip={(d) => (
+              <>
+                <b>{fmtBalance(d.goal!.deficit)} {KCAL}</b>
+                <span>נכנסו {fmt(d.eaten)} · נשרפו {fmt(d.burned)}</span>
+                <span>{d.goal!.title}</span>
+              </>
+            )}
+            onSelect={onOpenDay}
+          />
+        </ChartCard>
 
         <ChartCard title="חלבון" subtitle={`גרם ליום · קו = יעד ${settings.proteinTarget} ג׳`}>
           <BarChart

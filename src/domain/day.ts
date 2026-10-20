@@ -1,6 +1,6 @@
 import { isValidProfile, type DailyBurnBreakdown, type ExerciseInput, type Profile } from './energy'
 import { dayEnergy, type DayEnergy, type DayWorkout, type HealthEnergyDay } from './expenditure'
-import { DEFAULT_TARGET, evaluateGoal, evaluateIntake, intakeRangeFor, isDayFinal, type DayTarget, type DeficitTarget, type GoalResult, type KcalRange } from './goal'
+import { DEFAULT_TARGET, evaluateGoal, isDayFinal, type DeficitTarget, type GoalResult } from './goal'
 import type { Exercise, FoodEntry } from '../data/types'
 
 export interface DaySummary {
@@ -19,11 +19,9 @@ export interface DaySummary {
   hasFood: boolean
   pendingCount: number
   goal: GoalResult | null
-  /** the day's target intake in kcal (custom range, or burned − band); null when unknown */
-  intakeRange: KcalRange | null
   proteinTarget: number
   proteinMet: boolean
-  target: DayTarget
+  target: DeficitTarget
 }
 
 export function toExerciseInput(e: Exercise): ExerciseInput {
@@ -52,12 +50,11 @@ export function summarizeDay(opts: {
   health?: HealthEnergyDay | null
   profile: Profile | null
   proteinTarget: number
-  /** what the day is judged against: a deficit band (automatic) or a fixed intake range (custom); default 100–300 deficit */
-  target?: DayTarget | DeficitTarget
+  /** personal daily target band (defaults to 100–300 kcal deficit) */
+  target?: DeficitTarget
   now?: Date
 }): DaySummary {
-  const t = opts.target ?? DEFAULT_TARGET
-  const target: DayTarget = 'kind' in t ? (t as DayTarget) : { kind: 'deficit', min: t.min, max: t.max }
+  const target = opts.target ?? DEFAULT_TARGET
   const ok = opts.food.filter((f) => f.status === 'ok')
   const sum = (k: 'calories' | 'protein_g' | 'fat_g' | 'carbs_g') => ok.reduce((s, f) => s + (f.totals[k] ?? 0), 0)
   const eaten = Math.round(sum('calories'))
@@ -81,14 +78,7 @@ export function summarizeDay(opts: {
     steps: opts.steps,
     hasFood,
     pendingCount: opts.food.length - ok.length,
-    // a custom range needs no burn estimate; the automatic band does
-    goal:
-      target.kind === 'intake'
-        ? evaluateIntake({ eaten, burned: burn ? burned : null, hasFood, dayFinal: isDayFinal(opts.date, opts.now), range: target })
-        : burn
-          ? evaluateGoal({ eaten, burned, hasFood, dayFinal: isDayFinal(opts.date, opts.now), target })
-          : null,
-    intakeRange: intakeRangeFor(target, burn ? burned : null),
+    goal: burn ? evaluateGoal({ eaten, burned, hasFood, dayFinal: isDayFinal(opts.date, opts.now), target }) : null,
     proteinTarget: opts.proteinTarget,
     proteinMet: protein >= opts.proteinTarget,
     target,

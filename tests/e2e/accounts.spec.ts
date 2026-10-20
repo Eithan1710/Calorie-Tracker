@@ -443,7 +443,7 @@ test('suggestions: only foods from my own log, around this time of day, by what 
     .toEqual([['חזה עוף', '2026-10-06', 'dinner', 314, 190]])
 })
 
-test('custom calorie range is saved to the account and comes back after logout / on another device', async ({ page, browser }) => {
+test('custom deficit band is saved to the account and comes back after logout / on another device', async ({ page, browser }) => {
   const u = sb.addUser('איתן', '123456')
   await page.goto('/')
   await login(page, 'איתן', '123456')
@@ -452,21 +452,22 @@ test('custom calorie range is saved to the account and comes back after logout /
   const d = page.getByRole('dialog')
   await d.getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /שמירה/ }).click()
   await d.getByRole('radio', { name: 'מותאם אישית' }).click()
-  await d.getByLabel('מינימום').fill('1950')
-  await d.getByLabel('מקסימום').fill('2150')
+  await d.getByRole('radio', { name: 'עודף', exact: true }).click()
+  await d.getByLabel(/^מ-/).fill('150')
+  await d.getByLabel(/^עד\s/).fill('250')
   await expect
     .poll(() => {
       const r = sb.rows('mz_profiles', u.id)[0]
-      return r && [r.goal_phase, r.calorie_mode, r.kcal_min, r.kcal_max, r.deficit_min, r.deficit_max]
+      return r && [r.goal_phase, r.calorie_mode, r.custom_deficit_min, r.custom_deficit_max, r.deficit_min, r.deficit_max]
     })
-    .toEqual(['maintain', 'custom', 1950, 2150, -100, 100])
+    .toEqual(['maintain', 'custom', -250, -150, -100, 100])
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('calorie-target')).toContainText('1,950–2,150')
+  await expect(page.getByTestId('calorie-target')).toContainText('150–250')
 
   // log out and back in
   await logout(page)
   await login(page, 'איתן', '123456')
-  await expect(page.getByTestId('calorie-target')).toContainText('1,950–2,150')
+  await expect(page.getByTestId('calorie-target')).toContainText('150–250')
 
   // another device: pulled from the account
   const other = await browser.newContext()
@@ -475,9 +476,11 @@ test('custom calorie range is saved to the account and comes back after logout /
   await p2.clock.install({ time: new Date('2026-10-06T13:00:00+03:00') })
   await p2.goto('/')
   await login(p2, 'איתן', '123456')
-  await expect(p2.getByTestId('calorie-target')).toContainText('1,950–2,150')
+  await expect(p2.getByTestId('calorie-target')).toContainText('150–250')
   await p2.getByRole('button', { name: 'הגדרות' }).click()
   await expect(p2.getByRole('dialog').getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /שמירה/ })).toHaveAttribute('aria-checked', 'true')
-  await expect(p2.getByRole('dialog').getByLabel('מינימום')).toHaveValue('1950')
+  await expect(p2.getByRole('dialog').getByRole('radio', { name: 'עודף', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await expect(p2.getByRole('dialog').getByLabel(/^מ-/)).toHaveValue('150')
+  await expect(p2.getByRole('dialog').getByLabel(/^עד\s/)).toHaveValue('250')
   await other.close()
 })

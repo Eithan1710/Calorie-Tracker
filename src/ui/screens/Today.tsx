@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
-import { Check, ChevronLeft, ChevronRight, Clock, Plus, Settings2, TriangleAlert, Info, ArrowDown, ArrowUp, Bell } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Clock, Plus, Settings2, TriangleAlert, Info, ArrowDown, Bell } from 'lucide-react'
 import { exercisesForDate, foodForDate, useStore } from '../../data/store'
 import { MEALS, type Exercise, type FoodEntry } from '../../data/types'
 import { summarizeDay, type DaySummary } from '../../domain/day'
-import { addDays, dayTarget, range, toDateKey, type GoalStatus } from '../../domain/goal'
+import { addDays, bandLabel, dayTarget, toDateKey, type GoalStatus } from '../../domain/goal'
 import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { usePhotoUrl } from '../../services/photos'
@@ -27,8 +27,6 @@ export const STATUS_STYLE: Record<GoalStatus, { color: string; soft: string; ico
   over: { color: 'var(--info)', soft: 'var(--info-soft)', icon: Info },
   room: { color: 'var(--info)', soft: 'var(--info-soft)', icon: ArrowDown },
   empty: { color: 'var(--ink-3)', soft: 'var(--surface-2)', icon: Plus },
-  below: { color: 'var(--info)', soft: 'var(--info-soft)', icon: ArrowDown },
-  above: { color: 'var(--surplus)', soft: 'var(--surplus-soft)', icon: ArrowUp },
 }
 
 const STATUS_SHORT: Record<GoalStatus, string> = {
@@ -38,8 +36,6 @@ const STATUS_SHORT: Record<GoalStatus, string> = {
   over: 'גירעון גדול',
   room: 'יש מקום',
   empty: '',
-  below: 'מתחת לטווח',
-  above: 'מעל הטווח',
 }
 
 export function useDaySummary(date: string): { summary: DaySummary; food: FoodEntry[]; exercises: Exercise[] } {
@@ -136,14 +132,16 @@ const G_MAX = 400
 function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
   const goal = s.goal
   if (!goal) return null
-  if (s.target.kind === 'intake') return <IntakeHero s={s} isToday={isToday} />
   const style = STATUS_STYLE[goal.status]
   const Icon = style.icon
   const balance = -goal.deficit
-  const pos = (v: number) => ((Math.max(G_MIN, Math.min(G_MAX, v)) - G_MIN) / (G_MAX - G_MIN)) * 100
-  const showMarker = s.hasFood
   const TARGET_MIN = s.target.min
   const TARGET_MAX = s.target.max
+  // the axis always holds the whole target band (a custom deficit can reach 1,000, a surplus 500)
+  const lo = Math.min(G_MIN, -TARGET_MAX - 200)
+  const hi = Math.max(G_MAX, -TARGET_MIN + 200)
+  const pos = (v: number) => ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * 100
+  const showMarker = s.hasFood
 
   return (
     <section aria-label="מאזן קלורי" className="card animate-rise overflow-hidden p-5 pb-4 sm:p-6">
@@ -175,11 +173,11 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
       )}
 
       <div className="mt-3">
-        <p className={`text-lg font-semibold ${goal.status === 'success' ? 'text-good' : ''}`}>{s.hasFood ? goal.title : TARGET_MIN >= 0 ? `כדי לסיים בגירעון של \u2066${TARGET_MIN}–${TARGET_MAX}\u2069` : 'כדי לסיים בטווח היעד שלך'}</p>
+        <p className={`text-lg font-semibold ${goal.status === 'success' ? 'text-good' : ''}`}>{s.hasFood ? goal.title : TARGET_MIN >= 0 ? `כדי לסיים בגירעון של \u2066${TARGET_MIN}–${TARGET_MAX}\u2069` : TARGET_MAX <= 0 ? `כדי לסיים בעודף של \u2066${-TARGET_MAX}–${-TARGET_MIN}\u2069` : 'כדי לסיים בטווח היעד שלך'}</p>
         {s.hasFood && goal.detail && <p className="text-[15px] text-ink-2">{goal.detail}</p>}
       </div>
 
-      {/* number line: eaten − burned. Target band 100–300 kcal deficit. */}
+      {/* number line: eaten − burned. Green band = the target band in force (phase or custom). */}
       <div className="mt-5" aria-hidden>
         <div className="ltr relative h-3 w-full">
           <div className="absolute inset-y-0 rounded-full" style={{ left: 0, right: 0, background: 'var(--surface-2)' }} />
@@ -201,6 +199,9 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
           <span className="absolute right-0">עודף</span>
         </div>
       </div>
+      <p className="mt-1 text-center text-xs text-ink-3" data-testid="calorie-target">
+        יעד יומי: {bandLabel(s.target)} {KCAL}
+      </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4">
         <div>
@@ -224,103 +225,6 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
       </div>
       <p className="sr-only">
         נכנסו {fmt(s.eaten)} קלוריות, נשרפו {fmt(s.burned)}. {goal.title}. {goal.detail}
-      </p>
-    </section>
-  )
-}
-
-/**
- * Custom daily range (e.g. 1,900–2,100 kcal): the whole range is the target. The hero shows what was
- * eaten against it — below, within or above — on a scale around the range, the range as the green band.
- */
-function IntakeHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
-  const goal = s.goal!
-  const { min, max } = s.target
-  const style = STATUS_STYLE[goal.status]
-  const Icon = style.icon
-  // a scale around the range (not from 0), so a 200 kcal band is wide enough to read
-  const lo = Math.max(0, Math.round(min * 0.6))
-  const hi = Math.max(max + 400, max + (max - min) * 2, s.eaten * 1.05)
-  const pos = (v: number) => ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * 100
-  const target = `${range(min, max)} ${KCAL}`
-  return (
-    <section aria-label="מאזן קלורי" className="card animate-rise overflow-hidden p-5 pb-4 sm:p-6">
-      {s.hasFood ? (
-        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-ink-3">נכנסו היום</p>
-            <p className="mt-0.5 flex items-baseline gap-2" aria-live="polite">
-              <AnimatedNumber value={s.eaten} format={fmt} className="num text-[clamp(44px,14vw,64px)] leading-none font-semibold tracking-tight sm:text-[72px]" />
-              <span className="text-lg text-ink-3">{KCAL}</span>
-            </p>
-          </div>
-          <div key={goal.status} className="animate-pop mt-1 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold" style={{ background: style.soft, color: style.color }}>
-            <Icon className="size-4" strokeWidth={2.6} aria-hidden />
-            <span>{STATUS_SHORT[goal.status]}</span>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <p className="text-sm font-medium text-ink-3">{isToday ? 'יעד להיום' : 'יעד יומי'}</p>
-          <p className="mt-1 flex items-baseline gap-2">
-            <span className="ltr num text-[44px] leading-none font-semibold tracking-tight">
-              {fmt(min)}–{fmt(max)}
-            </span>
-            <span className="text-lg text-ink-3">{KCAL}</span>
-          </p>
-        </div>
-      )}
-
-      <div className="mt-3">
-        <p className={`text-lg font-semibold ${goal.status === 'success' ? 'text-good' : ''}`}>{s.hasFood ? goal.title : 'טווח יעד מותאם אישית'}</p>
-        <p className="text-[15px] text-ink-2" data-testid="calorie-target">
-          {s.hasFood ? goal.detail : `יעד יומי: ${target}`}
-        </p>
-      </div>
-
-      {/* eaten on a scale around the range; the green band is the whole valid range */}
-      <div className="mt-5" aria-hidden>
-        <div className="ltr relative h-3 w-full">
-          <div className="absolute inset-y-0 rounded-full" style={{ left: 0, right: 0, background: 'var(--surface-2)' }} />
-          <div className="absolute inset-y-0 rounded-full" style={{ left: `${pos(min)}%`, right: `${100 - pos(max)}%`, background: 'var(--good)', opacity: 0.85 }} />
-          {s.hasFood && (
-            <div
-              className="absolute top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-surface"
-              style={{ left: `${pos(s.eaten)}%`, background: style.color, transition: 'left 700ms cubic-bezier(0.22, 1, 0.36, 1)', boxShadow: '0 1px 4px rgb(0 0 0 / .25)' }}
-            />
-          )}
-        </div>
-        <div className="ltr relative mt-1.5 h-4 text-[11px] text-ink-3">
-          <span className="absolute left-0">מתחת</span>
-          <span className="num absolute -translate-x-1/2 font-medium whitespace-nowrap text-good" style={{ left: `${(pos(min) + pos(max)) / 2}%` }}>
-            {fmt(min)}–{fmt(max)}
-          </span>
-          <span className="absolute right-0">מעל</span>
-        </div>
-      </div>
-
-      {s.burn && (
-        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4">
-          <div>
-            <p className="text-sm text-ink-3">מאזן (נכנסו פחות נשרפו)</p>
-            <p className="num text-[28px] font-semibold tracking-tight">
-              {/* fmtBalance takes the deficit (burned − eaten) and prints eaten − burned */}
-              <span className="ltr">{fmtBalance(goal.deficit)}</span>
-            </p>
-          </div>
-          <div>
-            <p className="flex items-center gap-1.5 text-sm text-ink-3">
-              <span className="size-2 rounded-full" style={{ background: 'var(--burned)' }} aria-hidden />
-              {s.energy?.mode === 'health' && s.energy.partial ? (isToday ? 'שריפה צפויה היום' : 'שריפה (משוערת ליום)') : 'קלוריות שנשרפו'}
-            </p>
-            <p className="num text-[28px] font-semibold tracking-tight">
-              <AnimatedNumber value={s.burned} format={fmt} />
-            </p>
-          </div>
-        </div>
-      )}
-      <p className="sr-only">
-        נכנסו {fmt(s.eaten)} קלוריות. יעד יומי {fmt(min)} עד {fmt(max)}. {goal.title}.
       </p>
     </section>
   )

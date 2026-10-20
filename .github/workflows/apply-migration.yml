@@ -11,8 +11,9 @@ on:
       migration:
         description: Migration file
         type: choice
-        default: 20261020000000_calorie_range.sql
+        default: 20261020100000_custom_deficit.sql
         options:
+          - 20261020100000_custom_deficit.sql
           - 20261020000000_calorie_range.sql
           - 20261016000000_health_daily_totals.sql
           - 20261015000000_body_weight.sql

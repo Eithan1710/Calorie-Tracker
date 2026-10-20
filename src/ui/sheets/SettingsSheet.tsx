@@ -3,7 +3,7 @@ import { ChevronDown, Cloud, CloudOff, Loader2, LogOut, UserRound } from 'lucide
 import { Sheet, NumberField, Segmented } from '../primitives'
 import { hasUnsyncedChanges, updateSettings, useStore } from '../../data/store'
 import { isValidProfile, type Profile, type Sex } from '../../domain/energy'
-import { intakeRangeFor, isValidKcalRange, KCAL_LIMITS, kcalRangeError, phaseOf, range, TARGET_PRESETS, type CalorieMode, type KcalRange } from '../../domain/goal'
+import { bandFrom, bandLabel, bandParts, CUSTOM_LIMITS, customBandError, intakeRangeFor, isValidTarget, phaseOf, range, TARGET_PRESETS, type BandDirection, type CalorieMode } from '../../domain/goal'
 import { hasSupabase } from '../../services/config'
 import { useAuth } from '../../services/auth'
 import { logout } from '../../services/session'
@@ -320,47 +320,52 @@ function SpeedInfo() {
   )
 }
 
-const round50 = (n: number) => Math.round(n / 50) * 50
-
 /**
- * Daily target: the fitness phase (as before) + how calories are set.
- *  - אוטומטי: the phase's deficit band against the day's burn (the original behaviour);
- *  - מותאם אישית: the user's own min–max intake.
- * Phase and custom range are saved independently: changing one never overwrites the other.
+ * Daily target: the fitness phase (as before) + how the band is set.
+ *  - אוטומטי: the phase's deficit band (the original behaviour);
+ *  - מותאם אישית: the user's own band of deficit or surplus, e.g. a deficit of 200–300 kcal.
+ * Phase and custom band are saved independently: changing one never overwrites the other.
  */
 function CalorieTargetSection() {
   const settings = useStore((s) => s.settings)
   const phase = phaseOf(settings)
   const mode: CalorieMode = settings.calorieMode ?? 'auto'
   const { summary } = useDaySummary(toDateKey(new Date()))
-  const autoToday = summary.burn ? intakeRangeFor({ kind: 'deficit', ...settings.deficitTarget }, summary.burned) : null
-  const saved = isValidKcalRange(settings.customKcal) ? settings.customKcal : null
-  const fallback: KcalRange = saved ?? (autoToday ? { min: round50(autoToday.min), max: round50(autoToday.max) } : { min: 1900, max: 2100 })
-  const [kMin, setKMin] = useState<number | ''>(fallback.min)
-  const [kMax, setKMax] = useState<number | ''>(fallback.max)
-  const error = kcalRangeError(kMin, kMax)
-  // a range that arrives from the account (another device) replaces what the fields show
+  const burned = summary.burn ? summary.burned : null
+  const saved = isValidTarget(settings.customDeficit) ? settings.customDeficit : null
+  const start = bandParts(saved ?? settings.deficitTarget)
+  const [dir, setDir] = useState<BandDirection>(start.dir)
+  const [from, setFrom] = useState<number | ''>(start.from)
+  const [to, setTo] = useState<number | ''>(start.to)
+  const error = customBandError(dir, from, to)
+  // a band that arrives from the account (another device) replaces what the fields show
   useEffect(() => {
-    if (saved) {
-      setKMin(saved.min)
-      setKMax(saved.max)
-    }
+    if (!saved) return
+    const p = bandParts(saved)
+    setDir(p.dir)
+    setFrom(p.from)
+    setTo(p.to)
   }, [saved?.min, saved?.max])
 
   const save = (patch: Parameters<typeof updateSettings>[0]) => {
     updateSettings(patch)
     void pushProfile()
   }
-  const changeRange = (min: number | '', max: number | '') => {
-    setKMin(min)
-    setKMax(max)
-    if (kcalRangeError(min, max) === null) save({ customKcal: { min: Number(min), max: Number(max) } })
+  const change = (d: BandDirection, f: number | '', t: number | '') => {
+    setDir(d)
+    setFrom(f)
+    setTo(t)
+    if (customBandError(d, f, t) === null) save({ customDeficit: bandFrom(d, Number(f), Number(t)) })
   }
   const chooseMode = (m: CalorieMode) => {
     // first time custom: start from what the fields show, so the target never jumps to nothing
-    if (m === 'custom' && !saved && error === null) save({ calorieMode: m, customKcal: { min: Number(kMin), max: Number(kMax) } })
+    if (m === 'custom' && !saved && error === null) save({ calorieMode: m, customDeficit: bandFrom(dir, Number(from), Number(to)) })
     else save({ calorieMode: m })
   }
+  const autoBand = settings.deficitTarget
+  const autoToday = intakeRangeFor(autoBand, burned)
+  const shown = mode === 'custom' && error === null ? bandFrom(dir, Number(from), Number(to)) : null
+  const shownToday = shown ? intakeRangeFor(shown, burned) : null
 
   return (
     <section className="flex flex-col gap-3">
@@ -372,7 +377,7 @@ function CalorieTargetSection() {
             type="button"
             role="radio"
             aria-checked={phase === t.id}
-            // the phase sets the automatic band; a custom range stays exactly as it is
+            // the phase sets the automatic band; a custom band stays exactly as it is
             onClick={() => save({ goalPhase: t.id, deficitTarget: t.target })}
             className={`pressable flex min-h-16 flex-col items-start justify-center rounded-2xl px-4 py-2 text-start transition-colors ${phase === t.id ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink'}`}
           >
@@ -394,35 +399,39 @@ function CalorieTargetSection() {
         />
         {mode === 'auto' ? (
           <p className="px-1 text-sm text-ink-2" data-testid="auto-target">
-            {autoToday ? (
-              <>
-                לפי השלב והשריפה של היום: <span className="font-semibold">{range(autoToday.min, autoToday.max)} {KCAL}</span>
-              </>
-            ) : (
-              'מחושב כל יום לפי השלב והשריפה בפועל.'
-            )}
+            לפי השלב: <span className="font-semibold">{bandLabel(autoBand)} {KCAL}</span>
+            {autoToday && <> · היום לאכול {range(autoToday.min, autoToday.max)}</>}
           </p>
         ) : (
           <>
+            <Segmented<BandDirection>
+              label="סוג היעד"
+              value={dir}
+              onChange={(d) => change(d, from, to)}
+              options={[
+                { value: 'deficit', label: 'גירעון' },
+                { value: 'surplus', label: 'עודף' },
+              ]}
+            />
             <div className="grid grid-cols-2 gap-2">
-              <NumberField label="מינימום" unit={KCAL} value={kMin} inputMode="numeric" min={KCAL_LIMITS.min} max={KCAL_LIMITS.max} onChange={(v) => changeRange(v, kMax)} />
-              <NumberField label="מקסימום" unit={KCAL} value={kMax} inputMode="numeric" min={KCAL_LIMITS.min} max={KCAL_LIMITS.max} onChange={(v) => changeRange(kMin, v)} />
+              <NumberField label="מ-" unit={KCAL} value={from} inputMode="numeric" min={0} max={CUSTOM_LIMITS[dir]} onChange={(v) => change(dir, v, to)} />
+              <NumberField label="עד" unit={KCAL} value={to} inputMode="numeric" min={0} max={CUSTOM_LIMITS[dir]} onChange={(v) => change(dir, from, v)} />
             </div>
-            {error ? (
+            {error || !shown ? (
               <p role="alert" className="px-1 text-sm text-surplus">
                 {error}
-                {saved ? ` · נשמר: ${range(saved.min, saved.max)}` : ''}
+                {saved ? ` · נשמר: ${bandLabel(saved)}` : ''}
               </p>
             ) : (
               <p className="px-1 text-sm text-ink-2" data-testid="custom-target">
-                יעד יומי: <span className="font-semibold">{range(Number(kMin), Number(kMax))} {KCAL}</span>
+                יעד יומי: <span className="font-semibold">{bandLabel(shown)} {KCAL}</span>
+                {shownToday && <> · היום לאכול {range(shownToday.min, shownToday.max)}</>}
               </p>
             )}
-            {autoToday && <p className="px-1 text-xs text-ink-3">לפי השלב והשריפה של היום: {range(autoToday.min, autoToday.max)}</p>}
           </>
         )}
       </div>
-      <p className="text-sm text-ink-3">{mode === 'custom' ? 'כל הטווח נחשב ביעד — לא רק האמצע. השלב נשמר, והמעבר בין המצבים לא מוחק את הערכים.' : 'המאזן היומי נבדק מול הטווח הזה. אין כאן יעדים קיצוניים.'}</p>
+      <p className="text-sm text-ink-3">{mode === 'custom' ? 'המאזן היומי (נשרפו פחות נכנסו) נבדק מול הטווח הזה, וכל הטווח נחשב ביעד. השלב נשמר, והמעבר בין המצבים לא מוחק את הערכים.' : 'המאזן היומי נבדק מול הטווח הזה. אין כאן יעדים קיצוניים.'}</p>
     </section>
   )
 }

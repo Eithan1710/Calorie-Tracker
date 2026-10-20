@@ -35,32 +35,49 @@ export const TARGET_PRESETS: { id: GoalPhase; label: string; hint: string; targe
 ]
 
 /**
- * How the daily calorie target is set:
- *  - 'auto'   — the phase's deficit band applied to the day's burn (burned − band), as before;
- *  - 'custom' — a fixed intake range the user chose (e.g. 1,900–2,100 kcal), any phase.
- * Switching modes or phases never erases the saved custom range.
+ * How the daily target band is set:
+ *  - 'auto'   — the phase's band (recomp 100–300 deficit, cut 300–500, …), as before;
+ *  - 'custom' — the user's own band of deficit or surplus, e.g. a deficit of 200–300 kcal.
+ * Either way the band is applied to the day's burn, and the whole band counts as the target.
+ * Phase and custom band are stored separately: changing one never overwrites the other.
  */
 export type CalorieMode = 'auto' | 'custom'
+export type BandDirection = 'deficit' | 'surplus'
 
-/** A daily intake range in kcal. */
+/** A daily intake range in kcal (the band applied to the day's burn). */
 export interface KcalRange {
   min: number
   max: number
 }
 
-export const KCAL_LIMITS = { min: 500, max: 8000 }
+/** Largest custom band: same bounds the database keeps for the deficit columns (−500…1000). */
+export const CUSTOM_LIMITS: Record<BandDirection, number> = { deficit: 1000, surplus: 500 }
 
-/** Hebrew error for a custom range, or null when it is valid. */
-export function kcalRangeError(min: number | '' | null | undefined, max: number | '' | null | undefined): string | null {
-  if (min === '' || max === '' || min == null || max == null || !Number.isFinite(min) || !Number.isFinite(max)) return 'צריך מינימום ומקסימום'
-  if (min <= 0 || max <= 0) return 'הערכים צריכים להיות חיוביים'
-  if (min < KCAL_LIMITS.min || max > KCAL_LIMITS.max) return `טווח אפשרי: \u2066${KCAL_LIMITS.min}–${KCAL_LIMITS.max.toLocaleString('he-IL')}\u2069 קק״ל`
-  if (min >= max) return 'המינימום צריך להיות נמוך מהמקסימום'
+/** Hebrew error for a custom band typed as "from–to" kcal of deficit or surplus, or null when valid. */
+export function customBandError(dir: BandDirection, from: number | '' | null | undefined, to: number | '' | null | undefined): string | null {
+  if (from === '' || to === '' || from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return 'צריך ערך "מ-" וערך "עד"'
+  if (from < 0 || to <= 0) return 'הערכים צריכים להיות חיוביים'
+  if (from >= to) return 'הערך הראשון צריך להיות נמוך מהשני'
+  if (to > CUSTOM_LIMITS[dir]) return `${dir === 'deficit' ? 'גירעון' : 'עודף'} של עד \u2066${CUSTOM_LIMITS[dir].toLocaleString('he-IL')}\u2069 קק״ל`
   return null
 }
 
-export function isValidKcalRange(r: Partial<KcalRange> | null | undefined): r is KcalRange {
-  return !!r && kcalRangeError(r.min, r.max) === null
+/** "deficit 200–300" → band {min: 200, max: 300}; "surplus 200–400" → {min: −400, max: −200}. */
+export function bandFrom(dir: BandDirection, from: number, to: number): DeficitTarget {
+  return dir === 'deficit' ? { min: from, max: to } : { min: -to, max: -from }
+}
+
+/** A band as the user types it. Bands that cross zero read as a deficit range from 0. */
+export function bandParts(b: DeficitTarget): { dir: BandDirection; from: number; to: number } {
+  if (b.max <= 0) return { dir: 'surplus', from: -b.max, to: -b.min }
+  return { dir: 'deficit', from: Math.max(0, b.min), to: b.max }
+}
+
+/** "גירעון 200–300" / "עודף 200–400" / "מאזן −100…+100" */
+export function bandLabel(b: DeficitTarget): string {
+  if (b.min >= 0) return `גירעון \u2066${b.min}–${b.max}\u2069`
+  if (b.max <= 0) return `עודף \u2066${-b.max}–${-b.min}\u2069`
+  return `מאזן \u2066${-b.max >= 0 ? '+' : ''}${b.min}…+${b.max}\u2069`
 }
 
 /** The phase a user is in: the stored one, or (older settings) the preset matching their band. */
@@ -70,28 +87,23 @@ export function phaseOf(s: { goalPhase?: GoalPhase; deficitTarget?: DeficitTarge
   return TARGET_PRESETS.find((p) => t && p.target.min === t.min && p.target.max === t.max)?.id ?? 'recomp'
 }
 
-/** What a day is judged against. */
-export type DayTarget = ({ kind: 'deficit' } & DeficitTarget) | ({ kind: 'intake' } & KcalRange)
-
-/** The target in force for the given settings (custom only when its range is valid). */
-export function dayTarget(s: { calorieMode?: CalorieMode; customKcal?: KcalRange; deficitTarget?: DeficitTarget }): DayTarget {
-  if (s.calorieMode === 'custom' && isValidKcalRange(s.customKcal)) return { kind: 'intake', min: s.customKcal.min, max: s.customKcal.max }
-  const d = isValidTarget(s.deficitTarget) ? s.deficitTarget : DEFAULT_TARGET
-  return { kind: 'deficit', min: d.min, max: d.max }
+/** The band in force: the custom one in custom mode (when valid), else the phase's. */
+export function dayTarget(s: { calorieMode?: CalorieMode; customDeficit?: DeficitTarget; deficitTarget?: DeficitTarget }): DeficitTarget {
+  if (s.calorieMode === 'custom' && isValidTarget(s.customDeficit)) return s.customDeficit
+  return isValidTarget(s.deficitTarget) ? s.deficitTarget : DEFAULT_TARGET
 }
 
-/** The day's intake range in kcal: fixed in custom mode, burned − band in automatic mode (null without a burn). */
-export function intakeRangeFor(target: DayTarget, burned: number | null | undefined): KcalRange | null {
-  if (target.kind === 'intake') return { min: target.min, max: target.max }
+/** What the band means in calories eaten today: burned − band (null without a burn estimate). */
+export function intakeRangeFor(band: DeficitTarget, burned: number | null | undefined): KcalRange | null {
   if (!burned || burned <= 0) return null
-  return { min: Math.max(0, Math.round(burned - target.max)), max: Math.max(0, Math.round(burned - target.min)) }
+  return { min: Math.max(0, Math.round(burned - band.max)), max: Math.max(0, Math.round(burned - band.min)) }
 }
 
 export function isValidTarget(t: Partial<DeficitTarget> | null | undefined): t is DeficitTarget {
   return !!t && Number.isFinite(t.min) && Number.isFinite(t.max) && t.max! > t.min! && t.min! >= -500 && t.max! <= 1000
 }
 
-export type GoalStatus = 'empty' | 'success' | 'almost' | 'surplus' | 'over' | 'room' | 'below' | 'above'
+export type GoalStatus = 'empty' | 'success' | 'almost' | 'surplus' | 'over' | 'room'
 
 export interface GoalResult {
   status: GoalStatus
@@ -139,6 +151,17 @@ export function evaluateGoal(opts: {
     return { status: 'success', deficit, title: 'היעד הושג', detail: TMIN >= 0 ? 'גירעון מתון ובריא — בדיוק בטווח' : 'בדיוק בטווח היעד שלך' }
   }
 
+  // a surplus band (lean bulk, or a custom surplus): eating more than planned is "over the band",
+  // eating less is "short of it" — never a "big deficit" or a "small surplus"
+  if (TMAX <= 0) {
+    if (deficit < TMIN) {
+      return { status: 'surplus', deficit, title: 'יותר מהעודף שתכננת', detail: `${fmt(TMIN - deficit)} קק״ל מעל הטווח · מחר מאזנים` }
+    }
+    if (opts.dayFinal) {
+      return { status: 'almost', deficit, title: 'כמעט שם', detail: `חסרות עוד ${fmt(deficit - TMAX)} קלוריות ליעד` }
+    }
+  }
+
   if (deficit >= 0 && deficit < TMIN) {
     const missing = TMIN - deficit
     return { status: 'almost', deficit, title: 'כמעט שם', detail: `חסרות עוד ${fmt(missing)} קלוריות ליעד` }
@@ -170,35 +193,8 @@ export function evaluateGoal(opts: {
     status: 'over',
     deficit,
     title: 'הגירעון גדול מהיעד',
-    detail: TMIN >= 100 ? 'לריקומפ עדיף גירעון מתון — אפשר לאכול עוד קצת' : 'אפשר לאכול עוד קצת כדי להגיע ליעד',
+    detail: TMIN >= 100 ? 'גירעון גדול מהטווח שבחרת — אפשר לאכול עוד קצת' : 'אפשר לאכול עוד קצת כדי להגיע ליעד',
   }
-}
-
-/**
- * Custom intake range: the whole range is the target (not its midpoint).
- *   eaten < min → 'room' while the day runs ("אפשר לאכול עוד …"), 'below' once it is over
- *   min ≤ eaten ≤ max → 'success'
- *   eaten > max → 'above'
- */
-export function evaluateIntake(opts: { eaten: number; burned?: number | null; hasFood: boolean; dayFinal: boolean; range: KcalRange }): GoalResult {
-  const eaten = Math.round(opts.eaten)
-  const { min, max } = opts.range
-  const deficit = Math.round((opts.burned ?? 0) - eaten)
-  const target = `${range(min, max)} קק״ל`
-  if (!opts.hasFood) {
-    return { status: 'empty', deficit, title: 'עוד לא נרשם אוכל היום', detail: `יעד יומי: ${target}`, roomMin: min, roomMax: max }
-  }
-  if (eaten > max) {
-    return { status: 'above', deficit, title: 'מעל טווח היעד', detail: `${fmt(eaten - max)} קק״ל מעל ${target}` }
-  }
-  if (eaten >= min) {
-    const left = max - eaten
-    return { status: 'success', deficit, title: 'בטווח היעד', detail: left > 0 ? `${target} · אפשר עוד עד ${fmt(left)}` : target }
-  }
-  if (!opts.dayFinal) {
-    return { status: 'room', deficit, title: `אפשר לאכול עוד ${range(min - eaten, max - eaten)}`, detail: `קק״ל כדי להגיע ל-${target}`, roomMin: min - eaten, roomMax: max - eaten }
-  }
-  return { status: 'below', deficit, title: 'מתחת לטווח היעד', detail: `חסרו ${fmt(min - eaten)} קק״ל ל-${target}` }
 }
 
 export function isDayFinal(dateKey: string, now: Date = new Date()): boolean {

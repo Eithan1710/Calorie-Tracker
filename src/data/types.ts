@@ -1,6 +1,6 @@
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
 import type { ExerciseType, Intensity, Lift, MuscleGroup, Profile, RestStyle } from '../domain/energy'
-import type { CalorieMode, DeficitTarget, GoalPhase, KcalRange } from '../domain/goal'
+import type { CalorieMode, DeficitTarget, GoalPhase } from '../domain/goal'
 
 export type { Analysis, FoodItem, Totals, Lift, MuscleGroup }
 
@@ -100,10 +100,10 @@ export interface Settings {
   deficitTarget: DeficitTarget
   /** fitness phase (recomp / cut / maintain / lean bulk); absent in older settings → derived from the band */
   goalPhase?: GoalPhase
-  /** 'auto' = phase band against the day's burn (default) · 'custom' = the fixed range below */
+  /** 'auto' = the phase's band (default) · 'custom' = the band below */
   calorieMode?: CalorieMode
-  /** the user's own daily intake range; kept when switching phase or mode */
-  customKcal?: KcalRange
+  /** the user's own band of deficit (positive) or surplus (negative), kcal; kept when switching phase or mode */
+  customDeficit?: DeficitTarget
   /** when profile/targets last changed on this device (for cross-device sync) */
   profileUpdatedAt?: string
   remindersEnabled: boolean

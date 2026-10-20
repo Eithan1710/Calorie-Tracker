@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, dayTarget, evaluateGoal, evaluateIntake, intakeRangeFor, isDayFinal, isValidKcalRange, kcalRangeError, phaseOf, toDateKey } from './goal'
-import { summarizeDay } from './day'
+import { addDays, bandFrom, bandLabel, bandParts, customBandError, dayTarget, evaluateGoal, intakeRangeFor, isDayFinal, phaseOf, toDateKey } from './goal'
 
 const final = (eaten: number, burned: number) => evaluateGoal({ eaten, burned, hasFood: true, dayFinal: true })
 
@@ -97,50 +96,66 @@ describe('personal targets', () => {
 
 // ── custom calorie range ─────────────────────────────────────────────────────
 
-describe('custom calorie range: the whole range is the target', () => {
-  const r = { min: 1900, max: 2100 }
-  const at = (eaten: number, dayFinal = false, hasFood = true) => evaluateIntake({ eaten, hasFood, dayFinal, range: r })
+describe('custom deficit / surplus band', () => {
+  const day = (eaten: number, burned: number, target: { min: number; max: number }) => evaluateGoal({ eaten, burned, hasFood: true, dayFinal: true, target })
 
-  it('below / within / above', () => {
-    expect(at(1500).status).toBe('room') // the day is still running: room to eat
-    expect(at(1500).title).toContain('400–600')
-    expect(at(1500, true).status).toBe('below')
-    expect(at(1500, true).detail).toContain('400')
-    expect(at(1900).status).toBe('success') // the edges are inside
-    expect(at(2000).status).toBe('success')
-    expect(at(2100).status).toBe('success')
-    expect(at(2100, true).status).toBe('success')
-    expect(at(2101).status).toBe('above')
-    expect(at(2400).detail).toContain('300')
+  it('deficit 200–300: the whole band is the target', () => {
+    const band = bandFrom('deficit', 200, 300)
+    expect(band).toEqual({ min: 200, max: 300 })
+    expect(day(2300, 2500, band).status).toBe('success') // 200, edge
+    expect(day(2250, 2500, band).status).toBe('success') // 250
+    expect(day(2200, 2500, band).status).toBe('success') // 300, edge
+    expect(day(2350, 2500, band).status).toBe('almost') // 150 — short of the band
+    expect(day(2600, 2500, band).status).toBe('surplus')
+    expect(day(2100, 2500, band).status).toBe('over') // 400 — more than asked for
   })
 
-  it('no food yet → shows the range', () => {
-    const g = at(0, false, false)
-    expect(g).toMatchObject({ status: 'empty', roomMin: 1900, roomMax: 2100 })
-    expect(g.detail).toContain('1,900–2,100')
+  it('surplus 200–400 is stored negative and judged the same way', () => {
+    const band = bandFrom('surplus', 200, 400)
+    expect(band).toEqual({ min: -400, max: -200 })
+    expect(day(2700, 2500, band).status).toBe('success') // +200
+    expect(day(2900, 2500, band).status).toBe('success') // +400
+    expect(day(3000, 2500, band)).toMatchObject({ status: 'surplus', title: 'יותר מהעודף שתכננת' }) // +500
+    expect(day(3000, 2500, band).detail).toContain('100')
+    expect(day(2500, 2500, band)).toMatchObject({ status: 'almost', title: 'כמעט שם' }) // balance 0: short of the surplus
+    expect(day(2500, 2500, band).detail).toContain('200')
+    // day still going: room to eat up to the band
+    expect(evaluateGoal({ eaten: 2500, burned: 2500, hasFood: true, dayFinal: false, target: band })).toMatchObject({ status: 'room', roomMin: 200, roomMax: 400 })
   })
 
-  it('validation: positive numbers, min below max, sane limits', () => {
-    expect(kcalRangeError(1900, 2100)).toBe(null)
-    expect(kcalRangeError(2100, 1900)).toMatch(/נמוך מהמקסימום/)
-    expect(kcalRangeError(2000, 2000)).toMatch(/נמוך מהמקסימום/)
-    expect(kcalRangeError(-5, 2000)).toMatch(/חיוביים/)
-    expect(kcalRangeError('', 2000)).toMatch(/מינימום ומקסימום/)
-    expect(kcalRangeError(100, 300)).toMatch(/טווח אפשרי/)
-    expect(kcalRangeError(1900, 9000)).toMatch(/טווח אפשרי/)
-    expect(isValidKcalRange({ min: 1900, max: 2100 })).toBe(true)
-    expect(isValidKcalRange({ min: 1900 })).toBe(false)
+  it('typed parts ↔ band round-trip, labels', () => {
+    expect(bandParts({ min: 200, max: 300 })).toEqual({ dir: 'deficit', from: 200, to: 300 })
+    expect(bandParts({ min: -400, max: -200 })).toEqual({ dir: 'surplus', from: 200, to: 400 })
+    expect(bandLabel({ min: 200, max: 300 })).toContain('גירעון')
+    expect(bandLabel({ min: 200, max: 300 })).toContain('200–300')
+    expect(bandLabel({ min: -400, max: -200 })).toContain('עודף')
+    expect(bandLabel({ min: -400, max: -200 })).toContain('200–400')
+    expect(bandLabel({ min: -100, max: 100 })).toContain('מאזן')
   })
 
-  it('mode decides the target; the custom range survives switching and phase changes', () => {
-    const custom = { min: 1900, max: 2100 }
-    expect(dayTarget({ calorieMode: 'custom', customKcal: custom, deficitTarget: { min: 100, max: 300 } })).toEqual({ kind: 'intake', min: 1900, max: 2100 })
-    // automatic mode ignores the saved range but does not need it removed
-    expect(dayTarget({ calorieMode: 'auto', customKcal: custom, deficitTarget: { min: 300, max: 500 } })).toEqual({ kind: 'deficit', min: 300, max: 500 })
+  it('validation: numbers, positive, from < to, sane limits', () => {
+    expect(customBandError('deficit', 200, 300)).toBe(null)
+    expect(customBandError('deficit', 0, 300)).toBe(null)
+    expect(customBandError('surplus', 200, 400)).toBe(null)
+    expect(customBandError('deficit', '', 300)).toMatch(/צריך/)
+    expect(customBandError('deficit', 300, 200)).toMatch(/נמוך/)
+    expect(customBandError('deficit', 300, 300)).toMatch(/נמוך/)
+    expect(customBandError('deficit', -50, 300)).toMatch(/חיוביים/)
+    expect(customBandError('deficit', 200, 1200)).toMatch(/גירעון של עד/)
+    expect(customBandError('surplus', 200, 700)).toMatch(/עודף של עד/)
+    expect(customBandError('deficit', NaN, 300)).toMatch(/צריך/)
+  })
+
+  it('mode decides the band; the custom band survives switching and phase changes', () => {
+    const custom = { min: 200, max: 300 }
+    expect(dayTarget({ calorieMode: 'custom', customDeficit: custom, deficitTarget: { min: 100, max: 300 } })).toEqual(custom)
+    // automatic mode ignores the saved band but does not need it removed
+    expect(dayTarget({ calorieMode: 'auto', customDeficit: custom, deficitTarget: { min: 300, max: 500 } })).toEqual({ min: 300, max: 500 })
     // older settings (no mode) = automatic, as before
-    expect(dayTarget({ deficitTarget: { min: 100, max: 300 } })).toEqual({ kind: 'deficit', min: 100, max: 300 })
-    // custom without a valid range falls back to automatic instead of judging against nothing
-    expect(dayTarget({ calorieMode: 'custom', customKcal: { min: 2100, max: 1900 }, deficitTarget: { min: 100, max: 300 } }).kind).toBe('deficit')
+    expect(dayTarget({ deficitTarget: { min: 100, max: 300 } })).toEqual({ min: 100, max: 300 })
+    // custom without a valid band falls back to the phase instead of judging against nothing
+    expect(dayTarget({ calorieMode: 'custom', customDeficit: { min: 300, max: 200 }, deficitTarget: { min: 100, max: 300 } })).toEqual({ min: 100, max: 300 })
+    expect(dayTarget({ calorieMode: 'custom', deficitTarget: { min: 100, max: 300 } })).toEqual({ min: 100, max: 300 })
   })
 
   it('phase: stored, or derived from the band of older settings', () => {
@@ -149,18 +164,9 @@ describe('custom calorie range: the whole range is the target', () => {
     expect(phaseOf({ deficitTarget: { min: 1, max: 2 } })).toBe('recomp')
   })
 
-  it('intake range of the day: custom as is; automatic = burned − band', () => {
-    expect(intakeRangeFor({ kind: 'intake', min: 1900, max: 2100 }, null)).toEqual({ min: 1900, max: 2100 })
-    expect(intakeRangeFor({ kind: 'deficit', min: 100, max: 300 }, 2200)).toEqual({ min: 1900, max: 2100 })
-    expect(intakeRangeFor({ kind: 'deficit', min: 100, max: 300 }, null)).toBe(null)
-  })
-
-  it('day summary: judged against the custom range even without a burn estimate', () => {
-    const food = (kcal: number) => ({ id: String(kcal), date: '2026-10-06', meal: 'lunch' as const, title: 'x', emoji: '', items: [], totals: { calories: kcal, protein_g: 0, fat_g: 0, carbs_g: 0 }, confidence: 1, provider: 'x', status: 'ok' as const, created_at: '', updated_at: '' })
-    const day = (kcal: number) => summarizeDay({ date: '2026-10-06', food: [food(kcal)], exercises: [], steps: 0, profile: null, proteinTarget: 120, target: { kind: 'intake', min: 1900, max: 2100 }, now: new Date('2026-10-07T12:00:00') })
-    expect(day(2000).goal?.status).toBe('success')
-    expect(day(1800).goal?.status).toBe('below')
-    expect(day(2300).goal?.status).toBe('above')
-    expect(day(2000).intakeRange).toEqual({ min: 1900, max: 2100 })
+  it('what the band means in food today: burned − band', () => {
+    expect(intakeRangeFor({ min: 200, max: 300 }, 2500)).toEqual({ min: 2200, max: 2300 })
+    expect(intakeRangeFor({ min: -400, max: -200 }, 2500)).toEqual({ min: 2700, max: 2900 })
+    expect(intakeRangeFor({ min: 200, max: 300 }, null)).toBe(null)
   })
 })

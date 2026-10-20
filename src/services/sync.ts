@@ -7,7 +7,7 @@ import {
 import type { Exercise, FoodEntry, HealthDay, WeightEntry } from '../data/types'
 import { summarizeDay } from '../domain/day'
 import { isValidProfile } from '../domain/energy'
-import { isValidKcalRange, isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
+import { isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
 import { uploadPendingPhotos } from './photos'
 
 /**
@@ -293,7 +293,7 @@ async function pull() {
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'kcal_min', 'kcal_max'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max'] as const
 
 async function syncProfile() {
   const sb = await getSupabase()
@@ -308,7 +308,7 @@ async function syncProfile() {
 
   if (data && (!isValidProfile(st.profile) || serverAt > localAt)) {
     const target = { min: Number(data.deficit_min ?? 100), max: Number(data.deficit_max ?? 300) }
-    const custom = { min: Number(data.kcal_min), max: Number(data.kcal_max) }
+    const custom = { min: Number(data.custom_deficit_min), max: Number(data.custom_deficit_max) }
     const phase = TARGET_PRESETS.some((t) => t.id === data.goal_phase) ? (data.goal_phase as GoalPhase) : st.goalPhase
     updateSettings({
       profile: { sex: data.sex, age: Number(data.age), heightCm: Number(data.height_cm), weightKg: Number(data.weight_kg) },
@@ -317,7 +317,7 @@ async function syncProfile() {
       // columns absent before the 20261020 migration → keep what this device has
       goalPhase: phase,
       calorieMode: data.calorie_mode === 'custom' || data.calorie_mode === 'auto' ? data.calorie_mode : st.calorieMode,
-      customKcal: data.kcal_min != null && isValidKcalRange(custom) ? custom : st.customKcal,
+      customDeficit: data.custom_deficit_min != null && data.custom_deficit_max != null && isValidTarget(custom) ? custom : st.customDeficit,
       profileUpdatedAt: new Date(serverAt).toISOString(),
     })
     return
@@ -341,14 +341,14 @@ async function syncProfile() {
     const row = {
       ...base,
       goal_phase: st.goalPhase ?? null,
-      // custom without a valid range is judged as automatic on the device too (dayTarget)
-      calorie_mode: st.calorieMode === 'custom' && isValidKcalRange(st.customKcal) ? 'custom' : 'auto',
-      kcal_min: isValidKcalRange(st.customKcal) ? Math.round(st.customKcal.min) : null,
-      kcal_max: isValidKcalRange(st.customKcal) ? Math.round(st.customKcal.max) : null,
+      // custom without a valid band is judged as automatic on the device too (dayTarget)
+      calorie_mode: st.calorieMode === 'custom' && isValidTarget(st.customDeficit) ? 'custom' : 'auto',
+      custom_deficit_min: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.min) : null,
+      custom_deficit_max: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.max) : null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {
-      // database not migrated yet: the profile still syncs; the calorie range stays on this device
+      // database not migrated yet: the profile still syncs; the custom band stays on this device
       ;({ error: upErr } = await sb.from('mz_profiles').upsert(base))
     }
     if (upErr) throw upErr
