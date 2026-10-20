@@ -623,7 +623,9 @@ test.describe('custom calorie range', () => {
     await expect(hero(page)).toContainText('2,200')
     await expect(hero(page)).toContainText('מעל טווח היעד')
     await expect(hero(page)).toContainText('100 קק״ל מעל')
-    await page.screenshot({ path: shot('today-custom-range', test.info().project.name) })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await hero(page).screenshot({ path: shot('today-custom-range', test.info().project.name) })
 
     // history: days in target against the same range
     await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היסטוריה' }).click()
