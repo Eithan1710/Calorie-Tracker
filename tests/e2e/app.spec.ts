@@ -583,7 +583,8 @@ test.describe('custom calorie range', () => {
     await page.keyboard.press('Escape')
 
     // Today shows the range
-    await expect(page.getByTestId('calorie-target')).toContainText('יעד יומי: 1,900–2,100')
+    await expect(page.getByTestId('calorie-target')).toContainText('יעד יומי')
+    await expect(page.getByTestId('calorie-target')).toContainText('1,900–2,100') // the range sits in a direction isolate
 
     // a different phase does not overwrite the custom range
     await page.getByRole('button', { name: 'הגדרות' }).click()
