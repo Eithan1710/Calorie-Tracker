@@ -231,15 +231,17 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
 
 /**
  * Custom daily range (e.g. 1,900–2,100 kcal): the whole range is the target. The hero shows what was
- * eaten against it — below, within or above — on a 0…max scale with the range as the green band.
+ * eaten against it — below, within or above — on a scale around the range, the range as the green band.
  */
 function IntakeHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
   const goal = s.goal!
   const { min, max } = s.target
   const style = STATUS_STYLE[goal.status]
   const Icon = style.icon
-  const top = Math.max(max * 1.25, s.eaten * 1.05, 1)
-  const pos = (v: number) => (Math.max(0, Math.min(top, v)) / top) * 100
+  // a scale around the range (not from 0), so a 200 kcal band is wide enough to read
+  const lo = Math.max(0, Math.round(min * 0.6))
+  const hi = Math.max(max + 400, max + (max - min) * 2, s.eaten * 1.05)
+  const pos = (v: number) => ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * 100
   const target = `${range(min, max)} ${KCAL}`
   return (
     <section aria-label="מאזן קלורי" className="card animate-rise overflow-hidden p-5 pb-4 sm:p-6">
@@ -276,7 +278,7 @@ function IntakeHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
         </p>
       </div>
 
-      {/* eaten on a 0…max scale; the green band is the whole valid range */}
+      {/* eaten on a scale around the range; the green band is the whole valid range */}
       <div className="mt-5" aria-hidden>
         <div className="ltr relative h-3 w-full">
           <div className="absolute inset-y-0 rounded-full" style={{ left: 0, right: 0, background: 'var(--surface-2)' }} />
@@ -289,9 +291,11 @@ function IntakeHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
           )}
         </div>
         <div className="ltr relative mt-1.5 h-4 text-[11px] text-ink-3">
-          <span className="absolute left-0">0</span>
-          <span className="num absolute -translate-x-1/2" style={{ left: `${pos(min)}%` }}>{fmt(min)}</span>
-          <span className="num absolute -translate-x-1/2" style={{ left: `${pos(max)}%` }}>{fmt(max)}</span>
+          <span className="absolute left-0">מתחת</span>
+          <span className="num absolute -translate-x-1/2 font-medium whitespace-nowrap text-good" style={{ left: `${(pos(min) + pos(max)) / 2}%` }}>
+            {fmt(min)}–{fmt(max)}
+          </span>
+          <span className="absolute right-0">מעל</span>
         </div>
       </div>
 

@@ -625,6 +625,7 @@ test.describe('custom calorie range', () => {
     await expect(hero(page)).toContainText('100 קק״ל מעל')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(900) // the sheet's exit and the number's count-up
     await hero(page).screenshot({ path: shot('today-custom-range', test.info().project.name) })
 
     // history: days in target against the same range
