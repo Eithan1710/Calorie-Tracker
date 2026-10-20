@@ -57,7 +57,7 @@ export function summarizeDay(opts: {
   now?: Date
 }): DaySummary {
   const t = opts.target ?? DEFAULT_TARGET
-  const target: DayTarget = 'kind' in t ? t : { kind: 'deficit', min: t.min, max: t.max }
+  const target: DayTarget = 'kind' in t ? (t as DayTarget) : { kind: 'deficit', min: t.min, max: t.max }
   const ok = opts.food.filter((f) => f.status === 'ok')
   const sum = (k: 'calories' | 'protein_g' | 'fat_g' | 'carbs_g') => ok.reduce((s, f) => s + (f.totals[k] ?? 0), 0)
   const eaten = Math.round(sum('calories'))

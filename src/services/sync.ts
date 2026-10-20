@@ -324,7 +324,7 @@ async function syncProfile() {
   }
   if (isValidProfile(st.profile) && (!data || localAt > serverAt)) {
     const updatedAt = st.profileUpdatedAt || new Date().toISOString()
-    const row = {
+    const base = {
       user_id: userId,
       sex: st.profile.sex,
       age: Math.round(st.profile.age),
@@ -337,6 +337,9 @@ async function syncProfile() {
       reminder_time: st.reminderTime,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       updated_at: updatedAt,
+    }
+    const row = {
+      ...base,
       goal_phase: st.goalPhase ?? null,
       calorie_mode: st.calorieMode ?? 'auto',
       kcal_min: isValidKcalRange(st.customKcal) ? Math.round(st.customKcal.min) : null,
@@ -345,8 +348,7 @@ async function syncProfile() {
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {
       // database not migrated yet: the profile still syncs; the calorie range stays on this device
-      const rest = Object.fromEntries(Object.entries(row).filter(([k]) => !(TARGET_COLUMNS as readonly string[]).includes(k)))
-      ;({ error: upErr } = await sb.from('mz_profiles').upsert(rest))
+      ;({ error: upErr } = await sb.from('mz_profiles').upsert(base))
     }
     if (upErr) throw upErr
     if (!st.profileUpdatedAt) updateSettings({ profileUpdatedAt: updatedAt })
