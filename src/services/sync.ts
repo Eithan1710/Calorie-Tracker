@@ -341,7 +341,8 @@ async function syncProfile() {
     const row = {
       ...base,
       goal_phase: st.goalPhase ?? null,
-      calorie_mode: st.calorieMode ?? 'auto',
+      // custom without a valid range is judged as automatic on the device too (dayTarget)
+      calorie_mode: st.calorieMode === 'custom' && isValidKcalRange(st.customKcal) ? 'custom' : 'auto',
       kcal_min: isValidKcalRange(st.customKcal) ? Math.round(st.customKcal.min) : null,
       kcal_max: isValidKcalRange(st.customKcal) ? Math.round(st.customKcal.max) : null,
     }
