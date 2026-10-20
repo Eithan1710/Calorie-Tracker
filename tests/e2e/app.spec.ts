@@ -574,7 +574,7 @@ test.describe('custom deficit / surplus band', () => {
     await d.getByRole('radio', { name: 'מותאם אישית' }).click()
     await expect(d.getByRole('radio', { name: 'גירעון', exact: true })).toHaveAttribute('aria-checked', 'true')
     await d.getByLabel(/^מ-/).fill('200')
-    await d.getByLabel(/^עד\s/).fill('300')
+    await d.getByLabel(/^עד\s?קק/).fill('300')
     await expect(d.getByTestId('custom-target')).toContainText('גירעון')
     await expect(d.getByTestId('custom-target')).toContainText('200–300')
     await expect(d.getByTestId('custom-target')).toContainText('1,753–1,853') // what it means in food today
@@ -583,9 +583,9 @@ test.describe('custom deficit / surplus band', () => {
     await expect(d.getByRole('alert')).toContainText('הערך הראשון צריך להיות נמוך מהשני')
     await expect(d.getByRole('alert')).toContainText('200–300')
     await d.getByLabel(/^מ-/).fill('200')
-    await d.getByLabel(/^עד\s/).fill('1500')
+    await d.getByLabel(/^עד\s?קק/).fill('1500')
     await expect(d.getByRole('alert')).toContainText('גירעון של עד')
-    await d.getByLabel(/^עד\s/).fill('300')
+    await d.getByLabel(/^עד\s?קק/).fill('300')
     await expect(d.getByTestId('custom-target')).toContainText('200–300')
     await page.screenshot({ path: shot('settings-custom-deficit', test.info().project.name) })
     await page.keyboard.press('Escape')
@@ -601,13 +601,13 @@ test.describe('custom deficit / surplus band', () => {
     d = page.getByRole('dialog')
     await d.getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /ירידה במשקל/ }).click()
     await expect(d.getByLabel(/^מ-/)).toHaveValue('200')
-    await expect(d.getByLabel(/^עד\s/)).toHaveValue('300')
+    await expect(d.getByLabel(/^עד\s?קק/)).toHaveValue('300')
     // automatic → the phase's band; back to custom → the values are still there
     await d.getByRole('radio', { name: 'אוטומטי' }).click()
     await expect(d.getByTestId('auto-target')).toContainText('300–500')
     await d.getByRole('radio', { name: 'מותאם אישית' }).click()
     await expect(d.getByLabel(/^מ-/)).toHaveValue('200')
-    await expect(d.getByLabel(/^עד\s/)).toHaveValue('300')
+    await expect(d.getByLabel(/^עד\s?קק/)).toHaveValue('300')
     await page.keyboard.press('Escape')
 
     // persisted after a reload

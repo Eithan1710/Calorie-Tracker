@@ -454,7 +454,7 @@ test('custom deficit band is saved to the account and comes back after logout / 
   await d.getByRole('radio', { name: 'מותאם אישית' }).click()
   await d.getByRole('radio', { name: 'עודף', exact: true }).click()
   await d.getByLabel(/^מ-/).fill('150')
-  await d.getByLabel(/^עד\s/).fill('250')
+  await d.getByLabel(/^עד\s?קק/).fill('250')
   await expect
     .poll(() => {
       const r = sb.rows('mz_profiles', u.id)[0]
@@ -481,6 +481,6 @@ test('custom deficit band is saved to the account and comes back after logout / 
   await expect(p2.getByRole('dialog').getByRole('radiogroup', { name: 'היעד היומי' }).getByRole('radio', { name: /שמירה/ })).toHaveAttribute('aria-checked', 'true')
   await expect(p2.getByRole('dialog').getByRole('radio', { name: 'עודף', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect(p2.getByRole('dialog').getByLabel(/^מ-/)).toHaveValue('150')
-  await expect(p2.getByRole('dialog').getByLabel(/^עד\s/)).toHaveValue('250')
+  await expect(p2.getByRole('dialog').getByLabel(/^עד\s?קק/)).toHaveValue('250')
   await other.close()
 })
