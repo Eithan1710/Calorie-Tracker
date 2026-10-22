@@ -358,6 +358,7 @@ test.describe('energy & goal', () => {
     await expect(card.getByTestId('steps-progress')).toContainText('6,500')
     await expect(card.getByTestId('steps-note')).toContainText('עוד 3,500 ליעד')
     await expect(card.getByTestId('steps-reached')).toHaveCount(0)
+    await expect.poll(() => card.getByTestId('steps-bar').evaluate((el) => Math.round((el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width) * 100)), { timeout: 3000 }).toBe(65)
 
     // a smaller goal: already reached
     await card.click()
@@ -373,7 +374,11 @@ test.describe('energy & goal', () => {
     // fits the screen width on every device
     const box = (await card.boundingBox())!
     expect(box.width).toBeLessThanOrEqual(page.viewportSize()!.width)
-    await card.scrollIntoViewIfNeeded()
+    // the bar really fills up (the width animation finishes)
+    const fill = card.getByTestId('steps-bar')
+    await expect.poll(() => fill.evaluate((el) => el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width), { timeout: 3000 }).toBeGreaterThan(0.99)
+    await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.waitForTimeout(300)
     await card.screenshot({ path: shot('steps-goal', test.info().project.name) })
   })
 

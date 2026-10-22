@@ -179,7 +179,7 @@ export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: bo
         aria-valuenow={has ? Math.min(p.steps, goal) : 0}
         aria-valuetext={has ? `${fmt(p.steps)} מתוך ${fmt(goal)}` : 'אין נתונים'}
       >
-        <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${has ? Math.max(p.steps > 0 ? 2 : 0, p.ratio * 100) : 0}%`, background: reached ? 'var(--good)' : 'var(--ink)' }} />
+        <div className="h-full rounded-full transition-[width] duration-700" data-testid="steps-bar" style={{ width: `${has ? Math.max(p.steps > 0 ? 2 : 0, p.ratio * 100) : 0}%`, background: reached ? 'var(--good)' : 'var(--ink)' }} />
       </div>
       <p className={`mt-2 px-1 text-xs ${!has && everConnected && isToday ? 'text-warn' : 'text-ink-3'}`} data-testid="steps-note">
         {note}

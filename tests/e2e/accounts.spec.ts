@@ -545,6 +545,9 @@ test('step goal: saved to the account, progress from the Apple Health steps alre
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect(card.getByTestId('steps-reached')).toBeVisible()
   await expect(card.getByTestId('steps-note')).toContainText('היעד הושג')
+  await expect.poll(() => card.getByTestId('steps-bar').evaluate((el) => el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width), { timeout: 3000 }).toBeGreaterThan(0.99)
+  await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(300)
   await page.screenshot({ path: 'docs/screenshots/accounts-step-goal.png' })
 
   // another device: same goal from the account
