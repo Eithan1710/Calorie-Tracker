@@ -148,7 +148,8 @@ export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: bo
   let note: string
   if (has) {
     const from = p.source === 'shortcut' ? 'Apple Health' : p.source === 'url' ? 'קיצור דרך' : 'הוזן ידנית'
-    note = `${reached ? 'היעד הושג' : `עוד ${fmt(p.remaining)} ליעד`} · ${from} · ${whenLabel(p.asOf)}`
+    const over = p.steps - goal
+    note = `${reached ? (over > 0 ? `${fmt(over)} מעל היעד` : 'בדיוק ביעד') : `עוד ${fmt(p.remaining)} ליעד`} · ${from} · ${whenLabel(p.asOf)}`
   } else if (everConnected) note = isToday ? 'עוד לא התקבלו צעדים מ-Apple Health היום' : 'לא התקבלו צעדים ליום הזה'
   else note = 'אין עדיין נתוני צעדים — אפשר להזין ידנית או לחבר את Apple Health'
 

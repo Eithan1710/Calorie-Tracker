@@ -544,7 +544,7 @@ test('step goal: saved to the account, progress from the Apple Health steps alre
   sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-06' ? { ...r, steps: 10420, health_as_of: '2026-10-06T19:10:00+03:00', updated_at: '2026-10-06T16:10:05Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect(card.getByTestId('steps-reached')).toBeVisible()
-  await expect(card.getByTestId('steps-note')).toContainText('היעד הושג')
+  await expect(card.getByTestId('steps-note')).toContainText('420 מעל היעד')
   await expect.poll(() => card.getByTestId('steps-bar').evaluate((el) => el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width), { timeout: 3000 }).toBeGreaterThan(0.99)
   await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(300)
