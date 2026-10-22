@@ -161,7 +161,7 @@ export class MockSupabase {
         }
         const t = (this.tables[table] ??= [])
         for (const r of incoming) {
-          const row = { ...r, user_id: u.id }
+          const row: Record<string, unknown> = { ...r, user_id: u.id }
           const key = (x: Record<string, unknown>) => (x.id ? `id:${x.id}` : x.date ? `d:${x.user_id}:${x.date}` : x.endpoint ? `e:${x.endpoint}` : `u:${x.user_id}`)
           const i = t.findIndex((x) => key(x) === key(row))
           // mz_weights keeps the newest version of a day (like mz_weights_keep_newest())
