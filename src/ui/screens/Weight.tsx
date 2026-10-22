@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Minus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, CloudOff, Minus, Trash2 } from 'lucide-react'
 import { deleteWeight, restoreWeight, saveWeight, useStore, weightList } from '../../data/store'
 import type { WeightEntry } from '../../data/types'
 import { toDateKey } from '../../domain/goal'
@@ -7,6 +7,7 @@ import { dayNum, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type Weigh
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
 import { dateLong, dateShort, haptic } from '../format'
 import { showToast } from '../toast'
+import { pushWeightsNow, type WeightSaveResult } from '../../services/sync'
 
 const kgFmt = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 export const fmtKg = (kg: number) => kgFmt.format(kg)
@@ -26,6 +27,63 @@ function relativeDay(date: string, today: string): string {
 }
 
 const toPoints = (list: WeightEntry[]): WeightPoint[] => list.map((w) => ({ date: w.date, kg: w.weight_kg }))
+
+// ── saving to the account ──────────────────────────────────────────────────
+// Every change is kept on the device first, then sent to the account at once. The screen
+// says "נשמר" only after the database confirmed it; otherwise it says what happened.
+type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; result: Extract<WeightSaveResult, { ok: false }> }
+let saveState: SaveState = { kind: 'idle' }
+const saveListeners = new Set<() => void>()
+const setSaveState = (s: SaveState) => {
+  saveState = s
+  saveListeners.forEach((l) => l())
+}
+function useSaveState(): SaveState {
+  const [, force] = useState(0)
+  useEffect(() => {
+    const l = () => force((n) => n + 1)
+    saveListeners.add(l)
+    return () => {
+      saveListeners.delete(l)
+    }
+  }, [])
+  return saveState
+}
+
+/** Send the weight log now; resolves true once the account has it. */
+async function commitWeights(success: string, undo?: () => void): Promise<boolean> {
+  setSaveState({ kind: 'saving' })
+  const r = await pushWeightsNow()
+  if (r.ok) {
+    setSaveState({ kind: 'idle' })
+    showToast(success, undo ? { label: 'ביטול', run: undo } : undefined)
+    return true
+  }
+  setSaveState({ kind: 'failed', result: r })
+  return false
+}
+
+function SaveStatus() {
+  const st = useSaveState()
+  const pending = useStore((s) => Object.values(s.weights).some((w) => w.dirty))
+  if (st.kind === 'saving') return <p className="mt-2 px-1 text-sm text-ink-3" role="status">שומר בחשבון…</p>
+  if (st.kind === 'failed' && pending) {
+    return (
+      <div role="alert" className={`mt-2 flex items-start gap-2 rounded-2xl px-3 py-2.5 text-sm ${st.result.offline ? 'bg-warn-soft text-warn' : 'bg-surplus-soft text-surplus'}`} data-testid="weight-save-error">
+        <CloudOff className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <b>{st.result.offline ? 'עוד לא נשמר בחשבון.' : 'לא נשמר בחשבון.'}</b> {st.result.message}. השקילה שמורה במכשיר הזה ותישלח שוב אוטומטית.
+        </span>
+        {!st.result.offline && (
+          <button type="button" className="pressable min-h-8 shrink-0 rounded-lg px-2 font-semibold underline-offset-4 hover:underline" onClick={() => void commitWeights('נשמר בחשבון')}>
+            נסה שוב
+          </button>
+        )}
+      </div>
+    )
+  }
+  return null
+}
 
 /**
  * Body weight: the latest weigh-in, the change since the previous one, a quick
@@ -81,7 +139,8 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
         </section>
       )}
 
-      <QuickEntry latest={s.latest} today={today} />
+      <QuickEntry latest={s.latest} />
+      <SaveStatus />
 
       {points.length > 0 && (
         <section aria-label="מגמת משקל" className="mt-6">
@@ -118,9 +177,16 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
                     type="button"
                     onClick={() => setEditing(w)}
                     className="pressable -mx-2 flex min-h-13 w-[calc(100%+1rem)] items-center gap-3 rounded-2xl px-2 py-2 text-start hover:bg-surface-2"
-                    aria-label={`${dateLong(w.date)}: ${fmtKg(w.weight_kg)} ${KG}. לעריכה`}
+                    aria-label={`${dateLong(w.date)}: ${fmtKg(w.weight_kg)} ${KG}${w.dirty ? '. לא נשמר בחשבון עדיין' : ''}. לעריכה`}
                   >
-                    <span className="min-w-0 flex-1 text-[15px]">{dateLong(w.date)}</span>
+                    <span className="min-w-0 flex-1 text-[15px]">
+                      {dateLong(w.date)}
+                      {w.dirty && (
+                        <span className="ms-2 text-xs text-warn" data-testid="weight-unsynced">
+                          לא נשמר בחשבון עדיין
+                        </span>
+                      )}
+                    </span>
                     {d !== null && <span className="ltr num text-sm text-ink-3">{fmtChange(d)}</span>}
                     <span className="num w-16 shrink-0 text-end font-semibold">{fmtKg(w.weight_kg)}</span>
                   </button>
@@ -143,11 +209,16 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
 
 // ── quick entry ─────────────────────────────────────────────────────────────
 
-function QuickEntry({ latest, today }: { latest: WeightPoint | null; today: string }) {
+function QuickEntry({ latest }: { latest: WeightPoint | null }) {
   const weights = useStore((s) => s.weights)
+  // read on every render (typing re-renders), so an app left open past midnight logs the new day
+  const today = toDateKey(new Date())
   const [text, setText] = useState('')
-  const [date, setDate] = useState(today)
+  // the day follows "today" (also past midnight with the app left open) unless one was picked
+  const [picked, setPicked] = useState<string | null>(null)
+  const date = picked && picked <= today ? picked : today
   const [touched, setTouched] = useState(false)
+  const busy = useSaveState().kind === 'saving'
   const id = useId()
   const kg = parseKg(text)
   const existing = weights[date] && !weights[date].deleted ? weights[date] : null
@@ -155,17 +226,19 @@ function QuickEntry({ latest, today }: { latest: WeightPoint | null; today: stri
 
   function save() {
     setTouched(true)
-    if (kg === null) return
+    if (kg === null || busy) return
     const before = existing ? { ...existing } : null
-    saveWeight(date, kg)
+    const day = date
+    saveWeight(day, kg)
     haptic(18)
     setText('')
     setTouched(false)
-    showToast(before ? `עודכן · ${fmtKg(kg)} ${KG}` : `נשמר · ${fmtKg(kg)} ${KG}`, {
-      label: 'ביטול',
-      run: () => (before ? saveWeight(before.date, before.weight_kg) : deleteWeight(date)),
+    setPicked(null)
+    void commitWeights(before ? `עודכן · ${fmtKg(kg)} ${KG}` : `נשמר · ${fmtKg(kg)} ${KG}`, () => {
+      if (before) saveWeight(before.date, before.weight_kg)
+      else deleteWeight(day)
+      void commitWeights(before ? `הוחזר · ${fmtKg(before.weight_kg)} ${KG}` : 'השקילה בוטלה')
     })
-    setDate(today)
   }
 
   return (
@@ -198,12 +271,12 @@ function QuickEntry({ latest, today }: { latest: WeightPoint | null; today: stri
             <span className="shrink-0 ps-2 text-ink-3">{KG}</span>
           </span>
         </label>
-        <PrimaryButton type="submit" className="min-w-24 px-5" disabled={kg === null}>
-          {existing ? 'עדכן' : 'שמור'}
+        <PrimaryButton type="submit" className="min-w-24 px-5" disabled={kg === null || busy}>
+          {busy ? 'שומר…' : existing ? 'עדכן' : 'שמור'}
         </PrimaryButton>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3" id={`${id}-hint`}>
-        <DateChip value={date} max={today} onChange={setDate} />
+        <DateChip value={date} max={today} onChange={(d) => setPicked(d === today ? null : d)} />
         {invalid ? (
           <span className="text-surplus">משקל בין 20 ל-400 ק״ג</span>
         ) : existing ? (
@@ -255,13 +328,17 @@ function EditWeightSheet({ entry, onClose, today }: { entry: WeightEntry | null;
     saveWeight(date, kg, entry.date)
     haptic(18)
     onClose()
-    showToast(`עודכן · ${fmtKg(kg)} ${KG}`)
+    void commitWeights(`עודכן · ${fmtKg(kg)} ${KG}`)
   }
   function remove() {
     if (!entry) return
-    deleteWeight(entry.date)
+    const day = entry.date
+    deleteWeight(day)
     onClose()
-    showToast('השקילה נמחקה', { label: 'ביטול', run: () => restoreWeight(entry.date) })
+    void commitWeights('השקילה נמחקה', () => {
+      restoreWeight(day)
+      void commitWeights('השקילה הוחזרה')
+    })
   }
 
   return (

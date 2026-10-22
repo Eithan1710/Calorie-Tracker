@@ -8,7 +8,7 @@ import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { usePhotoUrl } from '../../services/photos'
 import { InstallApp } from '../InstallApp'
-import { EnergyCard, WorkoutsCard } from './Energy'
+import { EnergyCard, StepsCard, WorkoutsCard } from './Energy'
 import { Suggestions } from './Suggestions'
 
 export interface TodayActions {
@@ -77,7 +77,8 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr] lg:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           <BalanceHero s={summary} isToday={date === today} />
-          <EnergyCard s={summary} isToday={date === today} onSteps={actions.onSteps} />
+          <EnergyCard s={summary} isToday={date === today} />
+          <StepsCard date={date} isToday={date === today} onOpen={actions.onSteps} />
           <WorkoutsCard s={summary} exercises={exercises} onOpen={actions.onExercise} />
           <ProteinCard s={summary} />
           <div className="grid grid-cols-2 gap-3">

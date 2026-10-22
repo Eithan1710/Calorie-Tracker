@@ -14,6 +14,8 @@ insert into public.mz_members (user_id, username) values ('00000000-0000-0000-00
   on conflict do nothing;
 \ir ../migrations/20261015000000_body_weight.sql
 \ir ../migrations/20261015000000_body_weight.sql
+\ir ../migrations/20261023000000_weights_keep_newest.sql
+\ir ../migrations/20261023000000_weights_keep_newest.sql
 
 -- user A (member)
 set role authenticated;
@@ -36,6 +38,38 @@ do $$ begin
     raise exception 'wrote another user''s row';
   exception when insufficient_privilege then null;
   end;
+end $$;
+
+-- the app's upsert (client timestamps): newest version of a day wins, a stale copy never does
+do $$
+declare
+  a constant uuid := '00000000-0000-0000-0000-0000000000c1';
+  h record;
+begin
+  insert into public.mz_weights as w (user_id, date, weight_kg, created_at, updated_at, deleted_at)
+    values (a, '2026-10-20', 65.0, '2026-10-20T18:00:00Z', '2026-10-20T18:00:00Z', null)
+    on conflict (user_id, date) do update set weight_kg = excluded.weight_kg, created_at = excluded.created_at, updated_at = excluded.updated_at, deleted_at = excluded.deleted_at;
+  -- a newer correction from another device
+  insert into public.mz_weights as w (user_id, date, weight_kg, created_at, updated_at, deleted_at)
+    values (a, '2026-10-20', 64.6, '2026-10-20T19:00:00Z', '2026-10-20T19:00:00Z', null)
+    on conflict (user_id, date) do update set weight_kg = excluded.weight_kg, created_at = excluded.created_at, updated_at = excluded.updated_at, deleted_at = excluded.deleted_at;
+  select * into h from public.mz_weights where user_id = a and date = '2026-10-20';
+  if h.weight_kg <> 64.6 then raise exception 'newer correction not applied: %', row_to_json(h); end if;
+  if h.created_at <> '2026-10-20T18:00:00Z' then raise exception 'first-logged time lost: %', row_to_json(h); end if;
+  -- a device that was offline sends its older copy (even a delete): the newer weigh-in stays
+  insert into public.mz_weights as w (user_id, date, weight_kg, created_at, updated_at, deleted_at)
+    values (a, '2026-10-20', 65.0, '2026-10-20T18:00:00Z', '2026-10-20T18:30:00Z', '2026-10-20T18:30:00Z')
+    on conflict (user_id, date) do update set weight_kg = excluded.weight_kg, created_at = excluded.created_at, updated_at = excluded.updated_at, deleted_at = excluded.deleted_at;
+  select * into h from public.mz_weights where user_id = a and date = '2026-10-20';
+  if h.weight_kg <> 64.6 or h.deleted_at is not null or h.updated_at <> '2026-10-20T19:00:00Z' then raise exception 'stale copy replaced a newer weigh-in: %', row_to_json(h); end if;
+  -- a newer delete is a real delete (soft: the row and its value stay)
+  insert into public.mz_weights as w (user_id, date, weight_kg, created_at, updated_at, deleted_at)
+    values (a, '2026-10-20', 64.6, '2026-10-20T18:00:00Z', '2026-10-20T20:00:00Z', '2026-10-20T20:00:00Z')
+    on conflict (user_id, date) do update set weight_kg = excluded.weight_kg, created_at = excluded.created_at, updated_at = excluded.updated_at, deleted_at = excluded.deleted_at;
+  if (select deleted_at from public.mz_weights where user_id = a and date = '2026-10-20') is null then raise exception 'newer delete ignored'; end if;
+  -- history: other days untouched, one row per day
+  if (select count(*) from public.mz_weights where user_id = a) <> 2 then raise exception 'history rows: %', (select count(*) from public.mz_weights where user_id = a); end if;
+  if (select count(*) from pg_trigger where tgrelid = 'public.mz_weights'::regclass and not tgisinternal) <> 1 then raise exception 'expected exactly one trigger'; end if;
 end $$;
 
 -- user B (member) sees nothing of A and cannot change it
@@ -73,6 +107,6 @@ end $$;
 reset role;
 
 do $$ begin
-  if (select weight_kg from public.mz_weights where user_id = '00000000-0000-0000-0000-0000000000c1') <> 61.2 then raise exception 'A''s row changed'; end if;
+  if (select weight_kg from public.mz_weights where user_id = '00000000-0000-0000-0000-0000000000c1' and date = '2026-10-08') <> 61.2 then raise exception 'A''s row changed'; end if;
   raise notice 'weight checks passed';
 end $$;

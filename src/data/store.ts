@@ -297,6 +297,7 @@ function syncProfileWeight() {
   const latest = weightList(state).at(-1)
   const p = state.settings.profile
   if (!latest || !p || Math.abs(p.weightKg - latest.weight_kg) < 0.05) return
+  if (latest.weight_kg < 35 || latest.weight_kg > 250) return // outside what the profile (BMR) accepts
   updateSettings({ profile: { ...p, weightKg: latest.weight_kg }, profileUpdatedAt: now() })
 }
 
@@ -329,23 +330,58 @@ export function restoreWeight(date: string) {
   syncProfileWeight()
 }
 
+/**
+ * A weight typed into the profile (onboarding / settings) is a measurement too: it goes into
+ * the weight log as today's weigh-in, so the history and the calorie model never disagree.
+ * Nothing is logged when it matches the latest weigh-in.
+ */
+export function logProfileWeight(kg: number) {
+  if (!Number.isFinite(kg) || kg < 20 || kg > 400) return false
+  const latest = weightList(state).at(-1)
+  if (latest && Math.abs(latest.weight_kg - kg) < 0.05) return false
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  saveWeight(today, kg)
+  return true
+}
+
 /** A row from the server (newer than the local copy). */
 export function applyWeightRow(rec: Omit<WeightEntry, 'dirty'>) {
   putWeight({ ...rec, dirty: false }, true)
 }
 
-export function markClean(kind: 'food' | 'exercise' | 'health' | 'weights', ids: string[]) {
-  if (!ids.length) return
-  const coll = { ...state[kind] } as Record<string, { dirty?: boolean }>
+/**
+ * The server confirmed these records. Only the exact version that was sent becomes clean:
+ * a record changed again while the request was in flight (a quick correction, an undo)
+ * keeps its dirty flag, so the newer version is pushed next — never silently dropped.
+ */
+export function markClean(kind: 'food' | 'exercise' | 'health' | 'weights', sent: { key: string; updated_at: string }[]) {
+  if (!sent.length) return
+  const coll = { ...state[kind] } as Record<string, { dirty?: boolean; updated_at: string }>
   const changed: unknown[] = []
-  for (const id of ids) {
-    if (coll[id]) {
-      coll[id] = { ...coll[id], dirty: false }
-      changed.push(coll[id])
+  for (const { key, updated_at } of sent) {
+    const cur = coll[key]
+    if (cur && cur.dirty && cur.updated_at === updated_at) {
+      coll[key] = { ...cur, dirty: false }
+      changed.push(coll[key])
     }
   }
+  if (!changed.length) return
   state = { ...state, [kind]: coll }
+  emit()
   void putMany(kind, changed)
+}
+
+/** Weights the server doesn't have (or has an older version of): push them again. */
+export function markWeightsDirty(dates: string[]) {
+  const recs = dates.map((d) => state.weights[d]).filter((w): w is WeightEntry => !!w && !w.dirty)
+  if (!recs.length) return
+  const next = { ...state.weights }
+  for (const w of recs) next[w.date] = { ...w, dirty: true }
+  state = { ...state, weights: next }
+  emit()
+  void putMany('weights', recs.map((w) => next[w.date]))
+  localChanged()
 }
 
 export async function wipeLocalData() {

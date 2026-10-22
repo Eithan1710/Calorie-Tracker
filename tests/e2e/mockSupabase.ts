@@ -33,6 +33,8 @@ export class MockSupabase {
   tables: Record<string, Record<string, unknown>[]> = {}
   objects = new Map<string, { owner: string; size: number }>()
   rejectedWrites = 0
+  /** make writes to a table fail (e.g. { mz_weights: { status: 403, code: '42501', message: '…' } }) */
+  failWrites: Record<string, { status: number; code: string; message: string } | undefined> = {}
 
   /** Like public.mz_create_member: an Auth user + a mz_members row. Auth stores "maazan:" + password. */
   addUser(username: string, password: string, { member = true } = {}): User {
@@ -146,6 +148,11 @@ export class MockSupabase {
         return this.json(route, 200, rows)
       }
       if (method === 'POST' || method === 'PATCH') {
+        const fail = this.failWrites[table]
+        if (fail) {
+          this.rejectedWrites++
+          return this.json(route, fail.status, { code: fail.code, message: fail.message, details: null, hint: null })
+        }
         const body = req.postDataJSON()
         const incoming = (Array.isArray(body) ? body : [body]) as Record<string, unknown>[]
         if (incoming.some((r) => r.user_id !== undefined && r.user_id !== u.id)) {
@@ -157,6 +164,8 @@ export class MockSupabase {
           const row = { ...r, user_id: u.id }
           const key = (x: Record<string, unknown>) => (x.id ? `id:${x.id}` : x.date ? `d:${x.user_id}:${x.date}` : x.endpoint ? `e:${x.endpoint}` : `u:${x.user_id}`)
           const i = t.findIndex((x) => key(x) === key(row))
+          // mz_weights keeps the newest version of a day (like mz_weights_keep_newest())
+          if (i >= 0 && table === 'mz_weights' && Date.parse(String(t[i].updated_at)) > Date.parse(String(row.updated_at))) continue
           if (i >= 0) t[i] = { ...t[i], ...row }
           else t.push(row)
         }

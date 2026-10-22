@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, Footprints, Plus } from 'lucide-react'
+import { Check, ChevronDown, Footprints, Plus } from 'lucide-react'
 import type { DaySummary } from '../../domain/day'
 import type { DayEnergy, WorkoutEnergy } from '../../domain/expenditure'
 import type { Exercise } from '../../data/types'
@@ -8,6 +8,7 @@ import { useStore } from '../../data/store'
 import { AnimatedNumber } from '../primitives'
 import { fmt, fmtPace, KCAL } from '../format'
 import { EXERCISE_META } from '../exerciseMeta'
+import { stepGoalOf, stepProgress } from '../../domain/steps'
 
 const timeHM = (iso: string) => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
 
@@ -38,7 +39,7 @@ function SourceTag({ apple }: { apple: boolean }) {
  * Energy expenditure of the day: resting + active (= total), the workouts inside
  * them, the steps, and where each number comes from. Values add up on screen.
  */
-export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: boolean; onSteps: () => void }) {
+export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) {
   const e = s.energy
   const [why, setWhy] = useState(false)
   const everConnected = useStore((st) => Object.values(st.health).some((h) => h.active_kcal != null || h.resting_kcal != null))
@@ -84,10 +85,6 @@ export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: bo
             </p>
           )}
         </div>
-        <button type="button" onClick={onSteps} className="pressable flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-sm" aria-label={`צעדים: ${fmt(s.steps)}. לעדכון`}>
-          <Footprints className="size-4 text-ink-3" aria-hidden />
-          {s.steps ? <span className="num font-semibold">{fmt(s.steps)}</span> : <span className="text-ink-3">צעדים</span>}
-        </button>
       </div>
 
       {/* resting | active (| extra / food) — proportions of what was burned */}
@@ -130,6 +127,64 @@ export function EnergyCard({ s, isToday, onSteps }: { s: DaySummary; isToday: bo
       </button>
       {why && <EnergyExplainer e={e} />}
     </section>
+  )
+}
+
+/**
+ * Steps against the daily goal. The number is the day's health row — Apple Health through the
+ * Shortcuts automation, or typed in — so there is one source of truth for steps. "No data yet"
+ * is shown as such, never as 0 steps. One tap opens the steps sheet (update / goal).
+ */
+export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: boolean; onOpen: () => void }) {
+  const day = useStore((st) => st.health[date])
+  const goal = useStore((st) => stepGoalOf(st.settings))
+  const everConnected = useStore((st) => Object.values(st.health).some((h) => h.source === 'shortcut'))
+  const p = stepProgress(day, goal)
+  const has = p.kind === 'steps'
+  const reached = has && p.reached
+  const label = has
+    ? `צעדים: ${fmt(p.steps)} מתוך ${fmt(goal)}${reached ? '. היעד הושג' : ''}. לעדכון`
+    : `צעדים: אין עדיין נתונים, יעד ${fmt(goal)}. לעדכון`
+  let note: string
+  if (has) {
+    const from = p.source === 'shortcut' ? 'Apple Health' : p.source === 'url' ? 'קיצור דרך' : 'הוזן ידנית'
+    note = `${reached ? 'היעד הושג' : `עוד ${fmt(p.remaining)} ליעד`} · ${from} · ${whenLabel(p.asOf)}`
+  } else if (everConnected) note = isToday ? 'עוד לא התקבלו צעדים מ-Apple Health היום' : 'לא התקבלו צעדים ליום הזה'
+  else note = 'אין עדיין נתוני צעדים — אפשר להזין ידנית או לחבר את Apple Health'
+
+  return (
+    <button type="button" onClick={onOpen} className="card pressable animate-rise w-full p-4 text-start" style={{ animationDelay: '60ms' }} aria-label={label} data-testid="steps-card">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <span className="flex items-center gap-1.5 text-sm font-medium text-ink-3">
+          <Footprints className="size-4" aria-hidden />
+          צעדים
+        </span>
+        {reached && (
+          <span className="animate-pop flex items-center gap-1 rounded-full bg-good-soft px-2.5 py-1 text-xs font-semibold text-good" data-testid="steps-reached">
+            <Check className="size-3.5" strokeWidth={2.8} aria-hidden />
+            היעד הושג
+          </span>
+        )}
+      </div>
+      <p className="mt-1 flex items-baseline gap-1.5 px-1" data-testid="steps-progress">
+        <span className={`num text-[28px] leading-none font-semibold tracking-tight ${has ? '' : 'text-ink-3'}`}>{has ? fmt(p.steps) : '—'}</span>
+        <span className="num text-ink-3">/ {fmt(goal)} צעדים</span>
+      </p>
+      <div
+        className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-2"
+        role="progressbar"
+        aria-label="התקדמות ליעד הצעדים"
+        aria-valuemin={0}
+        aria-valuemax={goal}
+        aria-valuenow={has ? Math.min(p.steps, goal) : 0}
+        aria-valuetext={has ? `${fmt(p.steps)} מתוך ${fmt(goal)}` : 'אין נתונים'}
+      >
+        <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${has ? Math.max(p.steps > 0 ? 2 : 0, p.ratio * 100) : 0}%`, background: reached ? 'var(--good)' : 'var(--ink)' }} />
+      </div>
+      <p className={`mt-2 px-1 text-xs ${!has && everConnected && isToday ? 'text-warn' : 'text-ink-3'}`} data-testid="steps-note">
+        {note}
+      </p>
+    </button>
   )
 }
 

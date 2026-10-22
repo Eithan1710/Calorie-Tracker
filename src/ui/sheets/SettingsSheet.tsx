@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, Cloud, CloudOff, Loader2, LogOut, UserRound } from 'lucide-react'
 import { Sheet, NumberField, Segmented } from '../primitives'
-import { hasUnsyncedChanges, updateSettings, useStore } from '../../data/store'
+import { hasUnsyncedChanges, logProfileWeight, updateSettings, useStore } from '../../data/store'
 import { isValidProfile, type Profile, type Sex } from '../../domain/energy'
 import { bandFrom, bandLabel, bandParts, CUSTOM_LIMITS, customBandError, intakeRangeFor, isValidTarget, phaseOf, range, TARGET_PRESETS, type BandDirection, type CalorieMode } from '../../domain/goal'
 import { hasSupabase } from '../../services/config'
@@ -9,9 +9,9 @@ import { useAuth } from '../../services/auth'
 import { logout } from '../../services/session'
 import { showToast } from '../toast'
 import { InstallApp } from '../InstallApp'
-import { getSyncStatus, onSyncStatus, pushProfile, syncNow } from '../../services/sync'
+import { getSyncStatus, onSyncStatus, pushProfile, pushWeightsNow, syncNow } from '../../services/sync'
 import { disableReminders, enableReminders, notificationSupport } from '../../services/notifications'
-import { HealthConnect } from './StepsSheet'
+import { HealthConnect, StepGoalField } from './StepsSheet'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
 import { fmt, KCAL } from '../format'
@@ -44,11 +44,20 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
   const [protein, setProtein] = useState<number | ''>(settings.proteinTarget)
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null)
 
+  // the weight when the sheet opened: a changed weight becomes today's weigh-in when it closes
+  const [openedWeight, setOpenedWeight] = useState<number | null>(null)
   useEffect(() => {
     if (open) {
       setDraft(settings.profile ?? { sex: 'male' })
       setProtein(settings.proteinTarget)
       setNotifyMsg(null)
+      setOpenedWeight(settings.profile?.weightKg ?? null)
+    } else if (openedWeight !== null) {
+      const now = settings.profile?.weightKg
+      if (now != null && Math.abs(now - openedWeight) >= 0.05 && logProfileWeight(now)) {
+        void pushWeightsNow().then((r) => showToast(r.ok ? `נוסף ליומן המשקל · ${now} ק״ג` : `המשקל נשמר במכשיר, עוד לא בחשבון: ${r.message}`))
+      }
+      setOpenedWeight(null)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -137,6 +146,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
 
         <section className="flex flex-col gap-2">
           <h3 className="font-semibold">צעדים</h3>
+          <StepGoalField />
           <HealthConnect />
         </section>
 

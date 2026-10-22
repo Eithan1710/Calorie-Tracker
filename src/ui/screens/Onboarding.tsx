@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { updateSettings, useStore } from '../../data/store'
+import { logProfileWeight, updateSettings, useStore } from '../../data/store'
 import { pushProfile } from '../../services/sync'
 import { useAuth } from '../../services/auth'
 import { bmrMifflinStJeor, isValidProfile, type Profile } from '../../domain/energy'
@@ -54,6 +54,7 @@ export function Onboarding() {
             if (isValidProfile(p) && protein !== '') {
               updateSettings({ profile: p, proteinTarget: protein })
               void pushProfile()
+              logProfileWeight(p.weightKg) // the first weigh-in of the weight log
             }
           }}
         >

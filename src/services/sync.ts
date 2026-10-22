@@ -2,13 +2,14 @@ import { useSyncExternalStore } from 'react'
 import { getSupabase } from './supabase'
 import { hasSupabase } from './config'
 import {
-  applyHealthRow, applyWeightRow, exercisesForDate, foodForDate, getState, markClean, onLocalChange, updateSettings, upsertExercise, upsertFood,
+  applyHealthRow, applyWeightRow, exercisesForDate, foodForDate, getState, markClean, markWeightsDirty, onLocalChange, updateSettings, upsertExercise, upsertFood,
 } from '../data/store'
 import type { Exercise, FoodEntry, HealthDay, WeightEntry } from '../data/types'
 import { summarizeDay } from '../domain/day'
 import { isValidProfile } from '../domain/energy'
 import { isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
 import { uploadPendingPhotos } from './photos'
+import { isValidStepGoal } from '../domain/steps'
 
 /**
  * Offline-first sync with Supabase (optional).
@@ -148,9 +149,68 @@ type HealthRow = Pick<HealthDay, 'date' | 'steps' | 'source' | 'updated_at'> & {
 const numOrNull = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v))
 
 interface WeightRow { date: string; weight_kg: number | string; created_at: string; updated_at: string; deleted_at: string | null }
-/** mz_weights comes with 20261015000000_body_weight.sql: until it is applied, weights stay on this device (still dirty) */
-const weightsTableMissing = (e: { code?: string; message?: string } | null) =>
-  Boolean(e && (e.code === 'PGRST205' || e.code === '42P01' || /mz_weights/.test(e.message ?? '')))
+/**
+ * Only a missing table (20261015000000_body_weight.sql not applied) keeps weights on the device
+ * quietly. Every other error — permissions, an expired login, a refused value — is a real
+ * failure: it is thrown and shown, and the entry stays dirty for the next attempt.
+ */
+const weightsTableMissing = (e: { code?: string; message?: string } | null) => Boolean(e && (e.code === 'PGRST205' || e.code === '42P01'))
+
+const sentVersion = <T extends { updated_at: string }>(recs: T[], key: (r: T) => string) => recs.map((r) => ({ key: key(r), updated_at: r.updated_at }))
+
+const weightToRow = (w: WeightEntry, uid: string) => ({
+  user_id: uid,
+  date: w.date,
+  weight_kg: w.weight_kg,
+  created_at: w.created_at,
+  updated_at: w.updated_at,
+  deleted_at: w.deleted ? w.updated_at : null,
+})
+
+/** Upsert every weight the server hasn't confirmed. Throws on failure (the entries stay dirty). */
+async function pushWeights(sb: NonNullable<Awaited<ReturnType<typeof getSupabase>>>, userId: string) {
+  const dirty = Object.values(getState().weights).filter((w) => w.dirty)
+  if (!dirty.length) return
+  const { error } = await sb.from('mz_weights').upsert(dirty.map((w) => weightToRow(w, userId)), { onConflict: 'user_id,date' })
+  if (error && weightsTableMissing(error)) return
+  if (error) throw error
+  if (getState().userId === userId) markClean('weights', sentVersion(dirty, (w) => w.date))
+}
+
+export type WeightSaveResult = { ok: true } | { ok: false; offline: boolean; message: string }
+
+/** Hebrew reason for a failed save — never a raw error. */
+function saveErrorMessage(e: unknown): string {
+  const err = e as { code?: string; message?: string; status?: number }
+  const msg = err?.message ?? ''
+  if (err?.code === '42501' || /row-level security/i.test(msg)) return 'אין הרשאה לשמור בחשבון הזה — נסה להתחבר מחדש'
+  if (err?.code === 'PGRST301' || err?.code === 'PGRST303' || /jwt/i.test(msg)) return 'ההתחברות פגה — התחבר מחדש כדי לשמור'
+  if (err?.code === '23514') return 'השרת לא קיבל את הערך (משקל בין 20 ל-400 ק״ג)'
+  if (/fetch|network|load failed/i.test(msg)) return 'אין חיבור לשרת'
+  return 'השמירה לשרת נכשלה'
+}
+
+/**
+ * Save the weight log to the account right now and report what really happened, so the UI
+ * says "נשמר" only once the database has the entry. The entry is already on this device;
+ * on failure it stays dirty and every later sync retries it.
+ */
+export async function pushWeightsNow(): Promise<WeightSaveResult> {
+  const userId = currentUser()
+  // local mode (no account configured): the device is the only store, nothing to confirm
+  if (!hasSupabase || !userId) return { ok: true }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return { ok: false, offline: true, message: 'אין רשת — נשמר במכשיר ויישלח כשהחיבור יחזור' }
+  try {
+    const sb = await getSupabase()
+    if (!sb) return { ok: false, offline: true, message: 'שמור במכשיר הזה בלבד' }
+    await pushWeights(sb, userId)
+    return { ok: true }
+  } catch (e) {
+    console.warn('weight save failed', e)
+    const message = saveErrorMessage(e)
+    return { ok: false, offline: message === 'אין חיבור לשרת', message }
+  }
+}
 
 async function push() {
   const sb = await getSupabase()
@@ -168,7 +228,7 @@ async function push() {
   if (dirtyFood.length) {
     const { error } = await sb.from('mz_food_entries').upsert(dirtyFood.map((f) => foodToRow(f, userId!)))
     if (error) throw error
-    markClean('food', dirtyFood.map((f) => f.id))
+    markClean('food', sentVersion(dirtyFood, (f) => f.id))
   }
   if (dirtyEx.length) {
     const rows = dirtyEx.map((e) => exToRow(e, userId!))
@@ -178,7 +238,7 @@ async function push() {
       ;({ error } = await sb.from('mz_exercises').upsert(rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !(HEALTH_EX_COLUMNS as readonly string[]).includes(k))))))
     }
     if (error) throw error
-    markClean('exercise', dirtyEx.map((e) => e.id))
+    markClean('exercise', sentVersion(dirtyEx, (e) => e.id))
   }
   if (dirtyHealth.length) {
     const { error } = await sb.from('mz_health_data').upsert(
@@ -186,24 +246,9 @@ async function push() {
       { onConflict: 'user_id,date' },
     )
     if (error) throw error
-    markClean('health', dirtyHealth.map((h) => h.date))
+    markClean('health', sentVersion(dirtyHealth, (h) => h.date))
   }
-  const dirtyWeights = Object.values(s.weights).filter((w) => w.dirty)
-  if (dirtyWeights.length) {
-    const { error } = await sb.from('mz_weights').upsert(
-      dirtyWeights.map((w: WeightEntry) => ({
-        user_id: userId,
-        date: w.date,
-        weight_kg: w.weight_kg,
-        created_at: w.created_at,
-        updated_at: w.updated_at,
-        deleted_at: w.deleted ? w.updated_at : null,
-      })),
-      { onConflict: 'user_id,date' },
-    )
-    if (error && !weightsTableMissing(error)) throw error
-    if (!error) markClean('weights', dirtyWeights.map((w) => w.date))
-  }
+  await pushWeights(sb, userId)
 
   // cached per-day numbers: used by the reminder job ("already logged today?") and server-side history
   if (touchedDates.size) {
@@ -249,7 +294,9 @@ async function pull() {
     sb.from('mz_food_entries').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
     sb.from('mz_exercises').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
     sb.from('mz_health_data').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
-    sb.from('mz_weights').select('*').eq('user_id', userId).gt('updated_at', sinceIso).limit(5000),
+    // the weight log is small (one row a day): always read all of it, so an entry that reached the
+    // server late (offline device, wrong clock) or never reached it is found either way
+    sb.from('mz_weights').select('date, weight_kg, created_at, updated_at, deleted_at').eq('user_id', userId).limit(10000),
   ])
   if (food.error) throw food.error
   if (ex.error) throw ex.error
@@ -281,19 +328,42 @@ async function pull() {
       health_as_of: row.health_as_of ?? null,
     })
   }
-  for (const row of (weights.error ? [] : weights.data ?? []) as WeightRow[]) {
+  if (!weights.error) reconcileWeights((weights.data ?? []) as WeightRow[])
+  updateSettings({ lastPulledAt: startedAt })
+}
+
+/**
+ * The server's weight log against this device's: the newer version of each day wins.
+ * Server newer → applied here. Local newer, or a day the server never got → pushed again
+ * (recovers entries a device kept but never managed to send). Nothing is ever duplicated:
+ * the key is the day.
+ */
+function reconcileWeights(rows: WeightRow[]) {
+  const s = getState()
+  const server = new Map(rows.map((r) => [r.date, r]))
+  // timestamps come back as "…+00:00" and are kept as "…Z": compare instants, not strings
+  const at = (iso: string) => Date.parse(iso)
+  for (const row of rows) {
     const local = s.weights[row.date]
-    if (local && local.updated_at >= row.updated_at) continue
+    if (local && at(local.updated_at) >= at(row.updated_at)) continue
     applyWeightRow({ date: row.date, weight_kg: Number(row.weight_kg), created_at: row.created_at, updated_at: row.updated_at, deleted: Boolean(row.deleted_at) })
   }
-  updateSettings({ lastPulledAt: startedAt })
+  const resend = Object.values(s.weights)
+    .filter((w) => !w.dirty)
+    .filter((w) => {
+      const r = server.get(w.date)
+      if (!r) return !w.deleted // never reached the server
+      return at(w.updated_at) > at(r.updated_at) // the server has an older version
+    })
+    .map((w) => w.date)
+  markWeightsDirty(resend)
 }
 
 /**
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal'] as const
 
 async function syncProfile() {
   const sb = await getSupabase()
@@ -318,6 +388,8 @@ async function syncProfile() {
       goalPhase: phase,
       calorieMode: data.calorie_mode === 'custom' || data.calorie_mode === 'auto' ? data.calorie_mode : st.calorieMode,
       customDeficit: data.custom_deficit_min != null && data.custom_deficit_max != null && isValidTarget(custom) ? custom : st.customDeficit,
+      // step_goal: null = the default goal; column absent before 20261023000100 → keep this device's
+      stepGoal: data.step_goal === undefined ? st.stepGoal : isValidStepGoal(data.step_goal) ? data.step_goal : undefined,
       profileUpdatedAt: new Date(serverAt).toISOString(),
     })
     return
@@ -345,6 +417,7 @@ async function syncProfile() {
       calorie_mode: st.calorieMode === 'custom' && isValidTarget(st.customDeficit) ? 'custom' : 'auto',
       custom_deficit_min: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.min) : null,
       custom_deficit_max: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.max) : null,
+      step_goal: isValidStepGoal(st.stepGoal) ? st.stepGoal : null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {
@@ -387,15 +460,22 @@ export function syncNow(): Promise<void> {
   setStatus('syncing')
   runningUser = uid
   running = (async () => {
+    // each step on its own: a refused profile must never keep food or weights from syncing
+    let failed: unknown = null
+    const step = async (fn: () => Promise<void>) => {
+      try {
+        await fn()
+      } catch (e) {
+        failed ??= e
+      }
+    }
     try {
-      await syncProfile().finally(() => markProfileChecked(uid))
-      await push()
-      await pull()
-      await push() // anything that changed meanwhile
-      setStatus('idle')
-    } catch (e) {
-      console.warn('sync failed', e)
-      setStatus('error')
+      await step(() => syncProfile().finally(() => markProfileChecked(uid)))
+      await step(push)
+      await step(pull)
+      await step(push) // anything that changed meanwhile
+      if (failed) console.warn('sync failed', failed)
+      setStatus(failed ? 'error' : 'idle')
     } finally {
       running = null
     }

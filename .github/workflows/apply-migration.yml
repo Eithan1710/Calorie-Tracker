@@ -11,8 +11,10 @@ on:
       migration:
         description: Migration file
         type: choice
-        default: 20261020100000_custom_deficit.sql
+        default: 20261023000000_weights_keep_newest.sql
         options:
+          - 20261023000000_weights_keep_newest.sql
+          - 20261023000100_step_goal.sql
           - 20261020100000_custom_deficit.sql
           - 20261020000000_calorie_range.sql
           - 20261016000000_health_daily_totals.sql

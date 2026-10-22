@@ -12,6 +12,8 @@ insert into public.mz_profiles (user_id, kcal_min, kcal_max) values ('00000000-0
   on conflict (user_id) do nothing;
 \ir ../migrations/20261020100000_custom_deficit.sql
 \ir ../migrations/20261020100000_custom_deficit.sql
+\ir ../migrations/20261023000100_step_goal.sql
+\ir ../migrations/20261023000100_step_goal.sql
 do $$
 declare
   u1 constant uuid := '00000000-0000-0000-0000-0000000000e1';
@@ -46,5 +48,14 @@ begin
   if ok then raise exception '7: custom without a band accepted'; end if;
   begin update public.mz_profiles set goal_phase = 'bulk-max' where user_id = u1; ok := true; exception when check_violation then ok := false; end;
   if ok then raise exception '8: unknown phase accepted'; end if;
+  -- step goal: optional, sane range, independent of the calorie target
+  if (select step_goal from public.mz_profiles where user_id = u1) is not null then raise exception '9a: step goal default'; end if;
+  update public.mz_profiles set step_goal = 10000 where user_id = u1;
+  if (select step_goal from public.mz_profiles where user_id = u1) <> 10000 then raise exception '9b: step goal not saved'; end if;
+  begin update public.mz_profiles set step_goal = 0 where user_id = u1; ok := true; exception when check_violation then ok := false; end;
+  if ok then raise exception '9c: zero step goal accepted'; end if;
+  begin update public.mz_profiles set step_goal = 120000 where user_id = u1; ok := true; exception when check_violation then ok := false; end;
+  if ok then raise exception '9d: huge step goal accepted'; end if;
+  if (select custom_deficit_min from public.mz_profiles where user_id = u1) <> -400 then raise exception '9e: band changed'; end if;
   raise notice 'calorie range checks passed';
 end $$;

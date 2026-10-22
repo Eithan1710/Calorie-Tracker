@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Copy, ChevronDown } from 'lucide-react'
 import { Sheet, PrimaryButton, NumberField, GhostButton } from '../primitives'
-import { setSteps, useStore } from '../../data/store'
+import { setSteps, updateSettings, useStore } from '../../data/store'
+import { DEFAULT_STEP_GOAL, STEP_GOAL_LIMITS, STEP_GOAL_PRESETS, stepGoalError, stepGoalOf } from '../../domain/steps'
+import { pushProfile } from '../../services/sync'
 import { createIngestToken, HEALTH_INGEST_URL } from '../../services/health'
 import { hasSupabase } from '../../services/config'
 import { fmt, haptic } from '../format'
@@ -41,9 +43,51 @@ export function StepsSheet({ open, onClose, date }: { open: boolean; onClose: ()
             {new Date(current.updated_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
           </p>
         )}
+        <StepGoalField />
         <HealthConnect />
       </div>
     </Sheet>
+  )
+}
+
+/**
+ * The daily step goal: quick presets + any number. Saved to the account (mz_profiles.step_goal)
+ * as soon as it is valid; an invalid value is explained and never saved.
+ */
+export function StepGoalField() {
+  const saved = useStore((s) => stepGoalOf(s.settings))
+  const [value, setValue] = useState<number | ''>(saved)
+  useEffect(() => setValue(saved), [saved])
+  const error = stepGoalError(value)
+  const save = (v: number | '') => {
+    setValue(v)
+    if (stepGoalError(v) === null && v !== saved) {
+      updateSettings({ stepGoal: Number(v) })
+      void pushProfile()
+    }
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <NumberField label="יעד צעדים יומי" value={value} onChange={save} inputMode="numeric" min={STEP_GOAL_LIMITS.min} max={STEP_GOAL_LIMITS.max} step={500} placeholder={fmt(DEFAULT_STEP_GOAL)} />
+      <div className="flex flex-wrap gap-2" role="group" aria-label="יעדים מוכנים">
+        {STEP_GOAL_PRESETS.map((g) => (
+          <button
+            key={g}
+            type="button"
+            aria-pressed={saved === g}
+            onClick={() => save(g)}
+            className={`pressable min-h-9 rounded-full px-3 text-sm font-medium ${saved === g ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink-2'}`}
+          >
+            {fmt(g)}
+          </button>
+        ))}
+      </div>
+      {error && value !== saved ? (
+        <p role="alert" className="text-sm text-surplus">
+          {error} · נשמר: {fmt(saved)}
+        </p>
+      ) : null}
+    </div>
   )
 }
 

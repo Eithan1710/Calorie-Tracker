@@ -327,6 +327,56 @@ test.describe('energy & goal', () => {
     await expect(page).toHaveURL(/\/$/)
   })
 
+  test('step goal: any target, missing vs zero steps, progress and goal reached', async ({ page }) => {
+    await at(page, '2026-10-06T13:00:00')
+    await page.goto('/')
+    const card = page.getByTestId('steps-card')
+    // no data yet ≠ 0 steps
+    await expect(card.getByTestId('steps-progress')).toContainText('—')
+    await expect(card.getByTestId('steps-progress')).toContainText('8,000') // default goal
+    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+
+    // the goal from Settings (a preset), then a typed one
+    await page.getByRole('button', { name: 'הגדרות' }).click()
+    let d = page.getByRole('dialog')
+    await d.getByRole('group', { name: 'יעדים מוכנים' }).getByRole('button', { name: '10,000' }).click()
+    await page.keyboard.press('Escape')
+    await expect(card.getByTestId('steps-progress')).toContainText('10,000')
+
+    // typed 0 steps is a real zero
+    await card.click()
+    d = page.getByRole('dialog')
+    await d.getByLabel('צעדים היום').fill('0')
+    await d.getByRole('button', { name: 'עדכון' }).click()
+    await expect(card.getByTestId('steps-progress')).toContainText('0')
+    await expect(card.getByTestId('steps-progress')).not.toContainText('—')
+    await expect(card.getByTestId('steps-note')).toContainText('עוד 10,000 ליעד')
+
+    await card.click()
+    await page.getByRole('dialog').getByLabel('צעדים היום').fill('6500')
+    await page.getByRole('dialog').getByRole('button', { name: 'עדכון' }).click()
+    await expect(card.getByTestId('steps-progress')).toContainText('6,500')
+    await expect(card.getByTestId('steps-note')).toContainText('עוד 3,500 ליעד')
+    await expect(card.getByTestId('steps-reached')).toHaveCount(0)
+
+    // a smaller goal: already reached
+    await card.click()
+    d = page.getByRole('dialog')
+    await d.getByLabel('יעד צעדים יומי').fill('6000')
+    await page.keyboard.press('Escape')
+    await expect(card.getByTestId('steps-reached')).toBeVisible()
+    await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '6000')
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('maazan:settings') ?? '{}'))
+    expect(saved.stepGoal).toBe(6000)
+    await page.reload()
+    await expect(card.getByTestId('steps-reached')).toBeVisible()
+    // fits the screen width on every device
+    const box = (await card.boundingBox())!
+    expect(box.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+    await card.scrollIntoViewIfNeeded()
+    await card.screenshot({ path: shot('steps-goal', test.info().project.name) })
+  })
+
   test('goal: 200 kcal deficit in the evening → היעד הושג', async ({ page }, info) => {
     await at(page, '2026-10-06T21:00:00')
     await mockAnalyze(page, analysis([item('x', 'ארוחות היום', 1000, { kcal: (BURN_NO_STEPS - 200) / 10, protein_g: 7, fat_g: 2, carbs_g: 30 })], { title: 'כל היום' }))

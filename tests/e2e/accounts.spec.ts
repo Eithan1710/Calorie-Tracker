@@ -258,11 +258,14 @@ async function openWeight(page: Page) {
   await page.getByRole('radio', { name: 'משקל' }).click()
 }
 
+const profileRow = (userId: string, extra: Record<string, unknown> = {}) => ({ user_id: userId, sex: 'male', age: 32, height_cm: 178, weight_kg: 62, protein_target_g: 120, deficit_min: 100, deficit_max: 300, updated_at: '2026-10-01T10:00:00Z', ...extra })
+
 test('weight: empty state, quick entry, same-day correction, edit, delete + undo, survives reload', async ({ page }) => {
   const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id))
   await page.goto('/')
   await login(page, 'איתן', '123456')
-  await onboard(page, '62')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
   await openWeight(page)
 
   // friendly empty state, entry is right there
@@ -362,6 +365,198 @@ test('weight: long history from the server, range filters, honest axis; other ac
   // the list starts short, can be expanded
   await expect(page.getByRole('button', { name: 'כל השקילות (105)' })).toBeVisible()
   await page.screenshot({ path: 'docs/screenshots/accounts-weight-history.png', fullPage: true })
+})
+
+test('weight: the onboarding weight is the first weigh-in, saved to the account', async ({ page }) => {
+  const u = sb.addUser('נועה', '123456')
+  await page.goto('/')
+  await login(page, 'נועה', '123456')
+  await onboard(page, '70.5')
+  await expect.poll(() => sb.rows('mz_weights', u.id).map((r) => [r.date, r.weight_kg])).toEqual([['2026-10-06', 70.5]])
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toContainText('70.5')
+})
+
+test('weight: a failed database save is shown as failed — never as saved — and is sent once the database accepts it', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id))
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  const entry = page.getByRole('form', { name: 'שקילה חדשה' })
+
+  // the database refuses the write (e.g. a permissions problem)
+  sb.failWrites.mz_weights = { status: 403, code: '42501', message: 'new row violates row-level security policy for table "mz_weights"' }
+  await entry.getByLabel('שקילה חדשה').fill('61.8')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  const alert = page.getByTestId('weight-save-error')
+  await expect(alert).toBeVisible()
+  await expect(alert).toContainText('לא נשמר בחשבון')
+  await expect(alert).toContainText('אין הרשאה')
+  await expect(page.getByText(/^נשמר · /)).toHaveCount(0) // no success toast
+  await expect(page.getByTestId('weight-unsynced')).toHaveCount(1)
+  expect(sb.rows('mz_weights', u.id)).toHaveLength(0)
+  // the entry is kept on the device, also across a reload
+  await page.reload()
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toContainText('61.8')
+  await expect(page.getByTestId('weight-unsynced')).toHaveCount(1)
+
+  // the database works again → "נסה שוב" (or any later sync) sends it; only now "נשמר"
+  sb.failWrites.mz_weights = undefined
+  await entry.getByLabel('שקילה חדשה').fill('61.6')
+  await entry.getByRole('button', { name: 'עדכן' }).click()
+  await expect(page.getByText('עודכן · 61.6 ק״ג')).toBeVisible()
+  await expect(alert).toHaveCount(0)
+  await expect(page.getByTestId('weight-unsynced')).toHaveCount(0)
+  expect(sb.rows('mz_weights', u.id).map((r) => [r.date, r.weight_kg, r.deleted_at])).toEqual([['2026-10-06', 61.6, null]])
+
+  // an explicit retry after a failure
+  sb.failWrites.mz_weights = { status: 500, code: 'XX000', message: 'internal error' }
+  await entry.getByLabel('תאריך השקילה').fill('2026-09-29')
+  await entry.getByLabel('שקילה חדשה').fill('62.4')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect(alert).toContainText('השמירה לשרת נכשלה')
+  sb.failWrites.mz_weights = undefined
+  await alert.getByRole('button', { name: 'נסה שוב' }).click()
+  await expect(alert).toHaveCount(0)
+  await expect.poll(() => sb.rows('mz_weights', u.id).map((r) => r.date).sort()).toEqual(['2026-09-29', '2026-10-06'])
+})
+
+test('weight: history loads after logout / login and on another device; an entry the server never got is recovered without duplicates', async ({ page, browser }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id))
+  ;(sb.tables.mz_weights ??= []).push(
+    { user_id: u.id, date: '2026-09-22', weight_kg: 63.0, created_at: '2026-09-22T06:00:00Z', updated_at: '2026-09-22T06:00:00Z', deleted_at: null },
+    { user_id: u.id, date: '2026-09-29', weight_kg: 62.5, created_at: '2026-09-29T06:00:00Z', updated_at: '2026-09-29T06:00:00Z', deleted_at: null },
+  )
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toContainText('62.5')
+  const entry = page.getByRole('form', { name: 'שקילה חדשה' })
+  await entry.getByLabel('שקילה חדשה').fill('61.9')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect(page.getByText('נשמר · 61.9 ק״ג')).toBeVisible()
+  await expect.poll(() => sb.rows('mz_weights', u.id).length).toBe(3)
+
+  // simulate the old bug: the server lost today's row although this device marked it as sent
+  sb.tables.mz_weights = sb.rows('mz_weights').filter((r) => r.date !== '2026-10-06')
+  await page.reload()
+  await expect.poll(() => sb.rows('mz_weights', u.id).map((r) => [r.date, r.weight_kg]).sort()).toEqual([
+    ['2026-09-22', 63],
+    ['2026-09-29', 62.5],
+    ['2026-10-06', 61.9],
+  ])
+
+  // logout → login: same history (from the account, not just this device)
+  await logout(page)
+  await login(page, 'איתן', '123456')
+  await openWeight(page)
+  await expect(page.getByTestId('weight-current')).toContainText('61.9')
+  await expect(page.getByTestId('weight-change')).toContainText('−0.6')
+
+  // another device: the whole history, chart included; a change there reaches the first device
+  const other = await browser.newContext()
+  await sb.install(other)
+  const p2 = await other.newPage()
+  await p2.clock.install({ time: new Date('2026-10-06T13:00:00+03:00') })
+  await p2.goto('/')
+  await login(p2, 'איתן', '123456')
+  await expect(p2.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(p2)
+  await expect(p2.getByTestId('weight-current')).toContainText('61.9')
+  await expect(p2.getByTestId('weight-chart').locator('rect > title')).toHaveCount(3)
+  await p2.getByRole('button', { name: /29 בספטמבר/ }).click()
+  await p2.getByRole('dialog').getByLabel('משקל').fill('62.3')
+  await p2.getByRole('dialog').getByRole('button', { name: 'שמירה' }).click()
+  await expect(p2.getByText('עודכן · 62.3 ק״ג')).toBeVisible()
+  await other.close()
+  expect(sb.rows('mz_weights', u.id)).toHaveLength(3) // corrections never add rows
+
+  await page.reload()
+  await openWeight(page)
+  await expect(page.getByRole('button', { name: /29 בספטמבר.*62\.3/ })).toBeVisible()
+  // and a stale copy from an old device cannot overwrite the newer weigh-in
+  expect(sb.rows('mz_weights', u.id).find((r) => r.date === '2026-09-29')?.weight_kg).toBe(62.3)
+})
+
+test('weight: with the app left open past midnight a new weigh-in goes to the new day, yesterday stays', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id))
+  await page.clock.setSystemTime(new Date('2026-10-06T23:58:00+03:00'))
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  const entry = page.getByRole('form', { name: 'שקילה חדשה' })
+  await entry.getByLabel('שקילה חדשה').fill('65')
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect(page.getByText('נשמר · 65.0 ק״ג')).toBeVisible()
+  await page.clock.runFor(5 * 60_000) // 00:03, the screen was never closed
+  await entry.getByLabel('שקילה חדשה').fill('64.6')
+  await expect(entry.getByRole('button', { name: 'שמור' })).toBeVisible() // not "עדכן": a new day
+  await entry.getByRole('button', { name: 'שמור' }).click()
+  await expect.poll(() => sb.rows('mz_weights', u.id).map((r) => [r.date, r.weight_kg]).sort()).toEqual([
+    ['2026-10-06', 65],
+    ['2026-10-07', 64.6],
+  ])
+})
+
+// ── daily step goal ──────────────────────────────────────────────────────────
+
+test('step goal: saved to the account, progress from the Apple Health steps already collected, back on another device', async ({ page, browser }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id))
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  const card = page.getByTestId('steps-card')
+  // nothing synced yet: "—", not 0, with the default goal
+  await expect(card.getByTestId('steps-progress')).toContainText('—')
+  await expect(card.getByTestId('steps-progress')).toContainText('8,000')
+  await expect(card.getByTestId('steps-note')).toContainText('אין עדיין נתוני צעדים')
+
+  // a 10,000 goal, saved to the account
+  await card.click()
+  const d = page.getByRole('dialog')
+  await d.getByLabel('יעד צעדים יומי').fill('10000')
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.step_goal).toBe(10000)
+  // invalid → explained, not saved
+  await d.getByLabel('יעד צעדים יומי').fill('300')
+  await expect(d.getByRole('alert')).toContainText('בין')
+  await d.getByLabel('יעד צעדים יומי').fill('10000')
+  await page.keyboard.press('Escape')
+
+  // the Shortcuts automation delivers steps (the existing ingestion → mz_health_data)
+  ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: '2026-10-06', steps: 6500, source: 'shortcut', active_kcal: 310, resting_kcal: 1200, health_as_of: '2026-10-06T12:40:00+03:00', updated_at: '2026-10-06T09:40:05Z' })
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(card.getByTestId('steps-progress')).toContainText('6,500')
+  await expect(card.getByTestId('steps-progress')).toContainText('10,000')
+  await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '6500')
+  await expect(card.getByTestId('steps-note')).toContainText('עוד 3,500 ליעד')
+  await expect(card.getByTestId('steps-note')).toContainText('Apple Health')
+  await expect(card.getByTestId('steps-reached')).toHaveCount(0)
+
+  // a later sync with more steps → goal reached
+  sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-06' ? { ...r, steps: 10420, health_as_of: '2026-10-06T19:10:00+03:00', updated_at: '2026-10-06T16:10:05Z' } : r))
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(card.getByTestId('steps-reached')).toBeVisible()
+  await expect(card.getByTestId('steps-note')).toContainText('היעד הושג')
+  await page.screenshot({ path: 'docs/screenshots/accounts-step-goal.png' })
+
+  // another device: same goal from the account
+  const other = await browser.newContext()
+  await sb.install(other)
+  const p2 = await other.newPage()
+  await p2.clock.install({ time: new Date('2026-10-06T13:00:00+03:00') })
+  await p2.goto('/')
+  await login(p2, 'איתן', '123456')
+  await expect(p2.getByTestId('steps-card').getByTestId('steps-progress')).toContainText('10,420')
+  await expect(p2.getByTestId('steps-card').getByTestId('steps-progress')).toContainText('10,000')
+  await other.close()
 })
 
 // ── suggestions from the user's own history ─────────────────────────────────

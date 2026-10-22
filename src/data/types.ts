@@ -104,6 +104,8 @@ export interface Settings {
   calorieMode?: CalorieMode
   /** the user's own band of deficit (positive) or surplus (negative), kcal; kept when switching phase or mode */
   customDeficit?: DeficitTarget
+  /** daily step goal (absent = the default, 8,000) */
+  stepGoal?: number
   /** when profile/targets last changed on this device (for cross-device sync) */
   profileUpdatedAt?: string
   remindersEnabled: boolean
