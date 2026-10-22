@@ -19,7 +19,7 @@ for (const [name, opts] of [['mobile', { viewport: { width: 390, height: 844 }, 
   log.push(`[${name}] scripts: ${[...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]).join(', ')}`)
   const bodies = await Promise.all(js)
   const has = (t) => bodies.some((b) => b.includes(t))
-  log.push(`[${name}] js files: ${bodies.length} · custom_deficit_min: ${has('custom_deficit_min')} · kcal_min: ${has('kcal_min')} · surplus text: ${has('יותר מהעודף שתכננת')}`)
+  log.push(`[${name}] js files: ${bodies.length} · step_goal: ${has('step_goal')} · steps card: ${has('steps-card')} · weight save check: ${has('לא נשמר בחשבון')}`)
   await p.screenshot({ path: `out/${name}.png` })
   await ctx.close()
 }
