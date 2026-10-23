@@ -7,7 +7,7 @@ import {
 import type { Exercise, FoodEntry, HealthDay, WeightEntry } from '../data/types'
 import { summarizeDay } from '../domain/day'
 import { isValidProfile } from '../domain/energy'
-import { isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
+import { dayTarget, isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
 import { uploadPendingPhotos } from './photos'
 import { isValidStepGoal } from '../domain/steps'
 
@@ -224,6 +224,7 @@ async function push() {
   const dirtyEx = Object.values(s.exercise).filter((e) => e.dirty)
   const dirtyHealth = Object.values(s.health).filter((h) => h.dirty)
   const touchedDates = new Set([...dirtyFood, ...dirtyEx, ...dirtyHealth].map((r) => r.date))
+  for (const d of summaryRefresh) touchedDates.add(d)
 
   if (dirtyFood.length) {
     const { error } = await sb.from('mz_food_entries').upsert(dirtyFood.map((f) => foodToRow(f, userId!)))
@@ -250,7 +251,9 @@ async function push() {
   }
   await pushWeights(sb, userId)
 
-  // cached per-day numbers: used by the reminder job ("already logged today?") and server-side history
+  // cached per-day numbers in mz_daily_summaries (a server-side copy of what the app shows).
+  // Rewritten whenever a day's inputs change here — food, workouts, steps — and also when a
+  // day's Apple Health energy arrives from the server, so the copy never keeps an old burn.
   if (touchedDates.size) {
     const st = getState()
     const rows = [...touchedDates].map((date) => {
@@ -262,7 +265,7 @@ async function push() {
         health: st.health[date],
         profile: st.settings.profile,
         proteinTarget: st.settings.proteinTarget,
-        target: st.settings.deficitTarget,
+        target: dayTarget(st.settings),
       })
       return {
         user_id: userId,
@@ -277,8 +280,27 @@ async function push() {
         updated_at: new Date().toISOString(),
       }
     })
-    await sb.from('mz_daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
+    const { error } = await sb.from('mz_daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
+    if (!error) {
+      for (const d of touchedDates) summaryRefresh.delete(d)
+      if (getState().settings.summariesVersion !== SUMMARIES_VERSION) updateSettings({ summariesVersion: SUMMARIES_VERSION })
+    }
   }
+}
+
+/** Days whose cached summary must be rewritten on the next push (Apple Health data arrived, …). */
+const summaryRefresh = new Set<string>()
+/**
+ * Bumped when summaries written by older versions may be stale: version 2 = summaries now follow
+ * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
+ */
+const SUMMARIES_VERSION = 2
+
+function queueSummaryBackfill() {
+  const st = getState()
+  if (st.settings.summariesVersion === SUMMARIES_VERSION) return
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString().slice(0, 10)
+  for (const f of Object.values(st.food)) if (f.date >= since) summaryRefresh.add(f.date)
 }
 
 async function pull() {
@@ -318,6 +340,7 @@ async function pull() {
   for (const row of (health.data ?? []) as HealthRow[]) {
     const local = s.health[row.date]
     if (local && local.updated_at >= row.updated_at) continue
+    summaryRefresh.add(row.date)
     applyHealthRow({
       date: row.date,
       steps: Number(row.steps) || 0,
@@ -330,6 +353,7 @@ async function pull() {
   }
   if (!weights.error) reconcileWeights((weights.data ?? []) as WeightRow[])
   updateSettings({ lastPulledAt: startedAt })
+  queueSummaryBackfill()
 }
 
 /**
@@ -509,6 +533,7 @@ export async function startSync() {
 export function stopSync() {
   if (timer) clearTimeout(timer)
   timer = null
+  summaryRefresh.clear()
 }
 
 /** Profile/targets changed on this device: stamp and push. */

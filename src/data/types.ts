@@ -114,6 +114,8 @@ export interface Settings {
   pushSubscribed?: boolean
   /** last date a local reminder fired, to never notify twice */
   lastReminderDate?: string
+  /** version of the cached day summaries written to the server (see services/sync.ts) */
+  summariesVersion?: number
   /** ISO of last successful pull from server */
   lastPulledAt?: string
 }

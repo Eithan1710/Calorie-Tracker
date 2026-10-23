@@ -505,6 +505,46 @@ test('weight: with the app left open past midnight a new weigh-in goes to the ne
   ])
 })
 
+test('weight: the energy balance between the two weigh-ins uses the same daily numbers; the server copy of each day follows late Apple Health data', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { weight_kg: 60.1 }))
+  const PER100 = { kcal: 160, protein_g: 10, fat_g: 4, carbs_g: 20 } // 1 kg → 1,600 kcal · 100 g P · 200 g C · 40 g F
+  const days = ['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']
+  for (const d of days) {
+    ;(sb.tables.mz_food_entries ??= []).push(foodRow(u.id, d, '13:00', 'lunch', 'ארוחה', 1000, PER100))
+    ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: d, steps: 7000, source: 'shortcut', active_kcal: 300, resting_kcal: 1500, health_as_of: `${d}T23:59:00+03:00`, updated_at: `${d}T21:00:00Z` })
+  }
+  ;(sb.tables.mz_weights ??= []).push(
+    { user_id: u.id, date: '2026-09-29', weight_kg: 60.1, created_at: '2026-09-29T07:10:00Z', updated_at: '2026-09-29T07:10:00Z', deleted_at: null },
+    { user_id: u.id, date: '2026-10-06', weight_kg: 59.2, created_at: '2026-10-06T07:20:00Z', updated_at: '2026-10-06T07:20:00Z', deleted_at: null },
+  )
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  // each day: 1,500 resting + 300 active + 167 digestion (25% P · 7.5% C · 2% F) − 1,600 eaten = 367
+  const b = page.getByTestId('weighin-balance')
+  await expect(b).toContainText('7 ימים')
+  await expect(b).toContainText('גירעון מצטבר של 2,569')
+  await expect(b).toContainText('367') // per day
+  await expect(b).toContainText('0.33') // ≈ kg of fat at 7,700 kcal/kg
+  await expect(b).toContainText('−0.9') // what the scale says
+  await page.screenshot({ path: 'docs/screenshots/accounts-weighin-balance.png' })
+
+  // the server copy of each day (mz_daily_summaries) matches what the app shows…
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(1967)
+  // …and follows Apple Health energy that arrives later for a day already logged
+  sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-05' ? { ...r, active_kcal: 500, updated_at: '2026-10-06T09:00:00Z' } : r))
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2167)
+  await expect(b).toContainText('גירעון מצטבר של 2,769')
+
+  // a day without food is not counted as 0 kcal eaten: no comparison then
+  sb.tables.mz_food_entries = sb.rows('mz_food_entries').map((r) => (r.date === '2026-10-02' ? { ...r, deleted_at: '2026-10-06T09:30:00Z', updated_at: '2026-10-06T09:30:00Z' } : r))
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(b).toContainText('חסר רישום אוכל ב-1 מתוך 7 ימים')
+})
+
 // ── daily step goal ──────────────────────────────────────────────────────────
 
 test('step goal: saved to the account, progress from the Apple Health steps already collected, back on another device', async ({ page, browser }) => {

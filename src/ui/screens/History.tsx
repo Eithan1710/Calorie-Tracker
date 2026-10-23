@@ -67,7 +67,8 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="ימים ביעד" value={finished.length ? `${inTarget}/${finished.length}` : '—'} hint={targetHint} />
-        <Stat label="מאזן ממוצע" value={avgBalance === null ? '—' : fmtBalance(-avgBalance)} hint={KCAL} ltr />
+        {/* only finished days count (today is still going on) — say how many, so it can be compared */}
+        <Stat label="מאזן ממוצע" value={avgBalance === null ? '—' : fmtBalance(-avgBalance)} hint={finished.length ? `${KCAL} · ${finished.length} ימים מלאים` : KCAL} ltr />
         <Stat label="חלבון ממוצע" value={avgProtein === null ? '—' : `${fmt(avgProtein)} ג׳`} hint={logged.length ? `ביעד ${proteinDays}/${logged.length} ימים` : ''} />
         <Stat label="צעדים ממוצע" value={avgSteps === null ? '—' : fmt(avgSteps)} hint="ליום" />
       </div>

@@ -1,15 +1,18 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, CloudOff, Minus, Trash2 } from 'lucide-react'
-import { deleteWeight, restoreWeight, saveWeight, useStore, weightList } from '../../data/store'
+import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight, useStore, weightList } from '../../data/store'
 import type { WeightEntry } from '../../data/types'
-import { toDateKey } from '../../domain/goal'
+import { addDays, dayTarget, toDateKey } from '../../domain/goal'
+import { summarizeDay } from '../../domain/day'
+import { balanceBetweenWeighins, KCAL_PER_KG_FAT } from '../../domain/weighinBalance'
 import { dayNum, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
-import { dateLong, dateShort, haptic } from '../format'
+import { dateLong, dateShort, fmt, haptic } from '../format'
 import { showToast } from '../toast'
 import { pushWeightsNow, type WeightSaveResult } from '../../services/sync'
 
 const kgFmt = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+const kgFmt2 = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
 export const fmtKg = (kg: number) => kgFmt.format(kg)
 const KG = 'ק״ג'
 
@@ -128,6 +131,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
           ) : (
             <p className="mt-2 text-[15px] text-ink-3">השקילה הראשונה. בשקילה הבאה יופיע כאן השינוי.</p>
           )}
+          {s.previous && <SinceLastWeighin previous={s.previous} latest={s.latest} />}
         </section>
       ) : (
         <section aria-label="עוד אין שקילות" className="flex flex-col items-center gap-2 pt-6 pb-6 text-center">
@@ -203,6 +207,62 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
       )}
 
       <EditWeightSheet entry={editing} onClose={() => setEditing(null)} today={today} />
+    </div>
+  )
+}
+
+// ── energy balance between the last two weigh-ins ─────────────────────────────
+
+/**
+ * What the logged days between the two weigh-ins add up to, next to what the scale says.
+ * Same daily numbers as the rest of the app (no separate formula); the window is exactly the
+ * days between the weigh-ins, so it can be compared with the weight change. Shown as a
+ * sanity check — over days to weeks the scale also moves with water and gut contents.
+ */
+function SinceLastWeighin({ previous, latest }: { previous: WeightPoint; latest: WeightPoint }) {
+  const food = useStore((st) => st.food)
+  const exercise = useStore((st) => st.exercise)
+  const health = useStore((st) => st.health)
+  const settings = useStore((st) => st.settings)
+  const r = useMemo(() => {
+    const n = dayNum(latest.date) - dayNum(previous.date)
+    if (n < 1 || n > 42) return null
+    const target = dayTarget(settings)
+    const days = Array.from({ length: n }, (_, i) => {
+      const date = addDays(previous.date, i)
+      return summarizeDay({
+        date,
+        food: foodForDate({ food }, date),
+        exercises: exercisesForDate({ exercise }, date),
+        steps: health[date]?.steps ?? 0,
+        health: health[date],
+        profile: settings.profile,
+        proteinTarget: settings.proteinTarget,
+        target,
+      })
+    })
+    return balanceBetweenWeighins({ previous, latest, days })
+  }, [food, exercise, health, settings, previous, latest])
+  if (!r) return null
+  const range = `${dateShort(r.from)}–${dateShort(r.through)}`
+  if (r.missingFood.length) {
+    return (
+      <p className="mt-2 text-sm text-ink-3" data-testid="weighin-balance">
+        בין השקילות ({range}) חסר רישום אוכל ב-{r.missingFood.length} מתוך {r.days} ימים — אין מספיק נתונים להשוואה למאזן הקלורי.
+      </p>
+    )
+  }
+  const deficit = r.deficit >= 0
+  return (
+    <div className="mt-3 rounded-2xl bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-ink-2" data-testid="weighin-balance">
+      <p>
+        {range} · {r.days} ימים: {deficit ? 'גירעון' : 'עודף'} מצטבר של <b className="num">{fmt(Math.abs(r.deficit))}</b> קק״ל (ממוצע <span className="num">{fmt(Math.abs(r.deficit) / r.days)}</span> ליום)
+        {' '}≈ <b className="ltr num inline-block">{r.predictedKg > 0 ? '+' : r.predictedKg < 0 ? '−' : ''}{kgFmt2.format(Math.abs(r.predictedKg))}</b> ק״ג שומן. במשקל: <b className="ltr num inline-block">{fmtChange(r.measuredKg)}</b> ק״ג.
+      </p>
+      <p className="mt-1 text-xs text-ink-3">
+        לפי ~{fmt(KCAL_PER_KG_FAT)} קק״ל לק״ג שומן. בטווח של ימים עד שבועות המשקל זז גם עם מים, גליקוגן ותכולת מעיים, ושקילה בודדת יכולה לסטות בחצי ק״ג ויותר.
+        {r.estimatedBurn.length > 0 && ` ב-${r.estimatedBurn.length} ימים השריפה היא הערכה (בלי Apple Health).`}
+      </p>
     </div>
   )
 }
