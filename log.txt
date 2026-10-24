@@ -1,0 +1,6 @@
+[mobile] body text: מאזן |  | כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום. |  | התחברות | שם משתמש | סיסמה | כניסה |  | הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.
+[mobile] scripts: /Calorie-Tracker/assets/index-sjFISqNb.js
+[mobile] js files: 17 · over budget text: true
+[desktop] body text: מאזן |  | כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום. |  | התחברות | שם משתמש | סיסמה | כניסה |  | הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.
+[desktop] scripts: /Calorie-Tracker/assets/index-sjFISqNb.js
+[desktop] js files: 17 · over budget text: true
