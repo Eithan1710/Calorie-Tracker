@@ -684,8 +684,10 @@ test.describe('custom deficit / surplus band', () => {
     await mockAnalyze(page, analysis([item('s', 'חטיף', 100, { kcal: 200, protein_g: 5, fat_g: 5, carbs_g: 30 })], { title: 'חטיף' }))
     await addText(page, 'חטיף')
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
-    await expect(hero(page)).toContainText('2,000') // deficit 53 — short of 200
-    await expect(hero(page)).toContainText('כמעט שם')
+    await expect(hero(page)).toContainText('2,000') // deficit 53 — 147 past the budget for a 200–300 deficit
+    await expect(hero(page)).toContainText('מעל התקציב להיום')
+    await expect(hero(page)).toContainText('147 קק״ל מעבר לתקציב')
+    await expect(hero(page)).not.toContainText('חסרות')
 
     // history: days in target against the same band
     await page.getByRole('navigation', { name: 'ניווט ראשי' }).getByRole('button', { name: 'היסטוריה' }).click()

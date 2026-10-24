@@ -2,7 +2,8 @@
  * Daily goal: a moderate deficit of 100–300 kcal (burned − eaten).
  *
  *   deficit 100…300  → 'success'   (היעד הושג)
- *   deficit   0…99   → 'almost'    (כמעט — חסרות X קלוריות)
+ *   deficit   0…99   → 'almost'    (day over: the deficit came out X short of the band)
+ *                       'over_budget' while the day is still going on: already ate X past today's budget
  *   deficit   < 0    → 'surplus'   (עודף קלורי)
  *   deficit   > 300  → 'over'      (הגירעון גדול מהיעד)
  *
@@ -103,7 +104,7 @@ export function isValidTarget(t: Partial<DeficitTarget> | null | undefined): t i
   return !!t && Number.isFinite(t.min) && Number.isFinite(t.max) && t.max! > t.min! && t.min! >= -500 && t.max! <= 1000
 }
 
-export type GoalStatus = 'empty' | 'success' | 'almost' | 'surplus' | 'over' | 'room'
+export type GoalStatus = 'empty' | 'success' | 'almost' | 'over_budget' | 'surplus' | 'over' | 'room'
 
 export interface GoalResult {
   status: GoalStatus
@@ -158,13 +159,23 @@ export function evaluateGoal(opts: {
       return { status: 'surplus', deficit, title: 'יותר מהעודף שתכננת', detail: `${fmt(TMIN - deficit)} קק״ל מעל הטווח · מחר מאזנים` }
     }
     if (opts.dayFinal) {
-      return { status: 'almost', deficit, title: 'כמעט שם', detail: `חסרות עוד ${fmt(deficit - TMAX)} קלוריות ליעד` }
+      return { status: 'almost', deficit, title: 'כמעט שם', detail: `העודף יצא קטן ב-${fmt(deficit - TMAX)} קק״ל מהיעד` }
     }
   }
 
   if (deficit >= 0 && deficit < TMIN) {
     const missing = TMIN - deficit
-    return { status: 'almost', deficit, title: 'כמעט שם', detail: `חסרות עוד ${fmt(missing)} קלוריות ליעד` }
+    // Mid-day this means the food so far is already past the day's budget (burned − band): "172
+    // calories missing" would read as "eat 172 more" — the opposite. Say what happened instead.
+    if (!opts.dayFinal) {
+      return {
+        status: 'over_budget',
+        deficit,
+        title: 'מעל התקציב להיום',
+        detail: `${fmt(missing)} קק״ל מעבר לתקציב של גירעון ${range(TMIN, TMAX)} · תנועה עד סוף היום תקטין את הפער`,
+      }
+    }
+    return { status: 'almost', deficit, title: 'כמעט שם', detail: `הגירעון יצא קטן ב-${fmt(missing)} קק״ל מהיעד` }
   }
 
   if (deficit < TMIN) {

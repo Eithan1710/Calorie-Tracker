@@ -23,6 +23,7 @@ export interface TodayActions {
 export const STATUS_STYLE: Record<GoalStatus, { color: string; soft: string; icon: typeof Check }> = {
   success: { color: 'var(--good)', soft: 'var(--good-soft)', icon: Check },
   almost: { color: 'var(--warn)', soft: 'var(--warn-soft)', icon: Clock },
+  over_budget: { color: 'var(--warn)', soft: 'var(--warn-soft)', icon: TriangleAlert },
   surplus: { color: 'var(--surplus)', soft: 'var(--surplus-soft)', icon: TriangleAlert },
   over: { color: 'var(--info)', soft: 'var(--info-soft)', icon: Info },
   room: { color: 'var(--info)', soft: 'var(--info-soft)', icon: ArrowDown },
@@ -32,6 +33,7 @@ export const STATUS_STYLE: Record<GoalStatus, { color: string; soft: string; ico
 const STATUS_SHORT: Record<GoalStatus, string> = {
   success: 'ביעד',
   almost: 'כמעט',
+  over_budget: 'מעל התקציב',
   surplus: 'עודף',
   over: 'גירעון גדול',
   room: 'יש מקום',

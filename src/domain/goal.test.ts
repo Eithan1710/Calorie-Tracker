@@ -62,6 +62,28 @@ describe('day in progress', () => {
   })
 })
 
+describe('day in progress: food already past the budget', () => {
+  // the case from the app: band 350–400, 19:18, burn so far projected 1,804, eaten 1,626 → deficit 178
+  it('says "over today\'s budget by 172", never "172 calories missing" (which reads as "eat more")', () => {
+    const r = evaluateGoal({ eaten: 1626, burned: 1804, hasFood: true, dayFinal: false, target: { min: 350, max: 400 } })
+    expect(r.status).toBe('over_budget')
+    expect(r.title).toBe('מעל התקציב להיום')
+    expect(r.detail).toContain('172')
+    expect(r.detail).toContain('מעבר לתקציב')
+    expect(r.detail).not.toContain('חסרות')
+  })
+  it('the same numbers once the day is over: the deficit came out 172 short', () => {
+    const r = evaluateGoal({ eaten: 1626, burned: 1804, hasFood: true, dayFinal: true, target: { min: 350, max: 400 } })
+    expect(r.status).toBe('almost')
+    expect(r.detail).toContain('172')
+    expect(r.detail).toContain('קטן')
+  })
+  it('in the band, or with room left, nothing changes', () => {
+    expect(evaluateGoal({ eaten: 1430, burned: 1804, hasFood: true, dayFinal: false, target: { min: 350, max: 400 } }).status).toBe('success')
+    expect(evaluateGoal({ eaten: 1200, burned: 1804, hasFood: true, dayFinal: false, target: { min: 350, max: 400 } }).status).toBe('room')
+  })
+})
+
 describe('date keys', () => {
   it('formats local dates and adds days across month boundaries', () => {
     expect(toDateKey(new Date(2026, 0, 5))).toBe('2026-01-05')

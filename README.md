@@ -165,7 +165,7 @@ Sanity checks (tested): 3k steps ≈ BMR × 1.2, 12k steps ≈ BMR × 1.375; 5 k
 
 **Daily goal** ([`src/domain/goal.ts`](src/domain/goal.ts)): deficit = burned − eaten, checked against the
 account's target band (default `100–300`; presets for weight loss 300–500, maintenance ±100, gain 200–400 surplus).
-Default band: `100–300` → success · `0–99` → almost (`חסרות עוד X קלוריות ליעד`) · `< 0` → surplus (gentle wording) ·
+Default band: `100–300` → success · `0–99` → almost (`הגירעון יצא קטן ב-X קק״ל מהיעד`; while the day is still going on: `מעל התקציב להיום` — X kcal past today's budget) · `< 0` → surplus (gentle wording) ·
 `> 300` → "deficit larger than target" — **only once the day is over (after 20:00 or a past day)**; before that
 it shows how many calories are still available. The app never recommends aggressive restriction.
 
