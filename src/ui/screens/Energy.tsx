@@ -53,7 +53,7 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
         { key: 'resting', label: 'מנוחה', value: e.resting.kcal, color: 'var(--resting)', apple: e.resting.source === 'apple' },
         { key: 'active', label: 'פעילה', value: e.active.kcal, color: 'var(--active)', apple: e.active.source === 'apple' },
         ...(e.extra > 0 ? [{ key: 'extra', label: 'אימון שלא נמדד', value: e.extra, color: 'var(--warn)', apple: false }] : []),
-        ...(e.routine > 0 ? [{ key: 'routine', label: 'שגרה יומית', value: e.routine, color: 'var(--ink-2)', apple: false }] : []),
+        ...(e.routineSoFar > 0 ? [{ key: 'routine', label: 'שגרה יומית', value: e.routineSoFar, color: 'var(--ink-2)', apple: false }] : []),
         ...(e.tef > 0 ? [{ key: 'tef', label: 'עיכול מזון', value: e.tef, color: 'var(--ink-3)', apple: false }] : []),
       ]
     : [
@@ -127,7 +127,7 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
         מה המספרים אומרים
         <ChevronDown className={`size-4 transition-transform ${why ? 'rotate-180' : ''}`} aria-hidden />
       </button>
-      {why && <EnergyExplainer e={e} />}
+      {why && <EnergyExplainer e={e} date={s.date} />}
     </section>
   )
 }
@@ -192,20 +192,20 @@ export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: bo
 }
 
 /** How the daily-routine row is calculated (iPhone alone doesn't see it). */
-function RoutineExplainer({ kcal }: { kcal: number }) {
+function RoutineExplainer({ date, kcal }: { date: string; kcal: number }) {
   const weightKg = useStore((st) => st.settings.profile?.weightKg)
   if (!weightKg) return null
-  const r = routineEnergy({ weightKg })
+  const r = routineEnergy({ weightKg }, date)
   return (
     <div data-testid="routine-explainer">
       <p>
-        <b>שגרה יומית</b> — קימה, צחצוח שיניים, מקלחת והתלבשות קורים כשהטלפון לא עליך, אז האייפון לא רואה אותם. מחושב לפי ערכי MET מקובלים (Compendium of Physical Activities): (MET − 1) × משקל × זמן.
+        <b>שגרה יומית</b> — קימה, צחצוח שיניים, מקלחת, התלבשות והשעות במשרד (א׳–ה׳) קורים כשהטלפון לא עליך, אז האייפון לא רואה אותם. מחושב לפי ערכי MET מקובלים (Compendium of Physical Activities): (MET − 1) × משקל × זמן — רק מה שמעל המנוחה.
       </p>
       <ul className="mt-1 flex flex-col gap-0.5 ps-1 text-xs text-ink-3">
         {r.items.map((a) => (
           <li key={a.id} className="flex justify-between gap-3">
             <span>
-              {a.label} · {a.minutes} דק׳ · MET {a.met}
+              {a.label} · {a.minutes >= 120 ? `${a.minutes / 60} שעות` : `${a.minutes} דק׳`} · MET {a.met}
             </span>
             <span className="num">{fmt(a.kcal)}</span>
           </li>
@@ -220,7 +220,7 @@ function RoutineExplainer({ kcal }: { kcal: number }) {
   )
 }
 
-function EnergyExplainer({ e }: { e: DayEnergy }) {
+function EnergyExplainer({ e, date }: { e: DayEnergy; date: string }) {
   const apple = e.mode === 'health'
   return (
     <div className="mt-1 flex flex-col gap-2 rounded-2xl bg-surface-2 p-3 text-sm leading-relaxed text-ink-2">
@@ -236,7 +236,7 @@ function EnergyExplainer({ e }: { e: DayEnergy }) {
             : 'כפי ש-Apple Health מדווח מה-Apple Watch — כולל האימונים ותנועות השגרה, כי השעון מודד כל תנועה.'
           : `מוערכת לפי הצעדים והאימונים שנרשמו, ועוד כ-${fmt(e.estimate.baseline)} קק״ל של תנועת שגרה (קימה, מקלחת, התלבשות, סידורים — כ-5% מהמנוחה).`}
       </p>
-      {e.routine > 0 && <RoutineExplainer kcal={e.routine} />}
+      {e.routine > 0 && <RoutineExplainer date={date} kcal={e.routine} />}
       <p>
         <b>אימונים</b> —{' '}
         {apple && e.active.source === 'apple'

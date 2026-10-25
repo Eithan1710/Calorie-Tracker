@@ -219,13 +219,16 @@ test('Apple Health: resting + active energy and an imported Strava run, no doubl
 
   const energy = page.getByRole('region', { name: 'שריפה היום' })
   // no Apple Watch seen (the run came from Strava) → iPhone alone: the daily routine it can't see
-  // is added — (MET − 1) × 82 kg × time: bed 2.3·3′ + teeth 1·6′ + shower 1·10′ + dressing 1.5·6′ ≈ 44
+  // is added — (MET − 1) × 82 kg × time: bed 2.3·3′ + teeth 1·6′ + shower 1·10′ + dressing 1.5·6′ ≈ 44,
+  // and on a work day (Tuesday) 9 h at the office, 0.5 × 82 × 9 = 369 → 413 for the day.
+  // At 12:30 half of the office hours (08–17) are done: 44 + 185 = 228 so far.
   await expect(energy.getByText('שגרה יומית')).toBeVisible()
-  await expect(energy.getByTestId('energy-total')).toHaveText(/1,564/) // 1,100 + 420 + 44
-  await expect(hero(page)).toContainText('2,576') // 2,112 + 420 + 44
+  await expect(energy.getByTestId('energy-total')).toHaveText(/1,748/) // 1,100 + 420 + 228
+  await expect(hero(page)).toContainText('2,945') // 2,112 + 420 + 413
   await energy.getByRole('button', { name: 'מה המספרים אומרים' }).click()
   await expect(energy.getByTestId('routine-explainer')).toContainText('מקלחת')
-  await expect(energy.getByTestId('routine-explainer')).toContainText('44')
+  await expect(energy.getByTestId('routine-explainer')).toContainText('משרד')
+  await expect(energy.getByTestId('routine-explainer')).toContainText('413')
 
   // with an Apple Watch the watch measures the routine itself → nothing is added
   await page.getByRole('button', { name: 'הגדרות' }).click()
@@ -538,22 +541,23 @@ test('weight: the energy balance between the two weigh-ins uses the same daily n
   await login(page, 'איתן', '123456')
   await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
   await openWeight(page)
-  // each day: 1,500 resting + 300 active + 32 daily routine (iPhone alone) + 167 digestion (25% P · 7.5% C · 2% F) − 1,600 eaten = 399
+  // each day: 1,500 resting + 300 active + 32 daily routine (iPhone alone) + 167 digestion (25% P · 7.5% C · 2% F) − 1,600 eaten = 399,
+  // + 270 office hours on the 5 work days (Sun–Thu) → 670
   const b = page.getByTestId('weighin-balance')
   await expect(b).toContainText('7 ימים')
-  await expect(b).toContainText('גירעון מצטבר של 2,793')
-  await expect(b).toContainText('399') // per day
-  await expect(b).toContainText('0.36') // ≈ kg of fat at 7,700 kcal/kg
+  await expect(b).toContainText('גירעון מצטבר של 4,148')
+  await expect(b).toContainText('593') // per day
+  await expect(b).toContainText('0.54') // ≈ kg of fat at 7,700 kcal/kg
   await expect(b).toContainText('−0.9') // what the scale says
   await page.screenshot({ path: 'docs/screenshots/accounts-weighin-balance.png' })
 
   // the server copy of each day (mz_daily_summaries) matches what the app shows…
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(1999)
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2270)
   // …and follows Apple Health energy that arrives later for a day already logged
   sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-05' ? { ...r, active_kcal: 500, updated_at: '2026-10-06T09:00:00Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2199)
-  await expect(b).toContainText('גירעון מצטבר של 2,993')
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2470)
+  await expect(b).toContainText('גירעון מצטבר של 4,348')
 
   // a day without food is not counted as 0 kcal eaten: no comparison then
   sb.tables.mz_food_entries = sb.rows('mz_food_entries').map((r) => (r.date === '2026-10-02' ? { ...r, deleted_at: '2026-10-06T09:30:00Z', updated_at: '2026-10-06T09:30:00Z' } : r))

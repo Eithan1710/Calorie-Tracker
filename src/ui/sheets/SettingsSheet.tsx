@@ -65,7 +65,7 @@ function HealthDeviceField() {
       />
       <p className="text-sm text-ink-3" data-testid="health-device-note">
         {device === 'phone'
-          ? `האייפון לא רואה קימה, מקלחת והתלבשות — מתווסף ${weightKg ? `כ-${fmt(routineEnergy({ weightKg }).kcal)} קק״ל` : 'חישוב'} ״שגרה יומית״ ליום עם נתוני Apple Health.`
+          ? `האייפון לא רואה קימה, מקלחת, התלבשות ושעות במשרד בלי הטלפון — מתווספת ״שגרה יומית״${weightKg ? ` (כ-${fmt(routineEnergy({ weightKg }, '2026-10-25').kcal)} קק״ל ביום עבודה, כ-${fmt(routineEnergy({ weightKg }, '2026-10-24').kcal)} בשישי–שבת)` : ''} לימים עם נתוני Apple Health.`
           : 'השעון מודד גם את תנועות השגרה, אז לא מתווסף עליהן כלום.'}
       </p>
     </div>

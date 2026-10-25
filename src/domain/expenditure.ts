@@ -97,6 +97,8 @@ export interface DayEnergy {
   extra: number
   /** daily-routine movement (getting up, shower, dressing…) an iPhone alone doesn't measure — see routine.ts */
   routine: number
+  /** the part of it done by the snapshot (office hours count as they pass) */
+  routineSoFar: number
   /** thermic effect of food: estimate mode = 10% model add-on; Apple mode = from the macros eaten */
   tef: number
   workouts: WorkoutEnergy[]
@@ -270,6 +272,7 @@ export function dayEnergy(opts: {
       active: { kcal: Math.round(baseline + stepsKcal + exerciseNet), source: 'estimate' },
       extra: 0,
       routine: 0, // the baseline-movement term already covers it
+      routineSoFar: 0,
       tef: estimate.tef,
       workouts: opts.workouts.map((w) => ({ id: w.id, ...pickW(energies.get(w.id)!), counting: dup.has(w.id) ? 'duplicate' : 'added', duplicateOf: dup.get(w.id) })),
       workoutKcal,
@@ -312,9 +315,10 @@ export function dayEnergy(opts: {
 
   const tef = foodTef(opts.intake)
   // only next to Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
-  // counted for the whole day from the start (most of it is the morning routine), so the rows on
-  // screen keep adding up to "burned so far"
-  const routine = hasActive && opts.phoneOnly ? routineEnergy(p).kcal : 0
+  // full day for the balance; "so far" counts what was done by the snapshot (office hours as they pass)
+  const r = hasActive && opts.phoneOnly ? routineEnergy(p, opts.date, minutes) : null
+  const routine = r?.kcal ?? 0
+  const routineSoFar = r?.soFar ?? 0
 
   return {
     mode: 'health',
@@ -322,10 +326,11 @@ export function dayEnergy(opts: {
     active: { kcal: Math.round(active), source: hasActive ? 'apple' : 'estimate' },
     extra: Math.round(extra),
     routine: Math.round(routine),
+    routineSoFar: Math.round(routineSoFar),
     tef: Math.round(tef),
     workouts: lines,
     workoutKcal,
-    soFar: Math.round(restingSoFar + active + extra + routine + tef),
+    soFar: Math.round(restingSoFar + active + extra + routineSoFar + tef),
     total: Math.round(restingFull + active + extra + routine + tef),
     partial: !complete,
     coverageMinutes: minutes,
