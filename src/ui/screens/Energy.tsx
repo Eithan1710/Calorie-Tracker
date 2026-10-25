@@ -9,6 +9,7 @@ import { AnimatedNumber } from '../primitives'
 import { fmt, fmtPace, KCAL } from '../format'
 import { EXERCISE_META } from '../exerciseMeta'
 import { stepGoalOf, stepProgress } from '../../domain/steps'
+import { routineEnergy } from '../../domain/routine'
 
 const timeHM = (iso: string) => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
 
@@ -52,6 +53,7 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
         { key: 'resting', label: 'מנוחה', value: e.resting.kcal, color: 'var(--resting)', apple: e.resting.source === 'apple' },
         { key: 'active', label: 'פעילה', value: e.active.kcal, color: 'var(--active)', apple: e.active.source === 'apple' },
         ...(e.extra > 0 ? [{ key: 'extra', label: 'אימון שלא נמדד', value: e.extra, color: 'var(--warn)', apple: false }] : []),
+        ...(e.routine > 0 ? [{ key: 'routine', label: 'שגרה יומית', value: e.routine, color: 'var(--ink-2)', apple: false }] : []),
         ...(e.tef > 0 ? [{ key: 'tef', label: 'עיכול מזון', value: e.tef, color: 'var(--ink-3)', apple: false }] : []),
       ]
     : [
@@ -189,6 +191,35 @@ export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: bo
   )
 }
 
+/** How the daily-routine row is calculated (iPhone alone doesn't see it). */
+function RoutineExplainer({ kcal }: { kcal: number }) {
+  const weightKg = useStore((st) => st.settings.profile?.weightKg)
+  if (!weightKg) return null
+  const r = routineEnergy({ weightKg })
+  return (
+    <div data-testid="routine-explainer">
+      <p>
+        <b>שגרה יומית</b> — קימה, צחצוח שיניים, מקלחת והתלבשות קורים כשהטלפון לא עליך, אז האייפון לא רואה אותם. מחושב לפי ערכי MET מקובלים (Compendium of Physical Activities): (MET − 1) × משקל × זמן.
+      </p>
+      <ul className="mt-1 flex flex-col gap-0.5 ps-1 text-xs text-ink-3">
+        {r.items.map((a) => (
+          <li key={a.id} className="flex justify-between gap-3">
+            <span>
+              {a.label} · {a.minutes} דק׳ · MET {a.met}
+            </span>
+            <span className="num">{fmt(a.kcal)}</span>
+          </li>
+        ))}
+        <li className="flex justify-between gap-3 font-semibold text-ink-2">
+          <span>סה״כ</span>
+          <span className="num">{fmt(kcal)}</span>
+        </li>
+      </ul>
+      <p className="mt-1 text-xs text-ink-3">יש לך Apple Watch? אפשר לשנות בהגדרות ← צעדים, ואז זה לא יתווסף (השעון מודד את זה בעצמו).</p>
+    </div>
+  )
+}
+
 function EnergyExplainer({ e }: { e: DayEnergy }) {
   const apple = e.mode === 'health'
   return (
@@ -200,9 +231,12 @@ function EnergyExplainer({ e }: { e: DayEnergy }) {
       <p>
         <b>פעילה</b> — כל מה שמעל המנוחה: הליכה, תנועה ואימונים.{' '}
         {e.active.source === 'apple'
-          ? 'כפי ש-Apple Health מדווח — כולל האימונים מהשעון, מ-Strava ומ-Hevy, וגם תנועות השגרה (קימה, מקלחת, התלבשות, סידורים), כי הוא מודד כל תנועה ולא רק צעדים.'
+          ? e.routine > 0
+            ? 'כפי ש-Apple Health מדווח מהאייפון: הליכה (כשהטלפון עליך) והאימונים ש-Hevy / Strava כותבים אליו.'
+            : 'כפי ש-Apple Health מדווח מה-Apple Watch — כולל האימונים ותנועות השגרה, כי השעון מודד כל תנועה.'
           : `מוערכת לפי הצעדים והאימונים שנרשמו, ועוד כ-${fmt(e.estimate.baseline)} קק״ל של תנועת שגרה (קימה, מקלחת, התלבשות, סידורים — כ-5% מהמנוחה).`}
       </p>
+      {e.routine > 0 && <RoutineExplainer kcal={e.routine} />}
       <p>
         <b>אימונים</b> —{' '}
         {apple && e.active.source === 'apple'
@@ -216,7 +250,7 @@ function EnergyExplainer({ e }: { e: DayEnergy }) {
       ) : null}
       {apple ? (
         <p>
-          <b>סה״כ</b> = מנוחה + פעילה + עיכול מזון. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
+          <b>סה״כ</b> = מנוחה + פעילה{e.routine > 0 ? ' + שגרה יומית' : ''} + עיכול מזון. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
         </p>
       ) : (
         <p>

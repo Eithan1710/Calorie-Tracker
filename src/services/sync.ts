@@ -10,6 +10,7 @@ import { isValidProfile } from '../domain/energy'
 import { dayTarget, isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
 import { uploadPendingPhotos } from './photos'
 import { isValidStepGoal } from '../domain/steps'
+import { healthDeviceOf } from '../domain/routine'
 
 /**
  * Offline-first sync with Supabase (optional).
@@ -266,6 +267,7 @@ async function push() {
         profile: st.settings.profile,
         proteinTarget: st.settings.proteinTarget,
         target: dayTarget(st.settings),
+        phoneOnly: healthDeviceOf(st.settings, Object.values(st.exercise)) === 'phone',
       })
       return {
         user_id: userId,
@@ -291,10 +293,11 @@ async function push() {
 /** Days whose cached summary must be rewritten on the next push (Apple Health data arrived, …). */
 const summaryRefresh = new Set<string>()
 /**
- * Bumped when summaries written by older versions may be stale: version 2 = summaries now follow
+ * Bumped when summaries written by older versions may be stale: version 3 = daily-routine movement
+ * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 2
+const SUMMARIES_VERSION = 3
 
 function queueSummaryBackfill() {
   const st = getState()
@@ -387,7 +390,7 @@ function reconcileWeights(rows: WeightRow[]) {
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device'] as const
 
 async function syncProfile() {
   const sb = await getSupabase()
@@ -414,6 +417,8 @@ async function syncProfile() {
       customDeficit: data.custom_deficit_min != null && data.custom_deficit_max != null && isValidTarget(custom) ? custom : st.customDeficit,
       // step_goal: null = the default goal; column absent before 20261023000100 → keep this device's
       stepGoal: data.step_goal === undefined ? st.stepGoal : isValidStepGoal(data.step_goal) ? data.step_goal : undefined,
+      // health_device: null = not chosen (inferred); column absent before 20261025000000 → keep this device's
+      healthDevice: data.health_device === undefined ? st.healthDevice : data.health_device === 'phone' || data.health_device === 'watch' ? data.health_device : undefined,
       profileUpdatedAt: new Date(serverAt).toISOString(),
     })
     return
@@ -442,6 +447,7 @@ async function syncProfile() {
       custom_deficit_min: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.min) : null,
       custom_deficit_max: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.max) : null,
       step_goal: isValidStepGoal(st.stepGoal) ? st.stepGoal : null,
+      health_device: st.healthDevice ?? null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {

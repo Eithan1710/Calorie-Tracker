@@ -16,6 +16,9 @@
  *      The only exception is a manual workout the user marked as not measured
  *      by Apple Health — its estimate is added (and nothing else).
  *    • No BMR estimate is added on top of Apple's Resting Energy.
+ *    • Active Energy from an iPhone alone misses daily-routine movement done without the
+ *      phone (getting up, shower, dressing): with no Apple Watch that is added from
+ *      Compendium METs (routine.ts). A watch measures it, so nothing is added then.
  *    • Apple does not count the energy of digesting food (thermic effect of food,
  *      TEF): Resting Energy is a BMR-type estimate and Active Energy is movement.
  *      So TEF is added from what was actually eaten, per macronutrient
@@ -49,6 +52,7 @@ import {
   bmrMifflinStJeor, BASELINE_NEAT_FRACTION, estimateWorkoutSteps, stepsNetKcal, TEF_FRACTION, workoutDisplay, workoutEstimate,
   type DailyBurnBreakdown, type ExerciseInput, type ExerciseType, type Profile,
 } from './energy'
+import { routineEnergy } from './routine'
 
 export interface HealthEnergyDay {
   active_kcal?: number | null
@@ -91,6 +95,8 @@ export interface DayEnergy {
   active: { kcal: number; source: ComponentSource }
   /** manual workouts Apple Health did not measure (added on top of Apple's active energy) */
   extra: number
+  /** daily-routine movement (getting up, shower, dressing…) an iPhone alone doesn't measure — see routine.ts */
+  routine: number
   /** thermic effect of food: estimate mode = 10% model add-on; Apple mode = from the macros eaten */
   tef: number
   workouts: WorkoutEnergy[]
@@ -222,6 +228,8 @@ export function dayEnergy(opts: {
   health?: HealthEnergyDay | null
   /** what was eaten (grams) — for the digestion energy in Apple Health mode */
   intake?: MacroIntake | null
+  /** Active Energy comes from an iPhone alone (no Apple Watch): add the daily-routine movement it misses */
+  phoneOnly?: boolean
   now?: Date
 }): DayEnergy {
   const p = opts.profile
@@ -261,6 +269,7 @@ export function dayEnergy(opts: {
       resting: { kcal: estimate.bmr, fullDay: estimate.bmr, source: 'estimate' },
       active: { kcal: Math.round(baseline + stepsKcal + exerciseNet), source: 'estimate' },
       extra: 0,
+      routine: 0, // the baseline-movement term already covers it
       tef: estimate.tef,
       workouts: opts.workouts.map((w) => ({ id: w.id, ...pickW(energies.get(w.id)!), counting: dup.has(w.id) ? 'duplicate' : 'added', duplicateOf: dup.get(w.id) })),
       workoutKcal,
@@ -302,17 +311,22 @@ export function dayEnergy(opts: {
   }
 
   const tef = foodTef(opts.intake)
+  // only next to Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
+  // counted for the whole day from the start (most of it is the morning routine), so the rows on
+  // screen keep adding up to "burned so far"
+  const routine = hasActive && opts.phoneOnly ? routineEnergy(p).kcal : 0
 
   return {
     mode: 'health',
     resting: { kcal: Math.round(restingSoFar), fullDay: Math.round(restingFull), source: hasResting ? 'apple' : 'estimate' },
     active: { kcal: Math.round(active), source: hasActive ? 'apple' : 'estimate' },
     extra: Math.round(extra),
+    routine: Math.round(routine),
     tef: Math.round(tef),
     workouts: lines,
     workoutKcal,
-    soFar: Math.round(restingSoFar + active + extra + tef),
-    total: Math.round(restingFull + active + extra + tef),
+    soFar: Math.round(restingSoFar + active + extra + routine + tef),
+    total: Math.round(restingFull + active + extra + routine + tef),
     partial: !complete,
     coverageMinutes: minutes,
     asOf,

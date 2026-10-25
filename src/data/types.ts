@@ -1,6 +1,7 @@
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
 import type { ExerciseType, Intensity, Lift, MuscleGroup, Profile, RestStyle } from '../domain/energy'
 import type { CalorieMode, DeficitTarget, GoalPhase } from '../domain/goal'
+import type { HealthDevice } from '../domain/routine'
 
 export type { Analysis, FoodItem, Totals, Lift, MuscleGroup }
 
@@ -104,6 +105,8 @@ export interface Settings {
   calorieMode?: CalorieMode
   /** the user's own band of deficit (positive) or surplus (negative), kcal; kept when switching phase or mode */
   customDeficit?: DeficitTarget
+  /** what measures Active Energy: iPhone alone / Apple Watch (absent = inferred, see domain/routine.ts) */
+  healthDevice?: HealthDevice
   /** daily step goal (absent = the default, 8,000) */
   stepGoal?: number
   /** when profile/targets last changed on this device (for cross-device sync) */

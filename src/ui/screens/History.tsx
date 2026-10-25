@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore, foodForDate, exercisesForDate } from '../../data/store'
 import { summarizeDay, type DaySummary } from '../../domain/day'
 import { addDays, bandLabel, dayTarget, isDayFinal, toDateKey } from '../../domain/goal'
+import { healthDeviceOf } from '../../domain/routine'
 import { Segmented } from '../primitives'
 import { dateLong, dateShort, fmt, fmtBalance, KCAL, weekdayShort } from '../format'
 import { STATUS_STYLE } from './Today'
@@ -17,6 +18,7 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
   const today = toDateKey(new Date())
 
   const target = useMemo(() => dayTarget(settings), [settings])
+  const phoneOnly = useMemo(() => healthDeviceOf(settings, Object.values(exercise)) === 'phone', [settings, exercise])
   const days: DaySummary[] = useMemo(() => {
     const st = { food, exercise }
     return Array.from({ length: range }, (_, i) => {
@@ -30,9 +32,10 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
         profile: settings.profile,
         proteinTarget: settings.proteinTarget,
         target,
+        phoneOnly,
       })
     })
-  }, [food, exercise, health, settings, range, today, target])
+  }, [food, exercise, health, settings, range, today, target, phoneOnly])
 
   const { min: TARGET_MIN, max: TARGET_MAX } = target
   const targetHint = bandLabel(target)

@@ -4,6 +4,7 @@ import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight,
 import type { WeightEntry } from '../../data/types'
 import { addDays, dayTarget, toDateKey } from '../../domain/goal'
 import { summarizeDay } from '../../domain/day'
+import { healthDeviceOf } from '../../domain/routine'
 import { balanceBetweenWeighins, KCAL_PER_KG_FAT } from '../../domain/weighinBalance'
 import { dayNum, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
@@ -228,6 +229,7 @@ function SinceLastWeighin({ previous, latest }: { previous: WeightPoint; latest:
     const n = dayNum(latest.date) - dayNum(previous.date)
     if (n < 1 || n > 42) return null
     const target = dayTarget(settings)
+    const phoneOnly = healthDeviceOf(settings, Object.values(exercise)) === 'phone'
     const days = Array.from({ length: n }, (_, i) => {
       const date = addDays(previous.date, i)
       return summarizeDay({
@@ -239,6 +241,7 @@ function SinceLastWeighin({ previous, latest }: { previous: WeightPoint; latest:
         profile: settings.profile,
         proteinTarget: settings.proteinTarget,
         target,
+        phoneOnly,
       })
     })
     return balanceBetweenWeighins({ previous, latest, days })

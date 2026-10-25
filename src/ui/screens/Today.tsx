@@ -4,6 +4,7 @@ import { exercisesForDate, foodForDate, useStore } from '../../data/store'
 import { MEALS, type Exercise, type FoodEntry } from '../../data/types'
 import { summarizeDay, type DaySummary } from '../../domain/day'
 import { addDays, bandLabel, dayTarget, toDateKey, type GoalStatus } from '../../domain/goal'
+import { healthDeviceOf } from '../../domain/routine'
 import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { usePhotoUrl } from '../../services/photos'
@@ -52,7 +53,7 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
     return {
       food: f,
       exercises: ex,
-      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings) }),
+      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings), phoneOnly: healthDeviceOf(settings, Object.values(exercise)) === 'phone' }),
     }
   }, [food, exercise, health, settings, date])
 }

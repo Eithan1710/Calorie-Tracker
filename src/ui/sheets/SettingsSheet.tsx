@@ -12,6 +12,7 @@ import { InstallApp } from '../InstallApp'
 import { getSyncStatus, onSyncStatus, pushProfile, pushWeightsNow, syncNow } from '../../services/sync'
 import { disableReminders, enableReminders, notificationSupport } from '../../services/notifications'
 import { HealthConnect, StepGoalField } from './StepsSheet'
+import { healthDeviceOf, routineEnergy, type HealthDevice } from '../../domain/routine'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
 import { fmt, KCAL } from '../format'
@@ -34,6 +35,39 @@ export function ProfileFields({ value, onChange }: { value: Partial<Profile>; on
         <NumberField label="גובה" unit="ס״מ" value={value.heightCm ?? ''} onChange={(v) => onChange({ ...value, heightCm: v === '' ? undefined : v })} inputMode="numeric" min={120} max={230} />
         <NumberField label="משקל" unit="ק״ג" value={value.weightKg ?? ''} onChange={(v) => onChange({ ...value, weightKg: v === '' ? undefined : v })} step={0.1} min={35} max={250} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * What measures Active Energy. iPhone alone → the app adds the daily routine the phone can't see
+ * (getting up, shower, dressing); Apple Watch measures it itself → nothing is added.
+ */
+function HealthDeviceField() {
+  const settings = useStore((s) => s.settings)
+  const exercise = useStore((s) => s.exercise)
+  const device = healthDeviceOf(settings, Object.values(exercise))
+  const weightKg = settings.profile?.weightKg
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Segmented<HealthDevice>
+        label="מה מודד את הפעילות"
+        value={device}
+        onChange={(v) => {
+          // the cached server copy of each day is recomputed with the new rule on the next sync
+          updateSettings({ healthDevice: v, summariesVersion: undefined })
+          void pushProfile()
+        }}
+        options={[
+          { value: 'phone', label: 'אייפון בלבד' },
+          { value: 'watch', label: 'גם Apple Watch' },
+        ]}
+      />
+      <p className="text-sm text-ink-3" data-testid="health-device-note">
+        {device === 'phone'
+          ? `האייפון לא רואה קימה, מקלחת והתלבשות — מתווסף ${weightKg ? `כ-${fmt(routineEnergy({ weightKg }).kcal)} קק״ל` : 'חישוב'} ״שגרה יומית״ ליום עם נתוני Apple Health.`
+          : 'השעון מודד גם את תנועות השגרה, אז לא מתווסף עליהן כלום.'}
+      </p>
     </div>
   )
 }
@@ -147,6 +181,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
         <section className="flex flex-col gap-2">
           <h3 className="font-semibold">צעדים</h3>
           <StepGoalField />
+          <HealthDeviceField />
           <HealthConnect />
         </section>
 

@@ -14,6 +14,8 @@ insert into public.mz_profiles (user_id, kcal_min, kcal_max) values ('00000000-0
 \ir ../migrations/20261020100000_custom_deficit.sql
 \ir ../migrations/20261023000100_step_goal.sql
 \ir ../migrations/20261023000100_step_goal.sql
+\ir ../migrations/20261025000000_health_device.sql
+\ir ../migrations/20261025000000_health_device.sql
 do $$
 declare
   u1 constant uuid := '00000000-0000-0000-0000-0000000000e1';
@@ -57,5 +59,11 @@ begin
   begin update public.mz_profiles set step_goal = 120000 where user_id = u1; ok := true; exception when check_violation then ok := false; end;
   if ok then raise exception '9d: huge step goal accepted'; end if;
   if (select custom_deficit_min from public.mz_profiles where user_id = u1) <> -400 then raise exception '9e: band changed'; end if;
+  -- health device: optional, two values
+  update public.mz_profiles set health_device = 'phone' where user_id = u1;
+  update public.mz_profiles set health_device = 'watch' where user_id = u1;
+  update public.mz_profiles set health_device = null where user_id = u1;
+  begin update public.mz_profiles set health_device = 'fitbit' where user_id = u1; ok := true; exception when check_violation then ok := false; end;
+  if ok then raise exception '10: unknown device accepted'; end if;
   raise notice 'calorie range checks passed';
 end $$;
