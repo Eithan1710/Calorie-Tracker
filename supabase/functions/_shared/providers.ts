@@ -277,7 +277,7 @@ export class OpenAICompatProvider implements NutritionAIProvider {
 
 // ── Factory ───────────────────────────────────────────────────────────────
 
-export const DEFAULT_GEMINI_MODELS = 'gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash'
+export const DEFAULT_GEMINI_MODELS = 'gemini-3.5-flash,gemini-3-flash-preview' // gemini-2.5-flash: 404 since Oct 2026
 /**
  * Groq renames its preview models often (qwen3.6 → qwen3.8 returned 404 on 26.10.2026): a list, tried
  * in order on 404. qwen3.8-27b is multimodal + JSON mode (preview); gpt-oss-120b is production, text only.
