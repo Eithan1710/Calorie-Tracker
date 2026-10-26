@@ -575,6 +575,7 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   const energy = page.getByRole('region', { name: 'שריפה היום' })
   // the full-day burn as the screen reader line states it (not the animated number)
   const burned = async () => Number(/נשרפו ([\d,]+)/.exec((await hero(page).textContent()) ?? '')?.[1].replace(/,/g, ''))
+  await expect(energy.getByTestId('energy-status')).toContainText('Apple Health') // the day's Apple data has arrived
   const before = await burned()
 
   // the weekly work schedule, once: Sun–Thu 09:30–18:00, phone with me 12:00–13:00 (the defaults)
