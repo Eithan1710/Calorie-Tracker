@@ -1,0 +1,20 @@
+# Temporary: are the AI fallbacks reachable? Prints only HTTP status codes, never keys or bodies.
+name: Debug AI probe
+on:
+  push:
+    branches: ['debug/ai-probe']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          q() { curl -s -o /dev/null -w '%{http_code}' https://api.groq.com/openai/v1/chat/completions -H "authorization: Bearer $GROQ_API_KEY" -H 'content-type: application/json' -d "{\"model\":\"$1\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"; }
+          for m in qwen/qwen3.6-27b qwen/qwen3.8-27b openai/gpt-oss-120b; do echo "::notice::groq $m → $(q $m)"; done
+          for m in gemini-3.5-flash gemini-3-flash-preview gemini-2.5-flash; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent" -H "x-goog-api-key: $GEMINI_API_KEY" -H 'content-type: application/json' -d '{"contents":[{"parts":[{"text":"hi"}]}]}')
+            echo "::notice::gemini $m → $c"
+          done
