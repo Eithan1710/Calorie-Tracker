@@ -627,7 +627,10 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   await expect(page.getByText(/כבר בתוך Apple Health/)).toBeVisible()
   await expect.poll(() => sb.rows('mz_exercises', u.id).length).toBe(2)
   expect(sb.rows('mz_exercises', u.id).find((r) => r.type === 'strength')?.outside_health ?? false).toBe(false)
-  expect(await burned()).toBe(total1)
+  // nothing added for the gym; its hour simply isn't also costed as sitting at home (a few kcal less, never more)
+  const afterGym = await burned()
+  expect(afterGym).toBeLessThanOrEqual(total1)
+  expect(total1 - afterGym).toBeLessThan(30)
   // "no" is remembered for the day
   await check.getByRole('button', { name: /ריצה/ }).click()
   await check.getByRole('button', { name: 'לא היום' }).click()
