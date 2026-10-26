@@ -640,6 +640,30 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   await expect(page.getByTestId('activity-check')).toHaveCount(0)
 })
 
+test('a device that synced the profile with an older app version still gets the work schedule (same timestamp)', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  const at = '2026-10-06T07:47:20.222Z'
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { weight_kg: 59.5, updated_at: at, routine_schedule: { days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] } }))
+  ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: '2026-10-06', steps: 3400, source: 'shortcut', active_kcal: 89, resting_kcal: 820, health_as_of: '2026-10-06T12:30:00+03:00', updated_at: '2026-10-06T09:30:05Z' })
+  // what the older app left on the phone: the profile with the server's timestamp, but no schedule
+  await page.addInitScript(
+    ([key, settings]) => {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, settings)
+    },
+    [`maazan:settings:${u.id}`, JSON.stringify({ profile: { sex: 'male', age: 32, heightCm: 178, weightKg: 59.5 }, proteinTarget: 120, deficitTarget: { min: 100, max: 300 }, remindersEnabled: false, reminderTime: '21:30', profileUpdatedAt: at, summariesVersion: 5 })] as const,
+  )
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  const energy = page.getByRole('region', { name: 'שריפה היום' })
+  await energy.getByRole('button', { name: 'מה המספרים אומרים' }).click()
+  await expect(energy.getByTestId('routine-explainer')).toContainText('09:30–12:00, 13:00–18:00')
+  // the server's copy of the day is rewritten with the work hours
+  await expect.poll(() => (sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-06')?.energy_breakdown as { no_phone_minutes?: number } | undefined)?.no_phone_minutes).toBe(450)
+  // and nothing is pushed back over the server's profile
+  expect(sb.rows('mz_profiles', u.id)[0].updated_at).toBe(at)
+})
+
 // ── daily step goal ──────────────────────────────────────────────────────────
 
 test('step goal: saved to the account, progress from the Apple Health steps already collected, back on another device', async ({ page, browser }) => {

@@ -315,13 +315,14 @@ async function push() {
 /** Days whose cached summary must be rewritten on the next push (Apple Health data arrived, …). */
 const summaryRefresh = new Set<string>()
 /**
- * Bumped when summaries written by older versions may be stale: version 5 = work schedule + breakdown;
+ * Bumped when summaries written by older versions may be stale: version 6 = work schedule reaches devices
+ * that synced it with an older app; version 5 = work schedule + breakdown;
  * version 4 = office hours in the routine;
  * version 3 = daily-routine movement
  * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 5
+const SUMMARIES_VERSION = 6
 
 function queueSummaryBackfill() {
   const st = getState()
@@ -416,6 +417,21 @@ function reconcileWeights(rows: WeightRow[]) {
  */
 const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule'] as const
 
+/** JSON with sorted keys (and undefined = null), so the same value always compares equal */
+function stableJson(v: unknown): string {
+  if (v === undefined || v === null) return 'null'
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    return `{${Object.keys(o)
+      .filter((k) => o[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(o[k])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(v)
+}
+
 async function syncProfile() {
   const sb = await getSupabase()
   const userId = currentUser()
@@ -427,11 +443,14 @@ async function syncProfile() {
   const localAt = st.profileUpdatedAt ? Date.parse(st.profileUpdatedAt) : 0
   const serverAt = data?.updated_at ? Date.parse(data.updated_at) : 0
 
-  if (data && (!isValidProfile(st.profile) || serverAt > localAt)) {
+  // Same timestamp on both sides normally means "in sync" — but a device that synced with an older
+  // app version stored only the fields that version knew (e.g. no work schedule), with the server's
+  // timestamp. So on an equal timestamp the server copy is still read, and applied where it differs.
+  if (data && (!isValidProfile(st.profile) || serverAt >= localAt)) {
     const target = { min: Number(data.deficit_min ?? 100), max: Number(data.deficit_max ?? 300) }
     const custom = { min: Number(data.custom_deficit_min), max: Number(data.custom_deficit_max) }
     const phase = TARGET_PRESETS.some((t) => t.id === data.goal_phase) ? (data.goal_phase as GoalPhase) : st.goalPhase
-    updateSettings({
+    const next = {
       profile: { sex: data.sex, age: Number(data.age), heightCm: Number(data.height_cm), weightKg: Number(data.weight_kg) },
       proteinTarget: Number(data.protein_target_g ?? 120),
       deficitTarget: isValidTarget(target) ? target : st.deficitTarget,
@@ -446,7 +465,13 @@ async function syncProfile() {
       // routine_schedule: null = no work schedule; column absent before 20261026000000 → keep this device's
       officeSchedule: data.routine_schedule === undefined ? st.officeSchedule : isValidOfficeSchedule(data.routine_schedule) ? data.routine_schedule : null,
       profileUpdatedAt: new Date(serverAt).toISOString(),
-    })
+    }
+    const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => k !== 'profileUpdatedAt' && stableJson(next[k]) !== stableJson(st[k]))
+    if (serverAt > localAt || changed.length) {
+      // the burn of past days depends on these: rewrite the server's day summaries with them
+      const affectsBurn = changed.some((k) => k === 'officeSchedule' || k === 'healthDevice' || k === 'profile')
+      updateSettings(affectsBurn ? { ...next, summariesVersion: undefined } : next)
+    }
     return
   }
   if (isValidProfile(st.profile) && (!data || localAt > serverAt)) {
