@@ -1,7 +1,7 @@
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
 import type { ExerciseType, Intensity, Lift, MuscleGroup, Profile, RestStyle } from '../domain/energy'
 import type { CalorieMode, DeficitTarget, GoalPhase } from '../domain/goal'
-import type { HealthDevice } from '../domain/routine'
+import type { HealthDevice, OfficeSchedule } from '../domain/routine'
 
 export type { Analysis, FoodItem, Totals, Lift, MuscleGroup }
 
@@ -107,6 +107,10 @@ export interface Settings {
   customDeficit?: DeficitTarget
   /** what measures Active Energy: iPhone alone / Apple Watch (absent = inferred, see domain/routine.ts) */
   healthDevice?: HealthDevice
+  /** weekly work hours with the phone left aside (null/absent = none) — see domain/routine.ts */
+  officeSchedule?: OfficeSchedule | null
+  /** the daily "anything the phone didn't see?" check: per date, activities answered "no" / the check skipped */
+  activityCheck?: Record<string, { no: string[]; skipped?: boolean }>
   /** daily step goal (absent = the default, 8,000) */
   stepGoal?: number
   /** when profile/targets last changed on this device (for cross-device sync) */

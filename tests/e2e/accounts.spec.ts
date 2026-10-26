@@ -218,24 +218,23 @@ test('Apple Health: resting + active energy and an imported Strava run, no doubl
   await onboard(page, '82')
 
   const energy = page.getByRole('region', { name: 'שריפה היום' })
-  // no Apple Watch seen (the run came from Strava) → iPhone alone: the daily routine it can't see
-  // is added — (MET − 1) × 82 kg × time: bed 2.3·3′ + teeth 1·6′ + shower 1·10′ + dressing 1.5·6′ ≈ 44,
-  // and on a work day (Tuesday) 9 h at the office, 0.5 × 82 × 9 = 369 → 413 for the day.
-  // At 12:30 half of the office hours (08–17) are done: 44 + 185 = 228 so far.
-  await expect(energy.getByText('שגרה יומית')).toBeVisible()
-  await expect(energy.getByTestId('energy-total')).toHaveText(/1,748/) // 1,100 + 420 + 228
-  await expect(hero(page)).toContainText('2,945') // 2,112 + 420 + 413
+  // no Apple Watch seen (the run came from Strava) → iPhone alone: the short daily routine it can't see
+  // is added, costed like workouts — (MET × 3.5 × 82 / 200 − 1,777.5 / 1,440) × minutes:
+  // bed 3.3·3′ ≈ 10.5 + teeth 2.0·6′ ≈ 9.8 + shower 2.0·10′ ≈ 16.4 + dressing 2.5·6′ ≈ 14.1 → 51 (no work schedule set)
+  await expect(energy.getByText('שגרה בלי הטלפון')).toBeVisible()
+  await expect(energy.getByTestId('energy-total')).toHaveText(/1,571/) // 1,100 + 420 + 51
+  await expect(hero(page)).toContainText('2,583') // 2,112 + 420 + 51
   await energy.getByRole('button', { name: 'מה המספרים אומרים' }).click()
   await expect(energy.getByTestId('routine-explainer')).toContainText('מקלחת')
-  await expect(energy.getByTestId('routine-explainer')).toContainText('משרד')
-  await expect(energy.getByTestId('routine-explainer')).toContainText('413')
+  await expect(energy.getByTestId('routine-explainer')).toContainText('51')
+  await expect(energy.getByTestId('energy-confidence')).toContainText('רמת ביטחון')
 
   // with an Apple Watch the watch measures the routine itself → nothing is added
   await page.getByRole('button', { name: 'הגדרות' }).click()
   await page.getByRole('dialog').getByRole('radio', { name: 'גם Apple Watch' }).click()
   await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.health_device).toBe('watch')
   await page.keyboard.press('Escape')
-  await expect(energy.getByText('שגרה יומית')).toHaveCount(0)
+  await expect(energy.getByText('שגרה בלי הטלפון')).toHaveCount(0)
 
   // measured so far = 1,100 resting + 420 active; the run (330) is inside "active", not added
   await expect(energy.getByTestId('energy-total')).toHaveText(/1,520/)
@@ -541,28 +540,104 @@ test('weight: the energy balance between the two weigh-ins uses the same daily n
   await login(page, 'איתן', '123456')
   await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
   await openWeight(page)
-  // each day: 1,500 resting + 300 active + 32 daily routine (iPhone alone) + 167 digestion (25% P · 7.5% C · 2% F) − 1,600 eaten = 399,
-  // + 270 office hours on the 5 work days (Sun–Thu) → 670
+  // each day: 1,500 resting + 300 active + 33 short routine without the phone (iPhone alone) + 167 digestion
+  // (25% P · 7.5% C · 2% F) = 2,000 burned − 1,600 eaten = 400 (no work schedule set for this account)
   const b = page.getByTestId('weighin-balance')
   await expect(b).toContainText('7 ימים')
-  await expect(b).toContainText('גירעון מצטבר של 4,148')
-  await expect(b).toContainText('593') // per day
-  await expect(b).toContainText('0.54') // ≈ kg of fat at 7,700 kcal/kg
+  await expect(b).toContainText('גירעון מצטבר של 2,800')
+  await expect(b).toContainText('400') // per day
+  await expect(b).toContainText('0.36') // ≈ kg of fat at 7,700 kcal/kg
   await expect(b).toContainText('−0.9') // what the scale says
   await page.screenshot({ path: 'docs/screenshots/accounts-weighin-balance.png' })
 
   // the server copy of each day (mz_daily_summaries) matches what the app shows…
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2270)
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2000)
   // …and follows Apple Health energy that arrives later for a day already logged
   sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-05' ? { ...r, active_kcal: 500, updated_at: '2026-10-06T09:00:00Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2470)
-  await expect(b).toContainText('גירעון מצטבר של 4,348')
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2200)
+  await expect(b).toContainText('גירעון מצטבר של 3,000')
 
   // a day without food is not counted as 0 kcal eaten: no comparison then
   sb.tables.mz_food_entries = sb.rows('mz_food_entries').map((r) => (r.date === '2026-10-02' ? { ...r, deleted_at: '2026-10-06T09:30:00Z', updated_at: '2026-10-06T09:30:00Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect(b).toContainText('חסר רישום אוכל ב-1 מתוך 7 ימים')
+})
+
+test('work hours without the phone + the quick activity check: saved, estimated once, never asked twice', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { weight_kg: 60.1 }))
+  // Tuesday, Apple Health snapshot from 12:30 (phone with him at lunch)
+  ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: '2026-10-06', steps: 2400, source: 'shortcut', active_kcal: 90, resting_kcal: 820, health_as_of: '2026-10-06T12:30:00+03:00', updated_at: '2026-10-06T09:30:05Z' })
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  const energy = page.getByRole('region', { name: 'שריפה היום' })
+  // the full-day burn as the screen reader line states it (not the animated number)
+  const burned = async () => Number(/נשרפו ([\d,]+)/.exec((await hero(page).textContent()) ?? '')?.[1].replace(/,/g, ''))
+  const before = await burned()
+
+  // the weekly work schedule, once: Sun–Thu 09:30–18:00, phone with me 12:00–13:00 (the defaults)
+  await page.getByRole('button', { name: 'הגדרות' }).click()
+  const d = page.getByRole('dialog')
+  await d.getByRole('switch', { name: 'עבודה בלי הטלפון' }).click()
+  await expect(d.getByTestId('office-schedule-summary')).toContainText('09:30–12:00')
+  await expect(d.getByTestId('office-schedule-summary')).toContainText('13:00–18:00')
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.routine_schedule).toEqual({ days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] })
+  // an invalid change is explained and not saved
+  await d.getByLabel('סוף העבודה').fill('08:00')
+  await expect(d.getByRole('alert')).toContainText('אחרי')
+  await d.getByLabel('סוף העבודה').fill('18:00')
+  await page.keyboard.press('Escape')
+
+  // the hours without the phone are estimated (7.5 h of desk work) — Apple's numbers stay as they are
+  await expect(energy.getByText('שגרה בלי הטלפון')).toBeVisible()
+  await energy.getByRole('button', { name: 'מה המספרים אומרים' }).click()
+  const rx = energy.getByTestId('routine-explainer')
+  await expect(rx).toContainText('09:30–12:00, 13:00–18:00')
+  await expect(rx).toContainText('עבודה מול מחשב בלי הטלפון')
+  await expect(rx).toContainText('קימות והליכה קצרה במשרד')
+  await expect(energy.getByTestId('energy-confidence')).toContainText('מ-Apple Health 910')
+  await expect(page.getByTestId('burn-uncertainty')).toContainText('±')
+  const after = await burned()
+  expect(after - before).toBeGreaterThan(200) // 7.5 h at a desk ≈ 0.5 kcal/min above rest
+  expect(after - before).toBeLessThan(300)
+
+  // the quick check: salsa (Apple Health didn't see it) → its estimate is added, once
+  const check = page.getByTestId('activity-check')
+  await check.getByRole('button', { name: /סלסה/ }).click()
+  await check.getByRole('radio', { name: '1.5 שע׳' }).click()
+  await expect(check.getByTestId('activity-check-estimate')).toContainText('יתווסף')
+  const beforeSalsa = await burned()
+  await check.getByRole('button', { name: 'כן, שמור' }).click()
+  await expect.poll(() => sb.rows('mz_exercises', u.id).map((r) => [r.type, r.duration_min, r.outside_health ?? false])).toEqual([['dance', 90, true]])
+  await expect.poll(burned).toBeGreaterThan(beforeSalsa + 150) // 90 min of salsa (MET 4.5) above rest
+  await expect(check.getByRole('button', { name: /סלסה/ })).toHaveCount(0) // not asked again
+  // gym recorded in Hevy → already inside Apple's Active Energy: recorded, nothing added
+  const total1 = await burned()
+  await check.getByRole('button', { name: /חדר כושר/ }).click()
+  await check.getByRole('radio', { name: '60 דק׳' }).click()
+  await expect(check.getByLabel(/Hevy/)).toBeChecked()
+  await check.getByRole('button', { name: 'כן, שמור' }).click()
+  await expect(page.getByText(/כבר בתוך Apple Health/)).toBeVisible()
+  await expect.poll(() => sb.rows('mz_exercises', u.id).length).toBe(2)
+  expect(sb.rows('mz_exercises', u.id).find((r) => r.type === 'strength')?.outside_health ?? false).toBe(false)
+  expect(await burned()).toBe(total1)
+  // "no" is remembered for the day
+  await check.getByRole('button', { name: /ריצה/ }).click()
+  await check.getByRole('button', { name: 'לא היום' }).click()
+  await expect(check.getByRole('button', { name: /ריצה/ })).toHaveCount(0)
+
+  // after a reload: the schedule, the answers and the activities are all still there
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await expect(energy.getByText('שגרה בלי הטלפון')).toBeVisible()
+  await expect(page.getByTestId('activity-check').getByRole('button', { name: /ריצה|סלסה|חדר כושר/ })).toHaveCount(0)
+  await expect(page.getByTestId('activity-check').getByRole('button', { name: /טיפוס/ })).toBeVisible()
+  await page.screenshot({ path: 'docs/screenshots/accounts-routine-check.png', fullPage: true })
+  // skipping hides the check for the day
+  await page.getByTestId('activity-check').getByRole('button', { name: 'דלג' }).click()
+  await expect(page.getByTestId('activity-check')).toHaveCount(0)
 })
 
 // ── daily step goal ──────────────────────────────────────────────────────────

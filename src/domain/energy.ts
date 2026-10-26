@@ -92,7 +92,7 @@ export interface Profile {
   weightKg: number
 }
 
-export type ExerciseType = 'run' | 'walk' | 'strength' | 'cycling' | 'swimming' | 'other'
+export type ExerciseType = 'run' | 'walk' | 'strength' | 'cycling' | 'swimming' | 'dance' | 'climbing' | 'other'
 export type Intensity = 'low' | 'moderate' | 'high'
 /** Training density for strength sessions. */
 export type RestStyle = 'standard' | 'short'
@@ -164,6 +164,10 @@ export const METS: Record<Exclude<ExerciseType, 'run' | 'strength'>, Record<Inte
   cycling: { low: 4.0, moderate: 6.8, high: 8.0 },
   // 18310 leisurely ≈ 6.0; 18240 freestyle moderate ≈ 5.8; 18230 vigorous ≈ 9.8 (conservative)
   swimming: { low: 5.0, moderate: 6.0, high: 8.3 },
+  // 03025 Latin / salsa / swing social dancing ≈ 4.5 · 03040 slow ballroom ≈ 3.0 · fast, continuous ≈ 5.5
+  dance: { low: 3.0, moderate: 4.5, high: 5.5 },
+  // 15537 rock climbing / bouldering, low-to-moderate difficulty ≈ 5.8 · 15535 high difficulty ≈ 7.5 (rests between problems → low 5.0)
+  climbing: { low: 5.0, moderate: 5.8, high: 7.5 },
   // generic cardio / classes: 02048 elliptical moderate 5.0 · 02210 HIIT moderate 7.0
   other: { low: 3.5, moderate: 5.0, high: 7.0 },
 }
@@ -175,6 +179,8 @@ const UNCERTAINTY: Record<ExerciseType, number> = {
   strength: 0.3,
   cycling: 0.25,
   swimming: 0.25,
+  dance: 0.3,
+  climbing: 0.3,
   other: 0.3,
 }
 const RUN_DISTANCE_UNCERTAINTY = 0.1

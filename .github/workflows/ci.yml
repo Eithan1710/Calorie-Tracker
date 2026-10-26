@@ -147,3 +147,9 @@ jobs:
           P="psql -v ON_ERROR_STOP=1 -q"
           $P -f supabase/tests/calorie_range.sql 2>&1 | tee range.log
           grep -q 'calorie range checks passed' range.log
+      - name: Routine schedule, activity types, energy breakdown (migration twice + constraints)
+        run: |
+          set -e
+          P="psql -v ON_ERROR_STOP=1 -q"
+          $P -f supabase/tests/routine_schedule.sql 2>&1 | tee routine.log
+          grep -q 'routine schedule checks passed' routine.log

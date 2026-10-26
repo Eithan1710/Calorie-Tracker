@@ -1,5 +1,6 @@
 import { isValidProfile, type DailyBurnBreakdown, type ExerciseInput, type Profile } from './energy'
 import { dayEnergy, type DayEnergy, type DayWorkout, type HealthEnergyDay } from './expenditure'
+import type { RoutineContext } from './routine'
 import { DEFAULT_TARGET, evaluateGoal, isDayFinal, type DeficitTarget, type GoalResult } from './goal'
 import type { Exercise, FoodEntry } from '../data/types'
 
@@ -52,8 +53,8 @@ export function summarizeDay(opts: {
   proteinTarget: number
   /** personal daily target band (defaults to 100–300 kcal deficit) */
   target?: DeficitTarget
-  /** Apple Health energy comes from an iPhone alone (see routine.ts) */
-  phoneOnly?: boolean
+  /** iPhone alone + weekly work schedule (see routine.ts) */
+  routine?: RoutineContext | null
   now?: Date
 }): DaySummary {
   const target = opts.target ?? DEFAULT_TARGET
@@ -63,7 +64,7 @@ export function summarizeDay(opts: {
   const protein = Math.round(sum('protein_g'))
   const intake = { protein_g: sum('protein_g'), carbs_g: sum('carbs_g'), fat_g: sum('fat_g') }
   const energy = isValidProfile(opts.profile)
-    ? dayEnergy({ date: opts.date, profile: opts.profile, steps: opts.steps, workouts: opts.exercises.map(toDayWorkout), health: opts.health, intake, phoneOnly: opts.phoneOnly, now: opts.now })
+    ? dayEnergy({ date: opts.date, profile: opts.profile, steps: opts.steps, workouts: opts.exercises.map(toDayWorkout), health: opts.health, intake, routine: opts.routine, now: opts.now })
     : null
   const burn = energy?.estimate ?? null
   const burned = energy?.total ?? 0

@@ -10,7 +10,7 @@ import { isValidProfile } from '../domain/energy'
 import { dayTarget, isValidTarget, TARGET_PRESETS, type GoalPhase } from '../domain/goal'
 import { uploadPendingPhotos } from './photos'
 import { isValidStepGoal } from '../domain/steps'
-import { healthDeviceOf } from '../domain/routine'
+import { isValidOfficeSchedule, routineContextOf } from '../domain/routine'
 
 /**
  * Offline-first sync with Supabase (optional).
@@ -267,7 +267,7 @@ async function push() {
         profile: st.settings.profile,
         proteinTarget: st.settings.proteinTarget,
         target: dayTarget(st.settings),
-        phoneOnly: healthDeviceOf(st.settings, Object.values(st.exercise)) === 'phone',
+        routine: routineContextOf(st.settings, Object.values(st.exercise)),
       })
       return {
         user_id: userId,
@@ -279,10 +279,32 @@ async function push() {
         carbs_g: sum.carbs,
         steps: sum.steps,
         entries: foodForDate(st, date).length,
+        // what the day's burn is made of: which parts came from Apple Health, which were estimated,
+        // which hours were estimated because the phone was away — kept to compare similar days later
+        energy_breakdown: sum.energy
+          ? {
+              mode: sum.energy.mode,
+              resting: sum.energy.resting.fullDay,
+              resting_source: sum.energy.resting.source,
+              active: sum.energy.active.kcal,
+              active_source: sum.energy.active.source,
+              workouts_added: sum.energy.extra,
+              routine: sum.energy.routine,
+              no_phone_minutes: sum.energy.routineDetail?.noPhoneMinutes ?? 0,
+              tef: sum.energy.tef,
+              from_apple: sum.energy.sources.apple,
+              estimated: sum.energy.sources.estimated,
+              uncertainty: sum.energy.uncertainty,
+              confidence: sum.energy.confidence,
+              partial: sum.energy.partial,
+            }
+          : null,
         updated_at: new Date().toISOString(),
       }
     })
-    const { error } = await sb.from('mz_daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
+    let { error } = await sb.from('mz_daily_summaries').upsert(rows, { onConflict: 'user_id,date' })
+    // database without the energy_breakdown column yet (20261026000000): keep the summaries anyway
+    if (error && /energy_breakdown/.test(error.message ?? '')) ({ error } = await sb.from('mz_daily_summaries').upsert(rows.map(({ energy_breakdown: _e, ...r }) => r), { onConflict: 'user_id,date' }))
     if (!error) {
       for (const d of touchedDates) summaryRefresh.delete(d)
       if (getState().settings.summariesVersion !== SUMMARIES_VERSION) updateSettings({ summariesVersion: SUMMARIES_VERSION })
@@ -293,12 +315,13 @@ async function push() {
 /** Days whose cached summary must be rewritten on the next push (Apple Health data arrived, …). */
 const summaryRefresh = new Set<string>()
 /**
- * Bumped when summaries written by older versions may be stale: version 4 = office hours in the routine;
+ * Bumped when summaries written by older versions may be stale: version 5 = work schedule + breakdown;
+ * version 4 = office hours in the routine;
  * version 3 = daily-routine movement
  * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 4
+const SUMMARIES_VERSION = 5
 
 function queueSummaryBackfill() {
   const st = getState()
@@ -391,7 +414,7 @@ function reconcileWeights(rows: WeightRow[]) {
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule'] as const
 
 async function syncProfile() {
   const sb = await getSupabase()
@@ -420,6 +443,8 @@ async function syncProfile() {
       stepGoal: data.step_goal === undefined ? st.stepGoal : isValidStepGoal(data.step_goal) ? data.step_goal : undefined,
       // health_device: null = not chosen (inferred); column absent before 20261025000000 → keep this device's
       healthDevice: data.health_device === undefined ? st.healthDevice : data.health_device === 'phone' || data.health_device === 'watch' ? data.health_device : undefined,
+      // routine_schedule: null = no work schedule; column absent before 20261026000000 → keep this device's
+      officeSchedule: data.routine_schedule === undefined ? st.officeSchedule : isValidOfficeSchedule(data.routine_schedule) ? data.routine_schedule : null,
       profileUpdatedAt: new Date(serverAt).toISOString(),
     })
     return
@@ -449,6 +474,7 @@ async function syncProfile() {
       custom_deficit_max: isValidTarget(st.customDeficit) ? Math.round(st.customDeficit.max) : null,
       step_goal: isValidStepGoal(st.stepGoal) ? st.stepGoal : null,
       health_device: st.healthDevice ?? null,
+      routine_schedule: isValidOfficeSchedule(st.officeSchedule) ? st.officeSchedule : null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {

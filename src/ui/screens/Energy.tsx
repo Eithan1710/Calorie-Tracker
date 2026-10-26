@@ -9,7 +9,9 @@ import { AnimatedNumber } from '../primitives'
 import { fmt, fmtPace, KCAL } from '../format'
 import { EXERCISE_META } from '../exerciseMeta'
 import { stepGoalOf, stepProgress } from '../../domain/steps'
-import { routineEnergy } from '../../domain/routine'
+import { fmtHM } from '../../domain/routine'
+
+const CONFIDENCE_LABEL = { high: 'גבוהה', medium: 'בינונית', low: 'נמוכה' } as const
 
 const timeHM = (iso: string) => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
 
@@ -53,7 +55,7 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
         { key: 'resting', label: 'מנוחה', value: e.resting.kcal, color: 'var(--resting)', apple: e.resting.source === 'apple' },
         { key: 'active', label: 'פעילה', value: e.active.kcal, color: 'var(--active)', apple: e.active.source === 'apple' },
         ...(e.extra > 0 ? [{ key: 'extra', label: 'אימון שלא נמדד', value: e.extra, color: 'var(--warn)', apple: false }] : []),
-        ...(e.routineSoFar > 0 ? [{ key: 'routine', label: 'שגרה יומית', value: e.routineSoFar, color: 'var(--ink-2)', apple: false }] : []),
+        ...(e.routine > 0 ? [{ key: 'routine', label: 'שגרה בלי הטלפון', value: e.routineSoFar, color: 'var(--ink-2)', apple: false }] : []),
         ...(e.tef > 0 ? [{ key: 'tef', label: 'עיכול מזון', value: e.tef, color: 'var(--ink-3)', apple: false }] : []),
       ]
     : [
@@ -123,11 +125,16 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
         </p>
       )}
 
+      <p className="mt-1 text-xs text-ink-3" data-testid="energy-confidence">
+        {apple && <>מ-Apple Health {fmt(e.sources.apple)} · הערכת האתר {fmt(e.sources.estimated)} · </>}
+        רמת ביטחון: <span className={e.confidence === 'low' ? 'font-semibold text-warn' : 'font-medium text-ink-2'}>{CONFIDENCE_LABEL[e.confidence]}</span> (±{fmt(e.uncertainty)} {KCAL} ליום)
+      </p>
+
       <button type="button" onClick={() => setWhy((v) => !v)} className="mt-1 flex min-h-9 items-center gap-1 text-sm text-ink-3" aria-expanded={why}>
         מה המספרים אומרים
         <ChevronDown className={`size-4 transition-transform ${why ? 'rotate-180' : ''}`} aria-hidden />
       </button>
-      {why && <EnergyExplainer e={e} date={s.date} />}
+      {why && <EnergyExplainer e={e} />}
     </section>
   )
 }
@@ -191,36 +198,39 @@ export function StepsCard({ date, isToday, onOpen }: { date: string; isToday: bo
   )
 }
 
-/** How the daily-routine row is calculated (iPhone alone doesn't see it). */
-function RoutineExplainer({ date, kcal }: { date: string; kcal: number }) {
-  const weightKg = useStore((st) => st.settings.profile?.weightKg)
-  if (!weightKg) return null
-  const r = routineEnergy({ weightKg }, date)
+/** How the routine row is calculated (an iPhone alone doesn't see it). */
+function RoutineExplainer({ e }: { e: DayEnergy }) {
+  const r = e.routineDetail
+  if (!r) return null
+  const hm = (m: number) => fmtHM(m)
+  const dur = (min: number) => (min >= 90 ? `${Math.round((min / 60) * 10) / 10} שעות` : `${min} דק׳`)
   return (
     <div data-testid="routine-explainer">
       <p>
-        <b>שגרה יומית</b> — קימה, צחצוח שיניים, מקלחת, התלבשות והשעות במשרד (א׳–ה׳) קורים כשהטלפון לא עליך, אז האייפון לא רואה אותם. מחושב לפי ערכי MET מקובלים (Compendium of Physical Activities): (MET − 1) × משקל × זמן — רק מה שמעל המנוחה.
+        <b>שגרה בלי הטלפון</b> — מה שקורה כשהאייפון לא עליך, ולכן Apple Health לא רואה:{' '}
+        {r.noPhoneMinutes > 0 ? `השעות במשרד (${r.windows.map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', ')}) ` : ''}
+        וקימה, צחצוח, מקלחת והתלבשות. מחושב כמו האימונים: (MET × 3.5 × משקל / 200 − המנוחה שלך לדקה) × דקות — רק מה שמעל המנוחה, שכבר נספרה. במשרד ההנחה שמרנית: רוב הזמן ישיבה מול מחשב, וכ-4% קימות והליכה קצרה.
       </p>
       <ul className="mt-1 flex flex-col gap-0.5 ps-1 text-xs text-ink-3">
-        {r.items.map((a) => (
+        {r.lines.map((a) => (
           <li key={a.id} className="flex justify-between gap-3">
             <span>
-              {a.label} · {a.minutes >= 120 ? `${a.minutes / 60} שעות` : `${a.minutes} דק׳`} · MET {a.met}
+              {a.label} · {dur(a.minutes)} · MET {a.met}
             </span>
             <span className="num">{fmt(a.kcal)}</span>
           </li>
         ))}
         <li className="flex justify-between gap-3 font-semibold text-ink-2">
-          <span>סה״כ</span>
-          <span className="num">{fmt(kcal)}</span>
+          <span>סה״כ ליום</span>
+          <span className="num">{fmt(r.kcal)}</span>
         </li>
       </ul>
-      <p className="mt-1 text-xs text-ink-3">יש לך Apple Watch? אפשר לשנות בהגדרות ← צעדים, ואז זה לא יתווסף (השעון מודד את זה בעצמו).</p>
+      <p className="mt-1 text-xs text-ink-3">את שעות העבודה ואת Apple Watch אפשר לשנות בהגדרות ← צעדים ושגרה.</p>
     </div>
   )
 }
 
-function EnergyExplainer({ e, date }: { e: DayEnergy; date: string }) {
+function EnergyExplainer({ e }: { e: DayEnergy }) {
   const apple = e.mode === 'health'
   return (
     <div className="mt-1 flex flex-col gap-2 rounded-2xl bg-surface-2 p-3 text-sm leading-relaxed text-ink-2">
@@ -236,7 +246,7 @@ function EnergyExplainer({ e, date }: { e: DayEnergy; date: string }) {
             : 'כפי ש-Apple Health מדווח מה-Apple Watch — כולל האימונים ותנועות השגרה, כי השעון מודד כל תנועה.'
           : `מוערכת לפי הצעדים והאימונים שנרשמו, ועוד כ-${fmt(e.estimate.baseline)} קק״ל של תנועת שגרה (קימה, מקלחת, התלבשות, סידורים — כ-5% מהמנוחה).`}
       </p>
-      {e.routine > 0 && <RoutineExplainer date={date} kcal={e.routine} />}
+      {e.routine > 0 && <RoutineExplainer e={e} />}
       <p>
         <b>אימונים</b> —{' '}
         {apple && e.active.source === 'apple'
@@ -250,7 +260,7 @@ function EnergyExplainer({ e, date }: { e: DayEnergy; date: string }) {
       ) : null}
       {apple ? (
         <p>
-          <b>סה״כ</b> = מנוחה + פעילה{e.routine > 0 ? ' + שגרה יומית' : ''} + עיכול מזון. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
+          <b>סה״כ</b> = מנוחה + פעילה{e.routine > 0 ? ' + שגרה בלי הטלפון' : ''}{e.extra > 0 ? ' + אימון שלא נמדד' : ''} + עיכול מזון. כל רכיב הוא אנרגיה נפרדת — שום דבר לא נספר פעמיים. {e.partial ? 'לאורך היום המנוחה ממשיכה להצטבר, ולכן המאזן מחושב לפי צפי המנוחה לסוף היום + הפעילות עד עכשיו.' : ''}
         </p>
       ) : (
         <p>

@@ -12,7 +12,7 @@ import { InstallApp } from '../InstallApp'
 import { getSyncStatus, onSyncStatus, pushProfile, pushWeightsNow, syncNow } from '../../services/sync'
 import { disableReminders, enableReminders, notificationSupport } from '../../services/notifications'
 import { HealthConnect, StepGoalField } from './StepsSheet'
-import { healthDeviceOf, routineEnergy, type HealthDevice } from '../../domain/routine'
+import { fmtHM, healthDeviceOf, isValidOfficeSchedule, noPhoneWindows, officeScheduleError, type HealthDevice, type OfficeSchedule } from '../../domain/routine'
 import { useDaySummary } from '../screens/Today'
 import { toDateKey } from '../../domain/goal'
 import { fmt, KCAL } from '../format'
@@ -47,7 +47,6 @@ function HealthDeviceField() {
   const settings = useStore((s) => s.settings)
   const exercise = useStore((s) => s.exercise)
   const device = healthDeviceOf(settings, Object.values(exercise))
-  const weightKg = settings.profile?.weightKg
   return (
     <div className="flex flex-col gap-1.5">
       <Segmented<HealthDevice>
@@ -65,11 +64,121 @@ function HealthDeviceField() {
       />
       <p className="text-sm text-ink-3" data-testid="health-device-note">
         {device === 'phone'
-          ? `האייפון לא רואה קימה, מקלחת, התלבשות ושעות במשרד בלי הטלפון — מתווספת ״שגרה יומית״${weightKg ? ` (כ-${fmt(routineEnergy({ weightKg }, '2026-10-25').kcal)} קק״ל ביום עבודה, כ-${fmt(routineEnergy({ weightKg }, '2026-10-24').kcal)} בשישי–שבת)` : ''} לימים עם נתוני Apple Health.`
+          ? 'האייפון לא רואה מה שקורה כשהוא לא עליך — קימה, מקלחת, התלבשות ושעות העבודה שלמטה. הם מוערכים ומתווספים לימים עם נתוני Apple Health, רק מעל המנוחה.'
           : 'השעון מודד גם את תנועות השגרה, אז לא מתווסף עליהן כלום.'}
       </p>
     </div>
   )
+}
+
+const DAY_LABELS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
+const DEFAULT_OFFICE: OfficeSchedule = { days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] }
+
+/**
+ * The weekly work hours with the phone left aside — saved once, applied every matching day.
+ * Only shown for an iPhone without a watch (a watch measures those hours itself).
+ */
+function OfficeScheduleField() {
+  const settings = useStore((s) => s.settings)
+  const exercise = useStore((s) => s.exercise)
+  const saved = isValidOfficeSchedule(settings.officeSchedule) ? settings.officeSchedule : null
+  const [draft, setDraft] = useState<OfficeSchedule>(saved ?? DEFAULT_OFFICE)
+  useEffect(() => {
+    if (saved) setDraft(saved)
+  }, [saved?.start, saved?.end, saved?.days.join(), saved?.phoneBreaks.flat().join()])
+  if (healthDeviceOf(settings, Object.values(exercise)) !== 'phone') return null
+  const error = officeScheduleError(draft)
+  const save = (next: OfficeSchedule | null) => {
+    if (next) setDraft(next)
+    if (next && officeScheduleError(next) !== null) return
+    // the cached server copy of each day is recomputed with the new hours on the next sync
+    updateSettings({ officeSchedule: next, summariesVersion: undefined })
+    void pushProfile()
+  }
+  const brk = draft.phoneBreaks[0]
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl bg-surface-2 p-3" data-testid="office-schedule">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">עבודה בלי הטלפון</p>
+          <p className="text-xs text-ink-3">שעות שבהן הטלפון לא עליך — מוערכות כעבודה מול מחשב</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={saved !== null}
+          aria-label="עבודה בלי הטלפון"
+          onClick={() => save(saved ? null : draft)}
+          className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${saved ? 'bg-good' : 'bg-surface-3'}`}
+        >
+          <span className={`absolute top-1 size-6 rounded-full bg-white shadow transition-all ${saved ? 'start-7' : 'start-1'}`} />
+        </button>
+      </div>
+      {saved && (
+        <>
+          <div className="flex gap-1.5" role="group" aria-label="ימי עבודה">
+            {DAY_LABELS.map((l, d) => (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={draft.days.includes(d)}
+                onClick={() => save({ ...draft, days: draft.days.includes(d) ? draft.days.filter((x) => x !== d) : [...draft.days, d].sort() })}
+                className={`pressable grid size-9 place-items-center rounded-full text-sm font-medium ${draft.days.includes(d) ? 'bg-ink text-inverse' : 'bg-surface text-ink-2'}`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-3">מ-</span>
+              <input type="time" aria-label="תחילת העבודה" value={draft.start} onChange={(e) => save({ ...draft, start: e.target.value })} className="min-h-11 rounded-xl bg-surface px-3" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-3">עד</span>
+              <input type="time" aria-label="סוף העבודה" value={draft.end} onChange={(e) => save({ ...draft, end: e.target.value })} className="min-h-11 rounded-xl bg-surface px-3" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-3">הטלפון איתי מ-</span>
+              <input
+                type="time"
+                aria-label="תחילת הפסקה עם הטלפון"
+                value={brk?.[0] ?? ''}
+                onChange={(e) => save({ ...draft, phoneBreaks: e.target.value ? [[e.target.value, brk?.[1] ?? e.target.value]] : [] })}
+                className="min-h-11 rounded-xl bg-surface px-3"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-ink-3">עד</span>
+              <input
+                type="time"
+                aria-label="סוף הפסקה עם הטלפון"
+                value={brk?.[1] ?? ''}
+                onChange={(e) => save({ ...draft, phoneBreaks: brk && e.target.value ? [[brk[0], e.target.value]] : [] })}
+                className="min-h-11 rounded-xl bg-surface px-3"
+              />
+            </label>
+          </div>
+          {error ? (
+            <p role="alert" className="text-sm text-surplus">
+              {error}
+            </p>
+          ) : (
+            <p className="text-xs text-ink-3" data-testid="office-schedule-summary">
+              {noPhoneWindows(draft, nextWorkday(draft)).map(([a, b]) => `${fmtHM(a)}–${fmtHM(b)}`).join(', ')} בלי הטלפון · בשעות ההפסקה Apple Health מודד כרגיל
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** a date key falling on one of the schedule's days (to preview its windows) */
+function nextWorkday(s: OfficeSchedule): string {
+  const d = new Date(2026, 9, 25) // a Sunday
+  d.setDate(d.getDate() + (s.days[0] ?? 0))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -179,9 +288,10 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
         <SyncSection />
 
         <section className="flex flex-col gap-2">
-          <h3 className="font-semibold">צעדים</h3>
+          <h3 className="font-semibold">צעדים ושגרה</h3>
           <StepGoalField />
           <HealthDeviceField />
+          <OfficeScheduleField />
           <HealthConnect />
         </section>
 

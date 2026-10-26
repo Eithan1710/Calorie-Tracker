@@ -4,12 +4,13 @@ import { exercisesForDate, foodForDate, useStore } from '../../data/store'
 import { MEALS, type Exercise, type FoodEntry } from '../../data/types'
 import { summarizeDay, type DaySummary } from '../../domain/day'
 import { addDays, bandLabel, dayTarget, toDateKey, type GoalStatus } from '../../domain/goal'
-import { healthDeviceOf } from '../../domain/routine'
+import { routineContextOf } from '../../domain/routine'
 import { AnimatedNumber, Bar } from '../primitives'
 import { dateLong, dayTitle, fmt, fmtBalance, KCAL } from '../format'
 import { usePhotoUrl } from '../../services/photos'
 import { InstallApp } from '../InstallApp'
 import { EnergyCard, StepsCard, WorkoutsCard } from './Energy'
+import { ActivityCheck } from './ActivityCheck'
 import { Suggestions } from './Suggestions'
 
 export interface TodayActions {
@@ -53,7 +54,7 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
     return {
       food: f,
       exercises: ex,
-      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings), phoneOnly: healthDeviceOf(settings, Object.values(exercise)) === 'phone' }),
+      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings), routine: routineContextOf(settings, Object.values(exercise)) }),
     }
   }, [food, exercise, health, settings, date])
 }
@@ -83,6 +84,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
           <EnergyCard s={summary} isToday={date === today} />
           <StepsCard date={date} isToday={date === today} onOpen={actions.onSteps} />
           <WorkoutsCard s={summary} exercises={exercises} onOpen={actions.onExercise} />
+          {date <= today && <ActivityCheck date={date} exercises={exercises} isToday={date === today} />}
           <ProteinCard s={summary} />
           <div className="grid grid-cols-2 gap-3">
             <MacroTile label="שומן" value={summary.fat} color="var(--fat)" />
@@ -225,6 +227,12 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
           <p className="num text-[28px] font-semibold tracking-tight">
             <AnimatedNumber value={s.burned} format={fmt} />
           </p>
+          {s.energy && (
+            // the burn is partly an estimate: say how sure it is instead of implying a precise number
+            <p className={`text-xs ${s.energy.confidence === 'low' ? 'text-warn' : 'text-ink-3'}`} data-testid="burn-uncertainty">
+              ±{fmt(s.energy.uncertainty)} · ביטחון {s.energy.confidence === 'high' ? 'גבוה' : s.energy.confidence === 'medium' ? 'בינוני' : 'נמוך'}
+            </p>
+          )}
         </div>
       </div>
       <p className="sr-only">

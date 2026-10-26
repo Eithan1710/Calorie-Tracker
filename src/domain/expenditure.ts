@@ -52,7 +52,7 @@ import {
   bmrMifflinStJeor, BASELINE_NEAT_FRACTION, estimateWorkoutSteps, stepsNetKcal, TEF_FRACTION, workoutDisplay, workoutEstimate,
   type DailyBurnBreakdown, type ExerciseInput, type ExerciseType, type Profile,
 } from './energy'
-import { routineEnergy } from './routine'
+import { routineEnergy, type RoutineContext, type RoutineEnergy } from './routine'
 
 export interface HealthEnergyDay {
   active_kcal?: number | null
@@ -99,6 +99,13 @@ export interface DayEnergy {
   routine: number
   /** the part of it done by the snapshot (office hours count as they pass) */
   routineSoFar: number
+  /** the routine items, minutes and the no-phone work windows (null when nothing is added) */
+  routineDetail: RoutineEnergy | null
+  /** the full-day total split by where it comes from: Apple Health numbers vs this app's estimates */
+  sources: { apple: number; estimated: number }
+  /** ± kcal on the full-day total (one standard deviation, combined from each part's typical error) */
+  uncertainty: number
+  confidence: Confidence
   /** thermic effect of food: estimate mode = 10% model add-on; Apple mode = from the macros eaten */
   tef: number
   workouts: WorkoutEnergy[]
@@ -116,6 +123,34 @@ export interface DayEnergy {
   /** the estimate model's breakdown (always computed; settings & comparisons) */
   estimate: DailyBurnBreakdown
 }
+
+export type Confidence = 'high' | 'medium' | 'low'
+
+/**
+ * Typical relative error (1 SD) of each part — combined as independent errors. Apple's Resting
+ * Energy is itself Apple's model (≈ ±8%); phone-measured Active Energy ±20%; this app's
+ * estimates: BMR equation ±10%, movement from steps ±35%, MET-based activities ±30–40%,
+ * digestion ±30%. Rough figures, used only to say how sure the total is.
+ */
+export const PART_ERROR = {
+  appleResting: 0.08,
+  restingProjection: 0.1,
+  bmr: 0.1,
+  appleActive: 0.2,
+  estimatedActive: 0.35,
+  workout: 0.3,
+  routine: 0.4,
+  tef: 0.3,
+} as const
+
+export function confidenceOf(uncertainty: number, total: number, opts: { partial?: boolean } = {}): Confidence {
+  const rel = total > 0 ? uncertainty / total : 1
+  const level: Confidence = rel <= 0.07 ? 'high' : rel <= 0.11 ? 'medium' : 'low'
+  // an unfinished day's activity is not known yet
+  return opts.partial && level === 'high' ? 'medium' : level
+}
+
+const combine = (...sd: number[]) => Math.round(Math.sqrt(sd.reduce((s, x) => s + x * x, 0)) / 10) * 10
 
 /** Share of each macronutrient's energy spent digesting it (mid-points of 20–30% / 5–10% / 0–3%). */
 export const TEF_BY_MACRO = { protein: 0.25, carbs: 0.075, fat: 0.02 } as const
@@ -230,8 +265,8 @@ export function dayEnergy(opts: {
   health?: HealthEnergyDay | null
   /** what was eaten (grams) — for the digestion energy in Apple Health mode */
   intake?: MacroIntake | null
-  /** Active Energy comes from an iPhone alone (no Apple Watch): add the daily-routine movement it misses */
-  phoneOnly?: boolean
+  /** iPhone alone (no Apple Watch) + the weekly work schedule: adds the routine it can't see (routine.ts) */
+  routine?: RoutineContext | null
   now?: Date
 }): DayEnergy {
   const p = opts.profile
@@ -266,6 +301,7 @@ export function dayEnergy(opts: {
   const hasResting = h?.resting_kcal != null
 
   if (!hasActive && !hasResting) {
+    const sd = combine(estimate.bmr * PART_ERROR.bmr, (baseline + stepsKcal) * PART_ERROR.estimatedActive, exerciseNet * PART_ERROR.workout, estimate.tef * PART_ERROR.tef)
     return {
       mode: 'estimate',
       resting: { kcal: estimate.bmr, fullDay: estimate.bmr, source: 'estimate' },
@@ -273,6 +309,10 @@ export function dayEnergy(opts: {
       extra: 0,
       routine: 0, // the baseline-movement term already covers it
       routineSoFar: 0,
+      routineDetail: null,
+      sources: { apple: 0, estimated: estimate.total },
+      uncertainty: sd,
+      confidence: 'low', // nothing measured: the whole day is the model (typically ±20%)
       tef: estimate.tef,
       workouts: opts.workouts.map((w) => ({ id: w.id, ...pickW(energies.get(w.id)!), counting: dup.has(w.id) ? 'duplicate' : 'added', duplicateOf: dup.get(w.id) })),
       workoutKcal,
@@ -316,9 +356,19 @@ export function dayEnergy(opts: {
   const tef = foodTef(opts.intake)
   // only next to Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
   // full day for the balance; "so far" counts what was done by the snapshot (office hours as they pass)
-  const r = hasActive && opts.phoneOnly ? routineEnergy(p, opts.date, minutes) : null
+  const r = hasActive && opts.routine?.phoneOnly ? routineEnergy(p, opts.date, opts.routine.schedule, minutes) : null
   const routine = r?.kcal ?? 0
   const routineSoFar = r?.soFar ?? 0
+  const total = restingFull + active + extra + routine + tef
+  const apple = (hasResting ? restingSoFar : 0) + (hasActive ? active : 0)
+  const sd = combine(
+    hasResting ? restingSoFar * PART_ERROR.appleResting : 0,
+    hasResting ? (restingFull - restingSoFar) * PART_ERROR.restingProjection : restingFull * PART_ERROR.bmr,
+    active * (hasActive ? PART_ERROR.appleActive : PART_ERROR.estimatedActive),
+    extra * PART_ERROR.workout,
+    routine * PART_ERROR.routine,
+    tef * PART_ERROR.tef,
+  )
 
   return {
     mode: 'health',
@@ -327,11 +377,15 @@ export function dayEnergy(opts: {
     extra: Math.round(extra),
     routine: Math.round(routine),
     routineSoFar: Math.round(routineSoFar),
+    routineDetail: r,
+    sources: { apple: Math.round(apple), estimated: Math.round(total) - Math.round(apple) },
+    uncertainty: sd,
+    confidence: confidenceOf(sd, total, { partial: !complete }),
     tef: Math.round(tef),
     workouts: lines,
     workoutKcal,
     soFar: Math.round(restingSoFar + active + extra + routineSoFar + tef),
-    total: Math.round(restingFull + active + extra + routine + tef),
+    total: Math.round(total),
     partial: !complete,
     coverageMinutes: minutes,
     asOf,

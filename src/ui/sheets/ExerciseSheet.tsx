@@ -215,7 +215,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
           </p>
         )}
 
-        <div role="radiogroup" aria-label="סוג אימון" className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+        <div role="radiogroup" aria-label="סוג אימון" className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {(Object.keys(EXERCISE_META) as ExerciseType[]).map((t) => (
             <button
               key={t}

@@ -11,8 +11,9 @@ on:
       migration:
         description: Migration file
         type: choice
-        default: 20261025000000_health_device.sql
+        default: 20261026000000_routine_schedule.sql
         options:
+          - 20261026000000_routine_schedule.sql
           - 20261025000000_health_device.sql
           - 20261023000000_weights_keep_newest.sql
           - 20261023000100_step_goal.sql
