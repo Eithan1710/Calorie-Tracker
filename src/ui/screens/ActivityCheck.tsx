@@ -37,7 +37,7 @@ export const ACTIVITY_CHECKS: CheckItem[] = [
 ]
 
 /** Questions still open for the day. */
-export function pendingChecks(date: string, exercises: Exercise[], answers: { no: string[]; skipped?: boolean } | undefined): CheckItem[] {
+export function pendingChecks(exercises: Exercise[], answers: { no: string[]; skipped?: boolean } | undefined): CheckItem[] {
   if (answers?.skipped) return []
   const logged = new Set(exercises.filter((e) => !e.deleted).map((e) => e.type))
   return ACTIVITY_CHECKS.filter((c) => !logged.has(c.type) && !answers?.no.includes(c.id))
@@ -47,7 +47,7 @@ export function ActivityCheck({ date, exercises, isToday }: { date: string; exer
   const settings = useStore((s) => s.settings)
   const appleActive = useStore((s) => s.health[date]?.active_kcal != null)
   const answers = settings.activityCheck?.[date]
-  const pending = pendingChecks(date, exercises, answers)
+  const pending = pendingChecks(exercises, answers)
   const [open, setOpen] = useState<string | null>(null)
   if (!pending.length || !isValidProfile(settings.profile)) return null
 
