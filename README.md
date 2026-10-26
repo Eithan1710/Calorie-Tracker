@@ -200,7 +200,8 @@ text / photo
   models (Pro left the free tier in April 2026), with per-project RPM/RPD limits that Google changes without
   notice. Flash has vision, native JSON-schema output and good reasoning, so it is primary, configured as a
   chain `gemini-3.5-flash → gemini-3-flash-preview → gemini-2.5-flash` (env-overridable). Groq's free tier
-  retired Llama 4 Scout (July 2026) and recommends `qwen/qwen3.6-27b`, which is multimodal with JSON mode →
+  retired Llama 4 Scout (July 2026); `qwen/qwen3.6-27b` was then retired too (404, Oct 2026). The default is now a list
+  tried in order on 404 — `qwen/qwen3.8-27b` (multimodal, JSON mode), then `openai/gpt-oss-120b` (text only) →
   fallback #1. OpenRouter's `openrouter/free` router accepts images and routes to whichever free model is live →
   fallback #2. For text, the offline parser is the final fallback.
 - **Errors are human:** `לא הצלחתי לנתח את האוכל. נסה לתאר קצת יותר את הכמות.`,

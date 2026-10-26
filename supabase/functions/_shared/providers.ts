@@ -10,7 +10,7 @@
  *  - Primary:  Google Gemini API free tier (AI Studio key, no card). Flash
  *              models: vision + native JSON-schema output + strong reasoning.
  *              Tried in order; a 404 (renamed/retired model) or 429 moves on.
- *  - Fallback: Groq free tier, `qwen/qwen3.6-27b` — vision + JSON mode, very
+ *  - Fallback: Groq free tier, `qwen/qwen3.8-27b` (then `openai/gpt-oss-120b` for text) — vision + JSON mode, very
  *              fast, separate quota from Google.
  *  - Fallback: OpenRouter `openrouter/free` — routes to whatever free
  *              vision-capable model is currently available.
@@ -206,7 +206,8 @@ export class OpenAICompatProvider implements NutritionAIProvider {
   readonly supportsVision: boolean
   private baseUrl: string
   private apiKey: string
-  private model: string
+  /** tried in order: a model the provider retired (404) falls through to the next one */
+  private models: string[]
   private extraHeaders: Record<string, string>
   private extraBody: Record<string, unknown>
   private fetchFn: FetchFn
@@ -223,7 +224,7 @@ export class OpenAICompatProvider implements NutritionAIProvider {
     this.id = id
     this.baseUrl = baseUrl
     this.apiKey = apiKey
-    this.model = model
+    this.models = [...new Set(model.split(',').map((m) => m.trim()).filter(Boolean))]
     this.supportsVision = supportsVision
     this.extraHeaders = extraHeaders
     this.extraBody = extraBody
@@ -231,19 +232,34 @@ export class OpenAICompatProvider implements NutritionAIProvider {
   }
 
   async complete(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+    // text-only models can't take a photo: only the multimodal ones are tried then
+    const models = req.image ? this.models.filter((m) => !TEXT_ONLY_MODEL.test(m)) : this.models
+    let last: unknown = new ProviderError('not_found', 'no model configured')
+    for (const model of models) {
+      try {
+        return await this.callModel(model, req, signal)
+      } catch (e) {
+        last = e
+        if (!(e instanceof ProviderError && e.kind === 'not_found')) throw e
+      }
+    }
+    throw last
+  }
+
+  private async callModel(model: string, req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     try {
-      return await this.call(req, true, signal)
+      return await this.call(model, req, true, signal)
     } catch (e) {
-      if (e instanceof ProviderError && e.kind === 'bad_request') return this.call(req, false, signal)
+      if (e instanceof ProviderError && e.kind === 'bad_request') return this.call(model, req, false, signal)
       throw e
     }
   }
 
-  private async call(req: ProviderRequest, rich: boolean, signal?: AbortSignal): Promise<ProviderResponse> {
+  private async call(model: string, req: ProviderRequest, rich: boolean, signal?: AbortSignal): Promise<ProviderResponse> {
     const userContent: unknown[] = [{ type: 'text', text: req.user }]
     if (req.image) userContent.push({ type: 'image_url', image_url: { url: `data:${req.image.mimeType};base64,${req.image.data}` } })
     const body: Record<string, unknown> = {
-      model: this.model,
+      model,
       temperature: 0.2,
       max_tokens: 3000,
       messages: [
@@ -255,14 +271,20 @@ export class OpenAICompatProvider implements NutritionAIProvider {
     const json = await post(this.fetchFn, `${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.apiKey}`, ...this.extraHeaders }, body, signal)
     const text: string | undefined = json?.choices?.[0]?.message?.content
     if (!text) throw new ProviderError('unavailable', 'empty response')
-    return { text, model: json?.model ?? this.model }
+    return { text, model: json?.model ?? model }
   }
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_GEMINI_MODELS = 'gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash'
-export const DEFAULT_GROQ_MODEL = 'qwen/qwen3.6-27b'
+/**
+ * Groq renames its preview models often (qwen3.6 → qwen3.8 returned 404 on 26.10.2026): a list, tried
+ * in order on 404. qwen3.8-27b is multimodal + JSON mode (preview); gpt-oss-120b is production, text only.
+ */
+export const DEFAULT_GROQ_MODEL = 'qwen/qwen3.8-27b,openai/gpt-oss-120b'
+/** models that take no image input */
+const TEXT_ONLY_MODEL = /gpt-oss|llama-3\.|whisper/i
 export const DEFAULT_OPENROUTER_MODEL = 'openrouter/free'
 
 export function providersFromEnv(env: Env, fetchFn: FetchFn = fetch): NutritionAIProvider[] {
@@ -279,7 +301,7 @@ export function providersFromEnv(env: Env, fetchFn: FetchFn = fetch): NutritionA
           'groq',
           'https://api.groq.com/openai/v1',
           env('GROQ_API_KEY')!,
-          env('GROQ_MODEL') ?? DEFAULT_GROQ_MODEL,
+          [env('GROQ_MODEL'), DEFAULT_GROQ_MODEL].filter(Boolean).join(','),
           (env('GROQ_VISION') ?? 'true') !== 'false',
           {},
           { reasoning_format: 'hidden' },

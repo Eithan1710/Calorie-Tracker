@@ -248,6 +248,32 @@ describe('providers', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
+  it('OpenAI-compatible: a retired model (404) falls through to the next one; photos skip text-only models', async () => {
+    const asked: string[] = []
+    const fetchFn = vi.fn(async (_u: string, init: RequestInit) => {
+      const model = JSON.parse(init.body as string).model as string
+      asked.push(model)
+      if (model === 'old/retired') return new Response('{"error":{"message":"model not found"}}', { status: 404 })
+      return new Response(JSON.stringify({ model, choices: [{ message: { content: '{"a":1}' } }] }))
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider('groq', 'https://x', 'k', 'old/retired,qwen/qwen3.8-27b,openai/gpt-oss-120b', true, {}, {}, fetchFn)
+    const r = await p.complete({ system: 's', user: 'u', jsonSchema: {} })
+    expect(r.model).toBe('qwen/qwen3.8-27b')
+    expect(asked).toEqual(['old/retired', 'qwen/qwen3.8-27b'])
+    asked.length = 0
+    const p2 = new OpenAICompatProvider('groq', 'https://x', 'k', 'old/retired,openai/gpt-oss-120b', true, {}, {}, fetchFn)
+    await expect(p2.complete({ system: 's', user: 'u', image: { data: 'QUJD', mimeType: 'image/jpeg' }, jsonSchema: {} })).rejects.toMatchObject({ kind: 'not_found' })
+    expect(asked).toEqual(['old/retired']) // gpt-oss is text only: not sent a photo
+    // a stale GROQ_MODEL secret still falls back to the current defaults
+    const env = (k: string) => ({ GROQ_API_KEY: 'q', GROQ_MODEL: 'qwen/qwen3.6-27b', AI_PROVIDER_ORDER: 'groq' })[k]
+    const fetch3 = vi.fn(async (_u: string, init: RequestInit) => {
+      const model = JSON.parse(init.body as string).model as string
+      if (model === 'qwen/qwen3.6-27b') return new Response('{}', { status: 404 })
+      return new Response(JSON.stringify({ model, choices: [{ message: { content: '{}' } }] }))
+    }) as unknown as typeof fetch
+    expect((await providersFromEnv(env, fetch3)[0].complete({ system: 's', user: 'u', jsonSchema: {} })).model).toBe('qwen/qwen3.8-27b')
+  })
+
   it('OpenAI-compatible: sends image as data URL with JSON mode', async () => {
     let body: Record<string, unknown> = {}
     const fetchFn = vi.fn(async (_u: string, init: RequestInit) => {
