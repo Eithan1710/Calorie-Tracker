@@ -65,6 +65,9 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
       ]
   const sum = parts.reduce((a, p) => a + p.value, 0) || 1
   const counted = e.workouts.filter((w) => w.counting !== 'duplicate')
+  const inside = apple ? counted.filter((w) => w.counting === 'included_in_active') : counted
+  const insideKnown = inside.filter((w) => w.kcal !== null)
+  const insideKcal = apple ? (insideKnown.length ? insideKnown.reduce((a, w) => a + (w.kcal ?? 0), 0) : null) : e.workoutKcal
   const showProjection = apple && e.partial && e.total - e.soFar >= 30
   const stale = apple && isToday && e.asOf && hoursAgo(e.asOf) > 3
 
@@ -108,13 +111,14 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
             <dd className="num font-semibold">{fmt(p.value)}</dd>
           </div>
         ))}
-        {counted.length > 0 && (
+        {inside.length > 0 && (
+          // Apple mode: only the workouts that are part of "active" — an added (unmeasured) workout has its own row
           <div className="flex items-center gap-2 ps-4.5 text-sm text-ink-3">
             <dt className="min-w-0 flex-1">
               {apple ? 'מתוכה אימונים' : 'כולל אימונים'}
-              {e.workoutKcal === null && ' · אין מספיק נתונים'}
+              {insideKcal === null && ' · אין מספיק נתונים'}
             </dt>
-            <dd className="num">{e.workoutKcal !== null ? fmt(e.workoutKcal) : '—'}</dd>
+            <dd className="num">{insideKcal !== null ? fmt(insideKcal) : '—'}</dd>
           </div>
         )}
       </dl>
