@@ -277,10 +277,15 @@ export function dayEnergy(opts: {
   const energies = new Map(opts.workouts.map((w) => [w.id, workoutEnergy(w, p)]))
 
   const bmr = bmrMifflinStJeor(p)
-  const baseline = bmr * BASELINE_NEAT_FRACTION
   const workoutSteps = distinct.reduce((s, w) => s + estimateWorkoutSteps(w.input, p), 0)
   const stepsCounted = Math.max(0, (opts.steps || 0) - workoutSteps)
   const stepsKcal = stepsNetKcal(stepsCounted, p)
+  // the estimate model's everyday movement stays its flat 5% of BMR (unchanged for days without Apple data)
+  const baseline = bmr * BASELINE_NEAT_FRACTION
+  // the routine model (routine.ts) for what an iPhone alone can't see; walking and workout minutes leave its sedentary time
+  const workoutMinutes = distinct.reduce((s, w) => s + (w.input.durationMin ?? 0), 0)
+  const routineAt = (minutesSoFar: number) =>
+    opts.routine ? routineEnergy(p, opts.date, opts.routine.schedule, minutesSoFar, { stepsCounted, workoutMinutes }) : null
   const exerciseNet = distinct.reduce((s, w) => s + energies.get(w.id)!.net, 0)
   const subtotal = bmr + baseline + stepsKcal + exerciseNet
   const estimate: DailyBurnBreakdown = {
@@ -307,7 +312,7 @@ export function dayEnergy(opts: {
       resting: { kcal: estimate.bmr, fullDay: estimate.bmr, source: 'estimate' },
       active: { kcal: Math.round(baseline + stepsKcal + exerciseNet), source: 'estimate' },
       extra: 0,
-      routine: 0, // the baseline-movement term already covers it
+      routine: 0, // the estimate's baseline-movement term covers everyday movement
       routineSoFar: 0,
       routineDetail: null,
       sources: { apple: 0, estimated: estimate.total },
@@ -356,7 +361,8 @@ export function dayEnergy(opts: {
   const tef = foodTef(opts.intake)
   // only next to Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
   // full day for the balance; "so far" counts what was done by the snapshot (office hours as they pass)
-  const r = hasActive && opts.routine?.phoneOnly ? routineEnergy(p, opts.date, opts.routine.schedule, minutes) : null
+  // only on top of Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
+  const r = hasActive && opts.routine?.phoneOnly ? routineAt(minutes) : null
   const routine = r?.kcal ?? 0
   const routineSoFar = r?.soFar ?? 0
   const total = restingFull + active + extra + routine + tef

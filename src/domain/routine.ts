@@ -9,11 +9,13 @@ import { metKcalPerMin, restingKcalPerMin, type Profile } from './energy'
  *                    added a second time.
  *   Active Energy  — movement the phone's sensors register while it is carried (walking,
  *                    stairs), plus workouts apps such as Hevy or Strava write into Health.
- * What is missing therefore is movement done *without the phone*:
+ * What is missing therefore is everyday energy above rest that the phone can't see:
  *   • the short morning/evening routine (getting up, teeth, shower, dressing);
  *   • the hours the user spends at work with the phone left aside (their weekly schedule);
- *     the breaks in which the phone is with them are left to Apple Health.
- * With an Apple Watch all of this is measured by the watch → nothing is added.
+ *   • in a lunch break the phone is there — Apple has the walking, not the seated meal;
+ *   • awake time at home: sitting and light chores cost more than rest, and are not steps.
+ * Walking time (from steps) and workout time are taken out of the sedentary time, so no minute
+ * is costed twice. With an Apple Watch all of this is measured by the watch → nothing is added.
  *
  * Every item is costed with the same method as workouts (energy.ts): energy above the
  * person's own resting rate = (MET × 3.5 × kg / 200 − BMR / 1440) × minutes, never below 0,
@@ -121,37 +123,102 @@ export interface RoutineEnergy {
   /** minutes of the day estimated because the phone was away (work hours) */
   noPhoneMinutes: number
   windows: [number, number][]
+  /** awake minutes at home costed as sedentary/light (after walking, workouts and self-care were taken out) */
+  homeMinutes: number
+  /** walking minutes taken out of the home time (steps / 110) */
+  walkingMinutes: number
   lines: RoutineLine[]
 }
 
 /**
- * The day's routine energy above rest. `minutesSoFar` = minutes of the day covered by the
- * snapshot: the work hours count as they pass; the short self-care routine counts from the
- * start of the day (it is mostly the morning).
+ * Waking day assumed for the everyday-movement estimate: 07:00–23:30 (7.5 h of sleep — Apple's
+ * Resting Energy covers the night; nothing is added for sleep).
  */
-export function routineEnergy(p: Profile, date: string, schedule?: OfficeSchedule | null, minutesSoFar = 1440): RoutineEnergy {
+export const AWAKE: [number, number] = [7 * 60, 23 * 60 + 30]
+
+/**
+ * Time at home (awake, not at work) is mostly sedentary but not resting: sitting awake costs more
+ * than the basal rate Apple uses for Resting Energy, and light standing chores more still. The
+ * phone only sees walking. Conservative mix (no extra walking assumed — steps are Apple's):
+ *   75% sitting quietly / phone / TV (MET 1.3) · 10% standing & light chores — cooking, tidying
+ *   (MET 2.0) · 15% lying / reclining (≈ rest, adds nothing).
+ */
+export const HOME_MIX = { sitting: { share: 0.75, met: 1.3 }, light: { share: 0.1, met: 2.0 } } as const
+/** per hour of lunch break (phone with him: the walking is Apple's) — eating seated, standing in line */
+export const LUNCH_PER_HOUR = { eating: { minutes: 35, met: 1.5 }, standing: { minutes: 10, met: 1.3 } } as const
+/** step cadence used to take walking time out of the sedentary estimate */
+const WALK_SPM = 110
+
+const minus = (base: [number, number][], cut: [number, number][]) =>
+  cut.reduce(
+    (ws, [x, y]) => ws.flatMap(([a, b]): [number, number][] => (y <= a || x >= b ? [[a, b]] : [...(x > a ? [[a, x] as [number, number]] : []), ...(y < b ? [[y, b] as [number, number]] : [])])),
+    base,
+  )
+
+export interface RoutineActivityInput {
+  /** steps that count as walking (after the steps of runs/walks were taken out) — Apple's or typed */
+  stepsCounted?: number
+  /** minutes of the day's (non-duplicate) workouts — their energy is counted on its own */
+  workoutMinutes?: number
+}
+
+/**
+ * The day's routine energy above rest: the self-care routine, the work hours without the phone,
+ * the unmeasured part of the lunch break, and the sedentary/light time at home. `minutesSoFar` =
+ * minutes of the day covered by the snapshot: each part counts as its hours pass (the short
+ * self-care routine from the start of the day). Walking time (from steps) and workout time are
+ * taken out of the home time first, so those minutes are never costed twice.
+ */
+export function routineEnergy(p: Profile, date: string, schedule?: OfficeSchedule | null, minutesSoFar = 1440, activity: RoutineActivityInput = {}): RoutineEnergy {
   const lines: RoutineLine[] = MORNING_ROUTINE.map((a) => {
     const kcal = netKcal(p, a.met, a.minutes)
     return { ...a, kcal, soFar: kcal }
   })
+  const line = (id: string, label: string, met: number, minutes: number, done: number) => {
+    if (minutes <= 0) return
+    const kcal = netKcal(p, met, minutes)
+    lines.push({ id, label, met, minutes, kcal, soFar: kcal * done })
+  }
+
+  // work hours without the phone
   const windows = noPhoneWindows(schedule, date)
   const total = covered(windows, 1440)
+  const workDay = total > 0 && isValidOfficeSchedule(schedule)
   if (total > 0) {
     const done = covered(windows, minutesSoFar) / total
     const walk = Math.round(total * OFFICE_WALKING_SHARE)
-    const sit = total - walk
-    const sitKcal = netKcal(p, OFFICE_SITTING_MET, sit)
-    const walkKcal = netKcal(p, OFFICE_WALKING_MET, walk)
-    lines.push(
-      { id: 'office_sitting', label: 'עבודה מול מחשב בלי הטלפון', met: OFFICE_SITTING_MET, minutes: sit, kcal: sitKcal, soFar: sitKcal * done },
-      { id: 'office_moving', label: 'קימות והליכה קצרה במשרד', met: OFFICE_WALKING_MET, minutes: walk, kcal: walkKcal, soFar: walkKcal * done },
-    )
+    line('office_sitting', 'עבודה מול מחשב בלי הטלפון', OFFICE_SITTING_MET, total - walk, done)
+    line('office_moving', 'קימות והליכה קצרה במשרד', OFFICE_WALKING_MET, walk, done)
   }
+
+  // lunch break(s): the phone is there, so Apple has the walking — not the seated meal or standing in line
+  const breaks: [number, number][] = workDay ? schedule!.phoneBreaks.map(([x, y]) => [toMin(x), toMin(y)]) : []
+  const breakMin = covered(breaks, 1440)
+  if (breakMin > 0) {
+    const done = covered(breaks, minutesSoFar) / breakMin
+    line('lunch_eating', 'ארוחת צהריים בישיבה', LUNCH_PER_HOUR.eating.met, Math.round((breakMin / 60) * LUNCH_PER_HOUR.eating.minutes), done)
+    line('lunch_standing', 'עמידה בתור / המתנה', LUNCH_PER_HOUR.standing.met, Math.round((breakMin / 60) * LUNCH_PER_HOUR.standing.minutes), done)
+  }
+
+  // awake at home: sedentary but above rest (minus walking, workouts and the self-care routine)
+  const homeWindows = workDay ? minus([AWAKE], [[toMin(schedule!.start), toMin(schedule!.end)]]) : [AWAKE]
+  const homeSpan = covered(homeWindows, 1440)
+  const morning = MORNING_ROUTINE.reduce((s, a) => s + a.minutes, 0)
+  const walking = Math.round(Math.max(0, activity.stepsCounted ?? 0) / WALK_SPM)
+  const home = Math.max(0, homeSpan - morning - walking - Math.max(0, activity.workoutMinutes ?? 0))
+  if (home > 0) {
+    const done = covered(homeWindows, minutesSoFar) / homeSpan
+    line('home_sitting', 'ישיבה בבית (מחשב, טלפון, טלוויזיה)', HOME_MIX.sitting.met, Math.round(home * HOME_MIX.sitting.share), done)
+    line('home_light', 'עמידה ועבודות בית קלות', HOME_MIX.light.met, Math.round(home * HOME_MIX.light.share), done)
+  }
+
   return {
     kcal: lines.reduce((s, l) => s + l.kcal, 0),
     soFar: lines.reduce((s, l) => s + l.soFar, 0),
     noPhoneMinutes: total,
     windows,
+    homeMinutes: home,
+    walkingMinutes: walking,
     lines,
   }
 }
@@ -168,7 +235,11 @@ export function healthDeviceOf(settings: { healthDevice?: HealthDevice }, exerci
   return 'phone'
 }
 
-/** What the energy model needs to know about the routine. */
+/**
+ * What the energy model needs to know about the routine. It is used only next to Apple Health's
+ * measured Active Energy from an iPhone alone; days without Apple data keep the estimate model
+ * (with its own 5%-of-BMR everyday-movement term), unchanged.
+ */
 export interface RoutineContext {
   phoneOnly: boolean
   schedule: OfficeSchedule | null

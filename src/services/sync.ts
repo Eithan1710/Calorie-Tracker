@@ -315,14 +315,15 @@ async function push() {
 /** Days whose cached summary must be rewritten on the next push (Apple Health data arrived, …). */
 const summaryRefresh = new Set<string>()
 /**
- * Bumped when summaries written by older versions may be stale: version 6 = work schedule reaches devices
+ * Bumped when summaries written by older versions may be stale: version 7 = lunch + home everyday movement;
+ * version 6 = work schedule reaches devices
  * that synced it with an older app; version 5 = work schedule + breakdown;
  * version 4 = office hours in the routine;
  * version 3 = daily-routine movement
  * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 6
+const SUMMARIES_VERSION = 7
 
 function queueSummaryBackfill() {
   const st = getState()
