@@ -248,6 +248,49 @@ describe('providers', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
+  it('Groq: always the compact prompt (no food table) and a smaller max_tokens — fits the 8K-TPM free tier', async () => {
+    let body: { messages: { role: string; content: unknown }[]; max_tokens: number } | null = null
+    const fetchFn = vi.fn(async (_u: string, init: RequestInit) => {
+      body = JSON.parse(init.body as string)
+      return new Response(JSON.stringify({ model: 'qwen/qwen3.8-27b', choices: [{ message: { content: '{}' } }] }))
+    }) as unknown as typeof fetch
+    const env = (k: string) => ({ GROQ_API_KEY: 'q', AI_PROVIDER_ORDER: 'groq' })[k]
+    await providersFromEnv(env, fetchFn)[0].complete({ system: 'FULL ' + 'x'.repeat(20000), systemCompact: 'COMPACT', user: 'u', jsonSchema: {} })
+    expect(body!.messages[0].content).toBe('COMPACT')
+    expect(body!.max_tokens).toBe(2500)
+  })
+
+  it('OpenAI-compatible: a 413 (over the token budget) is retried once without the food table', async () => {
+    const systems: string[] = []
+    const fetchFn = vi.fn(async (_u: string, init: RequestInit) => {
+      const b = JSON.parse(init.body as string)
+      systems.push(b.messages[0].content)
+      if (b.messages[0].content === 'FULL') return new Response('{"error":{"message":"Request too large"}}', { status: 413 })
+      return new Response(JSON.stringify({ model: 'm', choices: [{ message: { content: '{}' } }] }))
+    }) as unknown as typeof fetch
+    const p = new OpenAICompatProvider('openrouter', 'https://x', 'k', 'm', true, {}, {}, fetchFn)
+    await p.complete({ system: 'FULL', systemCompact: 'COMPACT', user: 'u', jsonSchema: {} })
+    expect(systems).toEqual(['FULL', 'COMPACT'])
+  })
+
+  it('Gemini: a round where every model is overloaded (503) gets one more round after a short pause', async () => {
+    let calls = 0
+    const fetchFn = vi.fn(async () => {
+      calls++
+      if (calls <= 2) return new Response('{"error":{"message":"overloaded"}}', { status: 503 })
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"ok":1}' }] } }] }))
+    }) as unknown as typeof fetch
+    const g = new GeminiProvider('k', ['a', 'b'], fetchFn, 0)
+    g.retryPauseMs = 5
+    const r = await g.complete({ system: 's', user: 'u', jsonSchema: {} })
+    expect(r.text).toBe('{"ok":1}')
+    expect(calls).toBe(3)
+    // a wrong key is not retried
+    const bad = new GeminiProvider('k', ['a'], vi.fn(async () => new Response('{}', { status: 403 })) as unknown as typeof fetch, 0)
+    bad.retryPauseMs = 5
+    await expect(bad.complete({ system: 's', user: 'u', jsonSchema: {} })).rejects.toMatchObject({ kind: 'auth' })
+  })
+
   it('OpenAI-compatible: a retired model (404) falls through to the next one; photos skip text-only models', async () => {
     const asked: string[] = []
     const fetchFn = vi.fn(async (_u: string, init: RequestInit) => {

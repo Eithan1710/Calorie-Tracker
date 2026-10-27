@@ -19,6 +19,8 @@
 
 export interface ProviderRequest {
   system: string
+  /** the same instructions without the food table — for providers with a small per-minute token budget */
+  systemCompact?: string
   user: string
   image?: { data: string; mimeType: string }
   jsonSchema: Record<string, unknown>
@@ -125,7 +127,26 @@ export class GeminiProvider implements NutritionAIProvider {
     }
   }
 
-  complete(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+  /**
+   * Gemini answers 503 "overloaded" in bursts (seen at Israeli evening peak: every model at once).
+   * Those clear within seconds, so after a round where all models were overloaded, one more round
+   * starts after a short pause — while the overall budget allows; then the fallbacks take over.
+   */
+  async complete(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+    try {
+      return await this.round(req, signal)
+    } catch (e) {
+      const err = e instanceof ProviderError ? e : new ProviderError('unavailable', String(e))
+      if (!(err.kind === 'unavailable' && (err.status === 503 || err.status === 500)) || signal?.aborted) throw err
+      await new Promise((r) => setTimeout(r, this.retryPauseMs))
+      if (signal?.aborted) throw err
+      return this.round(req, signal)
+    }
+  }
+
+  retryPauseMs = 1500
+
+  private round(req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
     return new Promise((resolve, reject) => {
       const controllers: AbortController[] = []
       let next = 0
@@ -211,6 +232,9 @@ export class OpenAICompatProvider implements NutritionAIProvider {
   private extraHeaders: Record<string, string>
   private extraBody: Record<string, unknown>
   private fetchFn: FetchFn
+  /** small per-minute token budget (Groq free tier: 8K TPM incl. max_tokens) → send the compact prompt */
+  compact = false
+  maxTokens = 3000
   constructor(
     id: string,
     baseUrl: string,
@@ -247,10 +271,14 @@ export class OpenAICompatProvider implements NutritionAIProvider {
   }
 
   private async callModel(model: string, req: ProviderRequest, signal?: AbortSignal): Promise<ProviderResponse> {
+    const compactReq = req.systemCompact ? { ...req, system: req.systemCompact } : req
+    const first = this.compact ? compactReq : req
     try {
-      return await this.call(model, req, true, signal)
+      return await this.call(model, first, true, signal)
     } catch (e) {
-      if (e instanceof ProviderError && e.kind === 'bad_request') return this.call(model, req, false, signal)
+      if (e instanceof ProviderError && e.kind === 'bad_request') return this.call(model, first, false, signal)
+      // 413: the request is over the provider's token budget — once more without the food table
+      if (e instanceof ProviderError && e.status === 413 && first !== compactReq) return this.call(model, compactReq, true, signal)
       throw e
     }
   }
@@ -261,7 +289,7 @@ export class OpenAICompatProvider implements NutritionAIProvider {
     const body: Record<string, unknown> = {
       model,
       temperature: 0.2,
-      max_tokens: 3000,
+      max_tokens: this.maxTokens,
       messages: [
         { role: 'system', content: req.system },
         { role: 'user', content: req.image ? userContent : req.user },
@@ -296,18 +324,20 @@ export function providersFromEnv(env: Env, fetchFn: FetchFn = fetch): NutritionA
       list.push(new GeminiProvider(env('GEMINI_API_KEY')!, models, fetchFn, Number(env('GEMINI_HEDGE_MS') ?? 8000)))
     }
     if (id === 'groq' && env('GROQ_API_KEY')) {
-      list.push(
-        new OpenAICompatProvider(
-          'groq',
-          'https://api.groq.com/openai/v1',
-          env('GROQ_API_KEY')!,
-          [env('GROQ_MODEL'), DEFAULT_GROQ_MODEL].filter(Boolean).join(','),
-          (env('GROQ_VISION') ?? 'true') !== 'false',
-          {},
-          { reasoning_format: 'hidden' },
-          fetchFn,
-        ),
+      const groq = new OpenAICompatProvider(
+        'groq',
+        'https://api.groq.com/openai/v1',
+        env('GROQ_API_KEY')!,
+        [env('GROQ_MODEL'), DEFAULT_GROQ_MODEL].filter(Boolean).join(','),
+        (env('GROQ_VISION') ?? 'true') !== 'false',
+        {},
+        { reasoning_format: 'hidden' },
+        fetchFn,
       )
+      // free tier: 8K tokens per minute *including* max_tokens — the full prompt (~8.5K) answered 413
+      groq.compact = true
+      groq.maxTokens = 2500
+      list.push(groq)
     }
     if (id === 'openrouter' && env('OPENROUTER_API_KEY')) {
       list.push(

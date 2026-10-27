@@ -80,6 +80,14 @@ export function buildSystemPrompt(): string {
   return `${NUTRITION_SKILL}\n\n## Nutrition table (db_key | English | Hebrew | state)\n${foodCatalogForPrompt()}`
 }
 
+/**
+ * The same instructions without the ~5K-token food table, for providers with a small token budget.
+ * Items then come back without db_key and are matched by name in the full food database.
+ */
+export function buildCompactSystemPrompt(): string {
+  return `${NUTRITION_SKILL}\n\n## Nutrition table\nNot included in this request: set db_key to null for every item and give a precise English name (name_en) and state; the server looks the food up by name.`
+}
+
 export function buildUserPrompt(req: AnalyzeRequest): string {
   if (req.mode === 'correct') {
     return [
@@ -321,6 +329,7 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
   }
 
   const system = buildSystemPrompt()
+  const systemCompact = buildCompactSystemPrompt()
   const user = buildUserPrompt(req)
   let sawUnclear: string | null = null
   let sawNotFood = false
@@ -333,7 +342,7 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
       const t0 = Date.now()
       let res
       try {
-        res = await provider.complete({ system, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, budget)
+        res = await provider.complete({ system, systemCompact, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, budget)
       } finally {
         timing.ai += Date.now() - t0
       }
