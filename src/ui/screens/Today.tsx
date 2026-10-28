@@ -11,7 +11,6 @@ import { usePhotoUrl } from '../../services/photos'
 import { InstallApp } from '../InstallApp'
 import { EnergyCard, StepsCard, WorkoutsCard } from './Energy'
 import { ActivityCheck } from './ActivityCheck'
-import { Suggestions } from './Suggestions'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -90,7 +89,6 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
             <MacroTile label="שומן" value={summary.fat} color="var(--fat)" />
             <MacroTile label="פחמימות" value={summary.carbs} color="var(--carbs)" />
           </div>
-          {date === today && <Suggestions s={summary} date={date} />}
         </div>
         <FoodLog food={food} total={summary.eaten} onAdd={actions.onAddFood} onOpen={actions.onOpenEntry} />
       </div>
