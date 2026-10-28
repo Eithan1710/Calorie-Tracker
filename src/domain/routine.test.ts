@@ -44,35 +44,35 @@ describe('weekly work schedule', () => {
 describe('routine energy: same method as workouts (above the person’s own rest)', () => {
   const lines = (r: ReturnType<typeof routineEnergy>) => Object.fromEntries(r.lines.map((l) => [l.id, l]))
 
-  it('work day: 7.5 h without the phone — 96% seated computer work (MET 1.5), 4% slow walking (MET 2.0)', () => {
+  it('work day: 7.5 h without the phone — 96% seated computer work (MET 1.3), 4% slow walking (MET 2.0)', () => {
     const r = routineEnergy(p, SUNDAY, WORK)
     const l = lines(r)
     expect(r.noPhoneMinutes).toBe(450)
     expect(l.office_sitting.minutes + l.office_moving.minutes).toBe(450)
     expect(l.office_moving.minutes).toBe(18)
-    expect(l.office_sitting.kcal).toBeCloseTo(net(1.5, 432), 5)
+    expect(l.office_sitting.kcal).toBeCloseTo(net(1.3, 432), 5)
     expect(l.office_moving.kcal).toBeCloseTo(net(2.0, 18), 5)
   })
 
   it('lunch break: the phone is there (walking = Apple) — only the seated meal and standing in line are added', () => {
     const l = lines(routineEnergy(p, SUNDAY, WORK))
     expect(l.lunch_eating.minutes).toBe(35)
-    expect(l.lunch_eating.met).toBe(1.5)
+    expect(l.lunch_eating.met).toBe(1.3)
     expect(l.lunch_standing.minutes).toBe(10)
     // 15 of the 60 minutes are left to Apple Health (walking to / from lunch)
     expect(l.lunch_eating.minutes + l.lunch_standing.minutes).toBeLessThan(60)
   })
 
-  it('home: awake 07:00–23:30 minus work hours, self-care, walking (steps) and workouts — 75% sitting, 10% light', () => {
+  it('home: awake 07:00–23:30 minus work hours, self-care, walking (steps) and workouts — 80% sitting, 5% light', () => {
     const none = routineEnergy(p, SUNDAY, WORK)
     expect(none.homeMinutes).toBe(990 - 510 - 25) // 455
     const active = routineEnergy(p, SUNDAY, WORK, 1440, { stepsCounted: 7700, workoutMinutes: 90 })
     expect(active.walkingMinutes).toBe(70)
     expect(active.homeMinutes).toBe(455 - 70 - 90) // walking and the gym are never also costed as sitting
     const l = lines(active)
-    expect(l.home_sitting.minutes).toBe(Math.round(295 * 0.75))
-    expect(l.home_light.minutes).toBe(Math.round(295 * 0.1))
-    expect(l.home_sitting.kcal).toBeCloseTo(net(1.3, Math.round(295 * 0.75)), 5)
+    expect(l.home_sitting.minutes).toBe(Math.round(295 * 0.8))
+    expect(l.home_light.minutes).toBe(Math.round(295 * 0.05))
+    expect(l.home_sitting.kcal).toBeCloseTo(net(1.15, Math.round(295 * 0.8)), 5)
   })
 
   it('day off: no work hours or lunch — self-care and the longer home time', () => {
@@ -82,19 +82,19 @@ describe('routine energy: same method as workouts (above the person’s own rest
     expect(r.homeMinutes).toBe(990 - 25 - 64)
   })
 
-  it('realistic size, not inflated: ≈ 430 kcal on a work day, ≈ 340 on a day off (59 kg, 7,000 steps)', () => {
+  it('strict, not inflated: ≈ 270 kcal on a work day, ≈ 190 on a day off (59 kg, 7,000 steps)', () => {
     const work = routineEnergy(p, SUNDAY, WORK, 1440, { stepsCounted: 7000 }).kcal
     const off = routineEnergy(p, FRIDAY, WORK, 1440, { stepsCounted: 7000 }).kcal
-    expect(work).toBeGreaterThan(380)
-    expect(work).toBeLessThan(480)
-    expect(off).toBeGreaterThan(300)
-    expect(off).toBeLessThan(380)
+    expect(work).toBeGreaterThan(230)
+    expect(work).toBeLessThan(310)
+    expect(off).toBeGreaterThan(160)
+    expect(off).toBeLessThan(230)
     expect(work - off).toBeGreaterThan(50) // desk work costs a little more than the home mix
     // the whole day stays a plausible sedentary-to-light day: BMR × ~1.5 with Apple's walking and digestion
     const bmr = bmrMifflinStJeor(p)
     const pal = (bmr + work + 200 + 170) / bmr
-    expect(pal).toBeGreaterThan(1.4)
-    expect(pal).toBeLessThan(1.7)
+    expect(pal).toBeGreaterThan(1.35)
+    expect(pal).toBeLessThan(1.6)
   })
 
   it('never below zero, even for a body whose rest exceeds the MET rate', () => {

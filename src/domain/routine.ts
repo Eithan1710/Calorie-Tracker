@@ -20,8 +20,10 @@ import { metKcalPerMin, restingKcalPerMin, type Profile } from './energy'
  * Every item is costed with the same method as workouts (energy.ts): energy above the
  * person's own resting rate = (MET × 3.5 × kg / 200 − BMR / 1440) × minutes, never below 0,
  * so it adds to Apple's Resting Energy without counting rest twice. MET values: 2024 Adult
- * Compendium of Physical Activities (self-care; sitting light office/computer work 1.5;
- * walking very slowly < 3.2 km/h 2.0). The office mix is deliberately conservative: mostly
+ * Compendium of Physical Activities (self-care; walking very slowly < 3.2 km/h 2.0) and
+ * measured values for seated tasks (Mansoubi et al. 2015: computer work ≈ 1.3, TV ≈ 1.1–1.2 METs —
+ * lower than the Compendium's general 1.5, and partly including digestion, which is counted on
+ * its own). Strict on purpose — the estimate must not inflate the burn. The office mix: mostly
  * seated work, ~4% of the time walking slowly (getting up, coffee, toilet) — no assumption of
  * extra walking without data.
  */
@@ -41,7 +43,7 @@ export const MORNING_ROUTINE: readonly RoutineActivity[] = [
 ]
 
 /** Office minutes without the phone: seated computer work + a little slow walking. */
-export const OFFICE_SITTING_MET = 1.5
+export const OFFICE_SITTING_MET = 1.3
 export const OFFICE_WALKING_MET = 2.0
 export const OFFICE_WALKING_SHARE = 0.04
 
@@ -140,12 +142,12 @@ export const AWAKE: [number, number] = [7 * 60, 23 * 60 + 30]
  * Time at home (awake, not at work) is mostly sedentary but not resting: sitting awake costs more
  * than the basal rate Apple uses for Resting Energy, and light standing chores more still. The
  * phone only sees walking. Conservative mix (no extra walking assumed — steps are Apple's):
- *   75% sitting quietly / phone / TV (MET 1.3) · 10% standing & light chores — cooking, tidying
+ *   80% sitting quietly / phone / TV (MET 1.15) · 5% standing & light chores — cooking, tidying
  *   (MET 2.0) · 15% lying / reclining (≈ rest, adds nothing).
  */
-export const HOME_MIX = { sitting: { share: 0.75, met: 1.3 }, light: { share: 0.1, met: 2.0 } } as const
+export const HOME_MIX = { sitting: { share: 0.8, met: 1.15 }, light: { share: 0.05, met: 2.0 } } as const
 /** per hour of lunch break (phone with him: the walking is Apple's) — eating seated, standing in line */
-export const LUNCH_PER_HOUR = { eating: { minutes: 35, met: 1.5 }, standing: { minutes: 10, met: 1.3 } } as const
+export const LUNCH_PER_HOUR = { eating: { minutes: 35, met: 1.3 }, standing: { minutes: 10, met: 1.3 } } as const
 /** step cadence used to take walking time out of the sedentary estimate */
 const WALK_SPM = 110
 
