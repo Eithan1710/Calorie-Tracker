@@ -1,0 +1,6 @@
+[mobile] body text: מאזן |  | כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום. |  | התחברות | שם משתמש | סיסמה | כניסה |  | הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.
+[mobile] scripts: /Calorie-Tracker/assets/index-DLd8mb1-.js
+[mobile] js files: 17 · surplus words: true · empty: true
+[desktop] body text: מאזן |  | כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום. |  | התחברות | שם משתמש | סיסמה | כניסה |  | הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.
+[desktop] scripts: /Calorie-Tracker/assets/index-DLd8mb1-.js
+[desktop] js files: 17 · surplus words: true · empty: true
