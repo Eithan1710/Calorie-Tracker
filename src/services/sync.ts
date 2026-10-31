@@ -324,7 +324,7 @@ const summaryRefresh = new Set<string>()
  * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 8
+const SUMMARIES_VERSION = 9
 
 function queueSummaryBackfill() {
   const st = getState()

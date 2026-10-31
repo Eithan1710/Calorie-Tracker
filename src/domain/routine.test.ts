@@ -63,7 +63,7 @@ describe('routine energy: same method as workouts (above the person’s own rest
     expect(l.lunch_eating.minutes + l.lunch_standing.minutes).toBeLessThan(60)
   })
 
-  it('home: awake 07:00–23:30 minus work hours, self-care, walking (steps) and workouts — 80% sitting, 5% light', () => {
+  it('home: awake 07:00–23:30 minus work hours, self-care, walking (steps) and workouts — 80% sitting, 5% light, costed vs own rest', () => {
     const none = routineEnergy(p, SUNDAY, WORK)
     expect(none.homeMinutes).toBe(990 - 510 - 25) // 455
     const active = routineEnergy(p, SUNDAY, WORK, 1440, { stepsCounted: 7700, workoutMinutes: 90 })
@@ -72,7 +72,9 @@ describe('routine energy: same method as workouts (above the person’s own rest
     const l = lines(active)
     expect(l.home_sitting.minutes).toBe(Math.round(295 * 0.8))
     expect(l.home_light.minutes).toBe(Math.round(295 * 0.05))
-    expect(l.home_sitting.kcal).toBeCloseTo(net(1.15, Math.round(295 * 0.8)), 5)
+    expect(l.home_sitting.kcal).toBeCloseTo(0.05 * (bmrMifflinStJeor(p) / 1440) * Math.round(295 * 0.8), 5)
+    expect(l.home_light.kcal).toBeCloseTo(0.5 * (bmrMifflinStJeor(p) / 1440) * Math.round(295 * 0.05), 5)
+    expect(l.home_sitting.vsRest).toBe(1.05)
   })
 
   it('day off: no work hours or lunch — self-care and the longer home time', () => {
@@ -82,13 +84,13 @@ describe('routine energy: same method as workouts (above the person’s own rest
     expect(r.homeMinutes).toBe(990 - 25 - 64)
   })
 
-  it('strict, not inflated: ≈ 270 kcal on a work day, ≈ 190 on a day off (59 kg, 7,000 steps)', () => {
+  it('strict, not inflated: ≈ 230 kcal on a work day, 50–100 on a day off (59 kg, 7,000 steps)', () => {
     const work = routineEnergy(p, SUNDAY, WORK, 1440, { stepsCounted: 7000 }).kcal
     const off = routineEnergy(p, FRIDAY, WORK, 1440, { stepsCounted: 7000 }).kcal
-    expect(work).toBeGreaterThan(230)
-    expect(work).toBeLessThan(310)
-    expect(off).toBeGreaterThan(160)
-    expect(off).toBeLessThan(230)
+    expect(work).toBeGreaterThan(200)
+    expect(work).toBeLessThan(280)
+    expect(off).toBeGreaterThan(50)
+    expect(off).toBeLessThan(100.5)
     expect(work - off).toBeGreaterThan(50) // desk work costs a little more than the home mix
     // the whole day stays a plausible sedentary-to-light day: BMR × ~1.5 with Apple's walking and digestion
     const bmr = bmrMifflinStJeor(p)

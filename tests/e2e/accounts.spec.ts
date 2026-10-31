@@ -219,15 +219,16 @@ test('Apple Health: resting + active energy and an imported Strava run, no doubl
 
   const energy = page.getByRole('region', { name: 'שריפה היום' })
   // no Apple Watch seen (the run came from Strava) → iPhone alone: the everyday energy above rest it can't see
-  // is added, costed like workouts — (MET × 3.5 × 82 / 200 − 1,777.5 / 1,440) × minutes: self-care + the awake
-  // time at home (07:00–23:30 minus the run and the walking from 6,000 steps), 80% sitting MET 1.15, 5% light MET 2.0
-  // → 433 for the day, 178 of it by 12:30 (no work schedule set)
+  // is added: self-care like workouts — (MET × 3.5 × 82 / 200 − 1,777.5 / 1,440) × minutes — and the awake time
+  // at home (07:00–23:30 minus the run and the walking from 6,000 steps) as a multiple of his own rest: 80% sitting
+  // × 1.05, 5% light × 1.5 → 125 for the day (a day off stays within ~50–100 for a lighter body), 75 of it by 12:30
   await expect(energy.getByText('שגרה בלי הטלפון')).toBeVisible()
-  await expect(energy.getByTestId('energy-total')).toHaveText(/1,698/) // 1,100 + 420 + 178 so far
-  await expect(hero(page)).toContainText('2,965') // 2,112 + 420 + 433
+  await expect(energy.getByTestId('energy-total')).toHaveText(/1,595/) // 1,100 + 420 + 75 so far
+  await expect(hero(page)).toContainText('2,657') // 2,112 + 420 + 125
   await energy.getByRole('button', { name: 'מה המספרים אומרים' }).click()
   await expect(energy.getByTestId('routine-explainer')).toContainText('מקלחת')
-  await expect(energy.getByTestId('routine-explainer')).toContainText('433')
+  await expect(energy.getByTestId('routine-explainer')).toContainText('125')
+  await expect(energy.getByTestId('routine-explainer')).toContainText('פי 1.05 מהמנוחה')
   await expect(energy.getByTestId('routine-explainer')).toContainText('ישיבה בבית')
   await expect(energy.getByTestId('energy-confidence')).toContainText('רמת ביטחון')
 
@@ -603,10 +604,10 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   await expect(energy.getByTestId('energy-confidence')).toContainText('מ-Apple Health 910')
   await expect(page.getByTestId('burn-uncertainty')).toContainText('±')
   const after = await burned()
-  // 8.5 work hours now count as desk work + lunch instead of home time: desk work (MET 1.3) costs a little more
-  // than the home mix, so the day goes up by a modest amount — never the whole work day again
-  expect(after - before).toBeGreaterThan(50)
-  expect(after - before).toBeLessThan(150)
+  // 8.5 work hours now count as desk work + lunch instead of home time: desk work (MET 1.3) costs more than
+  // sitting at home (1.05 × rest), so the day goes up (+290 for this 82 kg body) — never the whole work day again
+  expect(after - before).toBeGreaterThan(200)
+  expect(after - before).toBeLessThan(350)
 
   // the quick check: salsa (Apple Health didn't see it) → its estimate is added, once
   const check = page.getByTestId('activity-check')

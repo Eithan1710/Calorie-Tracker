@@ -113,7 +113,11 @@ export function netKcal(p: Profile, met: number, minutes: number): number {
   return Math.max(0, metKcalPerMin(met, p.weightKg) - restingKcalPerMin(p)) * minutes
 }
 
-export interface RoutineLine extends RoutineActivity {
+export interface RoutineLine extends Omit<RoutineActivity, 'met'> {
+  /** costed with a MET value (self-care, office, lunch) … */
+  met?: number
+  /** … or as a multiple of the person's own resting rate (home time) */
+  vsRest?: number
   kcal: number
   /** part done by the snapshot time */
   soFar: number
@@ -139,13 +143,17 @@ export interface RoutineEnergy {
 export const AWAKE: [number, number] = [7 * 60, 23 * 60 + 30]
 
 /**
- * Time at home (awake, not at work) is mostly sedentary but not resting: sitting awake costs more
- * than the basal rate Apple uses for Resting Energy, and light standing chores more still. The
- * phone only sees walking. Conservative mix (no extra walking assumed — steps are Apple's):
- *   80% sitting quietly / phone / TV (MET 1.15) · 5% standing & light chores — cooking, tidying
- *   (MET 2.0) · 15% lying / reclining (≈ rest, adds nothing).
+ * Time at home (awake, not at work) is mostly sedentary and only a little above rest. It is costed
+ * as a multiple of the person's OWN resting rate, not with MET × 3.5 ml/kg/min: that standard
+ * "1 MET" is above most people's measured rest (Byrne et al. 2005: ~2.6 ml/kg/min on average), so a
+ * MET value for sitting quietly turned 12 hours on the couch into ~140 kcal "above rest" — sitting
+ * awake measures only ~5% above lying at rest (Levine 2000; Mansoubi 2015). The phone sees the
+ * walking (and at home it is usually nearby). Strict mix, no extra walking assumed:
+ *   80% sitting — phone, TV, computer (1.05 × rest) · 5% standing & light chores — cooking,
+ *   tidying (1.5 × rest) · 15% lying / reclining (= rest, adds nothing).
+ * A day off therefore adds ≈ 50–100 kcal in all, the self-care routine included.
  */
-export const HOME_MIX = { sitting: { share: 0.8, met: 1.15 }, light: { share: 0.05, met: 2.0 } } as const
+export const HOME_MIX = { sitting: { share: 0.8, vsRest: 1.05 }, light: { share: 0.05, vsRest: 1.5 } } as const
 /** per hour of lunch break (phone with him: the walking is Apple's) — eating seated, standing in line */
 export const LUNCH_PER_HOUR = { eating: { minutes: 35, met: 1.3 }, standing: { minutes: 10, met: 1.3 } } as const
 /** step cadence used to take walking time out of the sedentary estimate */
@@ -181,6 +189,11 @@ export function routineEnergy(p: Profile, date: string, schedule?: OfficeSchedul
     const kcal = netKcal(p, met, minutes)
     lines.push({ id, label, met, minutes, kcal, soFar: kcal * done })
   }
+  const restLine = (id: string, label: string, vsRest: number, minutes: number, done: number) => {
+    if (minutes <= 0) return
+    const kcal = Math.max(0, vsRest - 1) * restingKcalPerMin(p) * minutes
+    lines.push({ id, label, vsRest, minutes, kcal, soFar: kcal * done })
+  }
 
   // work hours without the phone
   const windows = noPhoneWindows(schedule, date)
@@ -210,8 +223,8 @@ export function routineEnergy(p: Profile, date: string, schedule?: OfficeSchedul
   const home = Math.max(0, homeSpan - morning - walking - Math.max(0, activity.workoutMinutes ?? 0))
   if (home > 0) {
     const done = covered(homeWindows, minutesSoFar) / homeSpan
-    line('home_sitting', 'ישיבה בבית (מחשב, טלפון, טלוויזיה)', HOME_MIX.sitting.met, Math.round(home * HOME_MIX.sitting.share), done)
-    line('home_light', 'עמידה ועבודות בית קלות', HOME_MIX.light.met, Math.round(home * HOME_MIX.light.share), done)
+    restLine('home_sitting', 'ישיבה בבית (מחשב, טלפון, טלוויזיה)', HOME_MIX.sitting.vsRest, Math.round(home * HOME_MIX.sitting.share), done)
+    restLine('home_light', 'עמידה ועבודות בית קלות', HOME_MIX.light.vsRest, Math.round(home * HOME_MIX.light.share), done)
   }
 
   return {
