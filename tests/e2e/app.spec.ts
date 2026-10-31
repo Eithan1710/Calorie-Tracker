@@ -402,7 +402,7 @@ test.describe('energy & goal', () => {
     await page.goto('/')
     await addText(page, 'הרבה')
     await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
-    await expect(hero(page)).toContainText('עודף קלורי קטן היום')
+    await expect(hero(page)).toContainText('עודף קלורי קטן')
     await expect(hero(page)).toContainText('+100')
   })
 

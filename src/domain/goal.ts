@@ -125,6 +125,9 @@ export const range = (a: number, b: number) => `\u2066${fmt(a)}–${fmt(b)}\u206
 /** Evening cut-off after which an unfinished day is judged as final. */
 export const EVENING_HOUR = 20
 
+/** up to this many kcal above the burn a surplus is called "small" */
+export const SMALL_SURPLUS = 200
+
 export function evaluateGoal(opts: {
   eaten: number
   burned: number
@@ -141,7 +144,7 @@ export function evaluateGoal(opts: {
     return {
       status: 'empty',
       deficit,
-      title: 'עוד לא נרשם אוכל היום',
+      title: 'עוד לא נרשם אוכל',
       detail: `אפשר לאכול כ-${range(opts.burned - TMAX, opts.burned - TMIN)} קק״ל היום`,
       roomMin: Math.max(0, opts.burned - TMAX),
       roomMax: Math.max(0, opts.burned - TMIN),
@@ -182,8 +185,12 @@ export function evaluateGoal(opts: {
     return {
       status: 'surplus',
       deficit,
-      title: deficit < 0 ? 'עודף קלורי קטן היום' : 'מעט מעל היעד',
-      detail: deficit < 0 ? `${fmt(-deficit)} קק״ל מעל השריפה · מחר מאזנים` : `${fmt(TMIN - deficit)} קק״ל מעל הטווח · מחר מאזנים`,
+      // the size decides the words: +100 is "a small surplus", +1,391 is not — and no "today" (past days use it too)
+      title: deficit < 0 ? (-deficit <= SMALL_SURPLUS ? 'עודף קלורי קטן' : 'עודף קלורי') : 'מעט מעל היעד',
+      detail:
+        deficit < 0
+          ? `${fmt(-deficit)} קק״ל מעל השריפה${TMIN > 0 ? ` · ${fmt(TMIN - deficit)} מעל טווח היעד` : ''}${-deficit <= SMALL_SURPLUS ? ' · מחר מאזנים' : ''}`
+          : `${fmt(TMIN - deficit)} קק״ל מעל הטווח · מחר מאזנים`,
     }
   }
 

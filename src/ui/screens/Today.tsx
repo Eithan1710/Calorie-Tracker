@@ -152,7 +152,7 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
       {s.hasFood ? (
         <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-ink-3">מאזן היום</p>
+            <p className="text-sm font-medium text-ink-3">{isToday ? 'מאזן היום' : 'מאזן'}</p>
             <p className="mt-0.5 flex items-baseline gap-2" aria-live="polite">
               {/* clamp: a 4-digit balance ("−1,838") must still fit a 360–390 px phone next to the status pill */}
               <AnimatedNumber value={balance} format={(n) => fmtBalance(-n)} className="ltr text-[clamp(44px,14vw,64px)] leading-none font-semibold tracking-tight sm:text-[72px]" />

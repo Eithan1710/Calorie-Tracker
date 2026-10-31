@@ -27,6 +27,22 @@ describe('goal status (spec examples)', () => {
   })
 })
 
+describe('surplus wording follows its size (and works for past days)', () => {
+  it('+100 is a small surplus; +1,391 is not', () => {
+    const small = final(2300, 2200)
+    expect(small.title).toBe('עודף קלורי קטן')
+    expect(small.detail).toContain('מחר מאזנים')
+    // the day from the app: 3,490 eaten, 2,099 burned, target deficit 350–400
+    const big = evaluateGoal({ eaten: 3490, burned: 2099, hasFood: true, dayFinal: true, target: { min: 350, max: 400 } })
+    expect(big.status).toBe('surplus')
+    expect(big.title).toBe('עודף קלורי')
+    expect(big.title).not.toContain('קטן')
+    expect(big.detail).toContain('1,391')
+    expect(big.detail).toContain('1,741') // away from the target band
+    expect(big.title + big.detail).not.toContain('היום')
+  })
+})
+
 describe('goal boundaries', () => {
   it.each([
     [100, 'success'],

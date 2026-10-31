@@ -81,7 +81,7 @@ export function EnergyCard({ s, isToday }: { s: DaySummary; isToday: boolean }) 
     <section aria-label="שריפה היום" className="card animate-rise p-5" style={{ animationDelay: '40ms' }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink-3">{apple && e.partial ? (isToday ? 'נשרף עד עכשיו' : 'נשרף (נתונים חלקיים)') : 'נשרף היום'}</p>
+          <p className="text-sm font-medium text-ink-3">{apple && e.partial ? (isToday ? 'נשרף עד עכשיו' : 'נשרף (נתונים חלקיים)') : isToday ? 'נשרף היום' : 'נשרף'}</p>
           <p className="mt-0.5 flex items-baseline gap-1.5" data-testid="energy-total">
             <AnimatedNumber value={shown} format={fmt} className="text-[40px] leading-none font-semibold tracking-tight" />
             <span className="text-lg text-ink-3">{KCAL}</span>
