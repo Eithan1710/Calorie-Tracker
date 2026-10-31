@@ -543,23 +543,23 @@ test('weight: the energy balance between the two weigh-ins uses the same daily n
   await login(page, 'איתן', '123456')
   await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
   await openWeight(page)
-  // each day: 1,500 resting + 300 active + 170 everyday energy the iPhone can't see (self-care + awake time at home,
-  // walking from the steps taken out) + 167 digestion (25% P · 7.5% C · 2% F) = 2,138 burned − 1,600 eaten = 538
+  // each day: 1,500 resting + 300 active + 95 everyday energy the iPhone can't see (self-care + awake time at home
+  // at 1.05–1.5 × rest, walking from the steps taken out) + 167 digestion (25% P · 7.5% C · 2% F) = 2,063 burned − 1,600 eaten = 463
   const b = page.getByTestId('weighin-balance')
   await expect(b).toContainText('7 ימים')
-  await expect(b).toContainText('גירעון מצטבר של 3,766')
-  await expect(b).toContainText('538') // per day
-  await expect(b).toContainText('0.49') // ≈ kg of fat at 7,700 kcal/kg
+  await expect(b).toContainText('גירעון מצטבר של 3,241')
+  await expect(b).toContainText('463') // per day
+  await expect(b).toContainText('0.42') // ≈ kg of fat at 7,700 kcal/kg
   await expect(b).toContainText('−0.9') // what the scale says
   await page.screenshot({ path: 'docs/screenshots/accounts-weighin-balance.png' })
 
   // the server copy of each day (mz_daily_summaries) matches what the app shows…
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2138)
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2063)
   // …and follows Apple Health energy that arrives later for a day already logged
   sb.tables.mz_health_data = sb.rows('mz_health_data').map((r) => (r.date === '2026-10-05' ? { ...r, active_kcal: 500, updated_at: '2026-10-06T09:00:00Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2338)
-  await expect(b).toContainText('גירעון מצטבר של 3,966')
+  await expect.poll(() => sb.rows('mz_daily_summaries', u.id).find((r) => r.date === '2026-10-05')?.calories_out).toBe(2263)
+  await expect(b).toContainText('גירעון מצטבר של 3,441')
 
   // a day without food is not counted as 0 kcal eaten: no comparison then
   sb.tables.mz_food_entries = sb.rows('mz_food_entries').map((r) => (r.date === '2026-10-02' ? { ...r, deleted_at: '2026-10-06T09:30:00Z', updated_at: '2026-10-06T09:30:00Z' } : r))
@@ -605,9 +605,9 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   await expect(page.getByTestId('burn-uncertainty')).toContainText('±')
   const after = await burned()
   // 8.5 work hours now count as desk work + lunch instead of home time: desk work (MET 1.3) costs more than
-  // sitting at home (1.05 × rest), so the day goes up (+290 for this 82 kg body) — never the whole work day again
-  expect(after - before).toBeGreaterThan(200)
-  expect(after - before).toBeLessThan(350)
+  // sitting at home (1.05 × rest), so the day goes up (≈ +120 at 60 kg) — never the whole work day again
+  expect(after - before).toBeGreaterThan(80)
+  expect(after - before).toBeLessThan(180)
 
   // the quick check: salsa (Apple Health didn't see it) → its estimate is added, once
   const check = page.getByTestId('activity-check')
