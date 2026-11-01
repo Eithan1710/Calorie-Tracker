@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { balanceBetweenWeighins } from './weighinBalance'
+import { balanceBetweenWeighins, balanceVerdict } from './weighinBalance'
 import { summarizeDay } from './day'
 import { addDays } from './goal'
 
@@ -52,5 +52,26 @@ describe('energy balance between two weigh-ins', () => {
 
   it('nothing to compare for the same day or a reversed order', () => {
     expect(balanceBetweenWeighins({ previous: { date: '2026-10-16', kg: 60 }, latest: { date: '2026-10-16', kg: 60 }, days: [] })).toBe(null)
+  })
+})
+
+describe('does the scale agree with the numbers?', () => {
+  it('19.10 60.1 → 31.10 59.5 with a 4,000 kcal deficit: −0.52 predicted vs −0.6 measured → matches', () => {
+    const v = balanceVerdict({ predictedKg: -4000 / 7700, measuredKg: -0.6, days: 12 })
+    expect(v.kind).toBe('match')
+  })
+  it('the scale went down far less than predicted → burn overestimated / food under-logged, per day', () => {
+    // predicted −1.5 kg in 14 days, scale −0.2: 1.3 kg gap, 0.8 kg beyond the noise → 0.8 × 7,700 / 14 ≈ 440 / day
+    const v = balanceVerdict({ predictedKg: -1.5, measuredKg: -0.2, days: 14 })
+    expect(v).toEqual({ kind: 'heavier', gapKg: 1.3, kcalPerDay: 440 })
+  })
+  it('the scale went down more than predicted → lighter', () => {
+    const v = balanceVerdict({ predictedKg: -0.2, measuredKg: -1.2, days: 10 })
+    expect(v.kind).toBe('lighter')
+    expect(v.kind !== 'match' && v.kcalPerDay).toBe(390) // 0.5 kg beyond the noise × 7,700 / 10
+  })
+  it('keeps the scale to the hundredth', () => {
+    const days = [day('2026-10-16', 1600, { active_kcal: 300, resting_kcal: 1500 })]
+    expect(balanceBetweenWeighins({ previous: { date: '2026-10-16', kg: 60.1 }, latest: { date: '2026-10-17', kg: 59.65 }, days })!.measuredKg).toBe(-0.45)
   })
 })

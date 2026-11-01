@@ -551,6 +551,8 @@ test('weight: the energy balance between the two weigh-ins uses the same daily n
   await expect(b).toContainText('463') // per day
   await expect(b).toContainText('0.42') // ≈ kg of fat at 7,700 kcal/kg
   await expect(b).toContainText('−0.9') // what the scale says
+  // −0.42 predicted vs −0.9 on the scale: 0.48 kg apart, within a single weigh-in's ±0.5 → matches
+  await expect(page.getByTestId('weighin-verdict')).toHaveText('✓ מתאים למשקל')
   await page.screenshot({ path: 'docs/screenshots/accounts-weighin-balance.png' })
 
   // the server copy of each day (mz_daily_summaries) matches what the app shows…
@@ -565,6 +567,40 @@ test('weight: the energy balance between the two weigh-ins uses the same daily n
   sb.tables.mz_food_entries = sb.rows('mz_food_entries').map((r) => (r.date === '2026-10-02' ? { ...r, deleted_at: '2026-10-06T09:30:00Z', updated_at: '2026-10-06T09:30:00Z' } : r))
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect(b).toContainText('חסר רישום אוכל ב-1 מתוך 7 ימים')
+})
+
+test('balance vs scale: pick any two weigh-ins', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { weight_kg: 60.1 }))
+  const PER100 = { kcal: 160, protein_g: 10, fat_g: 4, carbs_g: 20 }
+  for (const d of ['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']) {
+    ;(sb.tables.mz_food_entries ??= []).push(foodRow(u.id, d, '13:00', 'lunch', 'ארוחה', 1000, PER100))
+    ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: d, steps: 7000, source: 'shortcut', active_kcal: 300, resting_kcal: 1500, health_as_of: `${d}T23:59:00+03:00`, updated_at: `${d}T21:00:00Z` })
+  }
+  ;(sb.tables.mz_weights ??= []).push(
+    { user_id: u.id, date: '2026-09-29', weight_kg: 60.1, created_at: '2026-09-29T07:10:00Z', updated_at: '2026-09-29T07:10:00Z', deleted_at: null },
+    { user_id: u.id, date: '2026-10-03', weight_kg: 59.65, created_at: '2026-10-03T07:10:00Z', updated_at: '2026-10-03T07:10:00Z', deleted_at: null },
+    { user_id: u.id, date: '2026-10-06', weight_kg: 59.2, created_at: '2026-10-06T07:20:00Z', updated_at: '2026-10-06T07:20:00Z', deleted_at: null },
+  )
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  await expect(page.getByRole('heading', { name: 'היום' })).toBeVisible()
+  await openWeight(page)
+  const sec = page.getByRole('region', { name: 'מאזן מול המשקל' })
+  const b = sec.getByTestId('weighin-balance')
+  // the last two weigh-ins by default: 3.10 → 6.10, 3 days
+  await expect(b).toContainText('3 ימים')
+  // from the first weigh-in: 7 days × 463 = 3,241 deficit ≈ −0.42 kg; the scale says −0.9 → matches
+  await sec.getByLabel('משקילה').selectOption('2026-09-29')
+  await expect(b).toContainText('7 ימים')
+  await expect(b).toContainText('גירעון מצטבר של 3,241')
+  await expect(sec.getByTestId('weighin-verdict')).toHaveText('✓ מתאים למשקל')
+  // to the middle weigh-in: 4 days, 1,852 ≈ −0.24 kg; the scale −0.45 (kept to the hundredth)
+  await sec.getByLabel('עד שקילה').selectOption('2026-10-03')
+  await expect(b).toContainText('4 ימים')
+  await expect(b).toContainText('1,852')
+  await expect(b).toContainText('−0.45')
+  await page.screenshot({ path: 'docs/screenshots/accounts-balance-vs-scale.png', fullPage: true })
 })
 
 test('work hours without the phone + the quick activity check: saved, estimated once, never asked twice', async ({ page }) => {

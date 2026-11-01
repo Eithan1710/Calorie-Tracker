@@ -53,6 +53,29 @@ export function balanceBetweenWeighins(opts: {
     estimatedBurn: counted.filter((d) => d.energy?.mode === 'estimate').map((d) => d.date),
     deficit,
     predictedKg: Math.round((-deficit / KCAL_PER_KG_FAT) * 100) / 100,
-    measuredKg: Math.round((latest.kg - previous.kg) * 10) / 10,
+    measuredKg: Math.round((latest.kg - previous.kg) * 100) / 100,
   }
+}
+
+/**
+ * Does the scale agree with the calorie numbers? A single weigh-in can be off by ~0.5 kg of water,
+ * glycogen and gut contents, so a gap up to that is "matches". Beyond it, the gap is turned back
+ * into kcal per day — how far off the daily numbers would have to be to explain the scale.
+ */
+export const SCALE_NOISE_KG = 0.5
+
+export type BalanceVerdict =
+  | { kind: 'match'; gapKg: number }
+  /** the scale went down less (or up more) than the balance predicts: burn overestimated or food under-logged */
+  | { kind: 'heavier'; gapKg: number; kcalPerDay: number }
+  /** the scale went down more than predicted: burn underestimated, or water */
+  | { kind: 'lighter'; gapKg: number; kcalPerDay: number }
+
+export function balanceVerdict(r: Pick<WeighinBalance, 'predictedKg' | 'measuredKg' | 'days'>): BalanceVerdict {
+  const gapKg = Math.round((r.measuredKg - r.predictedKg) * 100) / 100
+  if (Math.abs(gapKg) <= SCALE_NOISE_KG) return { kind: 'match', gapKg }
+  // only the part beyond the scale's noise is something the numbers have to explain
+  const beyond = Math.abs(gapKg) - SCALE_NOISE_KG
+  const kcalPerDay = Math.round((beyond * KCAL_PER_KG_FAT) / Math.max(1, r.days) / 10) * 10
+  return gapKg > 0 ? { kind: 'heavier', gapKg, kcalPerDay } : { kind: 'lighter', gapKg, kcalPerDay }
 }
