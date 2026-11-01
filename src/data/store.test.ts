@@ -5,6 +5,13 @@ beforeEach(async () => {
   await initStore('test-user-' + Math.random())
 })
 
+describe('weight log: the value as typed', () => {
+  it('59.65 is kept to the hundredth (not rounded to 59.7)', () => {
+    saveWeight('2026-11-01', 59.65)
+    expect(getState().weights['2026-11-01'].weight_kg).toBe(59.65)
+  })
+})
+
 describe('weight log: what the server confirmed', () => {
   it('only the version that was sent becomes clean — a correction made meanwhile is kept for the next push', async () => {
     saveWeight('2026-10-22', 65)

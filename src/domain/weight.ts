@@ -97,9 +97,9 @@ export function smoothPath(pts: { x: number; y: number }[]): string {
   return d
 }
 
-/** Parse a typed weight ("61.4", "61,4") → kg, or null when not a plausible body weight. */
+/** Parse a typed weight ("61.4", "61,45") → kg to 0.01, or null when not a plausible body weight. */
 export function parseKg(text: string): number | null {
   const n = Number(text.trim().replace(',', '.'))
   if (!Number.isFinite(n) || n < 20 || n > 400) return null
-  return Math.round(n * 10) / 10
+  return Math.round(n * 100) / 100
 }

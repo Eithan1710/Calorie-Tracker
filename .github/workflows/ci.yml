@@ -153,3 +153,5 @@ jobs:
           P="psql -v ON_ERROR_STOP=1 -q"
           $P -f supabase/tests/routine_schedule.sql 2>&1 | tee routine.log
           grep -q 'routine schedule checks passed' routine.log
+          $P -f supabase/tests/profile_weight.sql 2>&1 | tee pweight.log
+          grep -q 'profile weight checks passed' pweight.log

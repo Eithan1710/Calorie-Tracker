@@ -12,8 +12,8 @@ import { dateLong, dateShort, fmt, haptic } from '../format'
 import { showToast } from '../toast'
 import { pushWeightsNow, type WeightSaveResult } from '../../services/sync'
 
-const kgFmt = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-const kgFmt2 = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+// as typed: 59.6 → 59.6, 59.65 → 59.65 (never rounded to 59.7)
+const kgFmt = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
 export const fmtKg = (kg: number) => kgFmt.format(kg)
 const KG = 'ק״ג'
 
@@ -175,7 +175,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
           <ul className="flex flex-col">
             {visible.map((w, i) => {
               const prev = newestFirst[i + 1]
-              const d = prev ? Math.round((w.weight_kg - prev.weight_kg) * 10) / 10 : null
+              const d = prev ? Math.round((w.weight_kg - prev.weight_kg) * 100) / 100 : null
               return (
                 <li key={w.date}>
                   <button
@@ -260,7 +260,7 @@ function SinceLastWeighin({ previous, latest }: { previous: WeightPoint; latest:
     <div className="mt-3 rounded-2xl bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-ink-2" data-testid="weighin-balance">
       <p>
         {range} · {r.days} ימים: {deficit ? 'גירעון' : 'עודף'} מצטבר של <b className="num">{fmt(Math.abs(r.deficit))}</b> קק״ל (ממוצע <span className="num">{fmt(Math.abs(r.deficit) / r.days)}</span> ליום)
-        {' '}≈ <b className="ltr num inline-block">{r.predictedKg > 0 ? '+' : r.predictedKg < 0 ? '−' : ''}{kgFmt2.format(Math.abs(r.predictedKg))}</b> ק״ג שומן. במשקל: <b className="ltr num inline-block">{fmtChange(r.measuredKg)}</b> ק״ג.
+        {' '}≈ <b className="ltr num inline-block">{r.predictedKg > 0 ? '+' : r.predictedKg < 0 ? '−' : ''}{kgFmt.format(Math.abs(r.predictedKg))}</b> ק״ג שומן. במשקל: <b className="ltr num inline-block">{fmtChange(r.measuredKg)}</b> ק״ג.
       </p>
       <p className="mt-1 text-xs text-ink-3">
         לפי ~{fmt(KCAL_PER_KG_FAT)} קק״ל לק״ג שומן. בטווח של ימים עד שבועות המשקל זז גם עם מים, גליקוגן ותכולת מעיים, ושקילה בודדת יכולה לסטות בחצי ק״ג ויותר.

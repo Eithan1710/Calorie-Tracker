@@ -33,7 +33,7 @@ export function ProfileFields({ value, onChange }: { value: Partial<Profile>; on
       <div className="grid grid-cols-3 gap-2">
         <NumberField label="גיל" value={value.age ?? ''} onChange={(v) => onChange({ ...value, age: v === '' ? undefined : v })} inputMode="numeric" min={14} max={100} />
         <NumberField label="גובה" unit="ס״מ" value={value.heightCm ?? ''} onChange={(v) => onChange({ ...value, heightCm: v === '' ? undefined : v })} inputMode="numeric" min={120} max={230} />
-        <NumberField label="משקל" unit="ק״ג" value={value.weightKg ?? ''} onChange={(v) => onChange({ ...value, weightKg: v === '' ? undefined : v })} step={0.1} min={35} max={250} />
+        <NumberField label="משקל" unit="ק״ג" value={value.weightKg ?? ''} onChange={(v) => onChange({ ...value, weightKg: v === '' ? undefined : v })} step={0.01} min={35} max={250} />
       </div>
     </div>
   )

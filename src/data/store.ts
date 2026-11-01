@@ -307,7 +307,7 @@ function syncProfileWeight() {
  */
 export function saveWeight(date: string, weightKg: number, previousDate?: string) {
   const t = now()
-  const kg = Math.round(weightKg * 10) / 10
+  const kg = Math.round(weightKg * 100) / 100 // the scale's 0.05 steps are kept (59.65 stays 59.65)
   if (previousDate && previousDate !== date && state.weights[previousDate] && !state.weights[previousDate].deleted) {
     putWeight({ ...state.weights[previousDate], deleted: true, updated_at: t, dirty: true })
   }
