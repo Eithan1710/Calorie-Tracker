@@ -19,7 +19,7 @@ for (const [name, opts] of [['mobile', { viewport: { width: 390, height: 844 }, 
   log.push(`[${name}] scripts: ${[...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]).join(', ')}`)
   const bodies = await Promise.all(js)
   const has = (t) => bodies.some((b) => b.includes(t))
-  log.push(`[${name}] js files: ${bodies.length} · day-off: ${has('ישיבה פי 1.05')}`)
+  log.push(`[${name}] js files: ${bodies.length} · kg2: ${has('minimumFractionDigits:1,maximumFractionDigits:2')&&!has('minimumFractionDigits:1,maximumFractionDigits:1')}`)
   await p.screenshot({ path: `out/${name}.png` })
   await ctx.close()
 }
