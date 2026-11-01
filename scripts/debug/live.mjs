@@ -18,6 +18,9 @@ for (const [name, opts] of [['mobile', { viewport: { width: 390, height: 844 }, 
   const html = await p.content()
   log.push(`[${name}] scripts: ${[...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]).join(', ')}`)
   const bodies = await Promise.all(js)
+  // lazy chunks (e.g. the weight screen) are not loaded on the start page: fetch every asset they name
+  const names = new Set(bodies.flatMap((x) => x.match(/assets\/[\w.-]+\.js/g) || []))
+  for (const n of names) bodies.push(await (await p.request.get(new URL(n, url).href)).text().catch(() => ''))
   const has = (t) => bodies.some((b) => b.includes(t))
   log.push(`[${name}] js files: ${bodies.length} · kg: ${bodies.map((b) => (b.match(/maximumFractionDigits:\s*\d/g) || []).join('/')).filter(Boolean).join(' | ')}`)
   await p.screenshot({ path: `out/${name}.png` })
