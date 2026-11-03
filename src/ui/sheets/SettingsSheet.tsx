@@ -92,7 +92,9 @@ function OfficeScheduleField() {
     if (next) setDraft(next)
     if (next && officeScheduleError(next) !== null) return
     // the cached server copy of each day is recomputed with the new hours on the next sync
-    updateSettings({ officeSchedule: next, summariesVersion: undefined })
+    // the days marked "not at the office" stay as they are when the weekly hours change
+    const merged = next && saved?.offDays?.length ? { ...next, offDays: saved.offDays } : next
+    updateSettings({ officeSchedule: merged, summariesVersion: undefined })
     void pushProfile()
   }
   const brk = draft.phoneBreaks[0]

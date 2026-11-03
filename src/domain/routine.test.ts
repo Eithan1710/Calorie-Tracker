@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { healthDeviceOf, netKcal, noPhoneWindows, officeScheduleError, routineContextOf, routineEnergy, type OfficeSchedule } from './routine'
+import { healthDeviceOf, isScheduledWorkday, isValidOfficeSchedule, netKcal, noPhoneWindows, officeScheduleError, routineContextOf, routineEnergy, withOfficeDay, type OfficeSchedule } from './routine'
 import { bmrMifflinStJeor } from './energy'
 import { dayEnergy, type DayWorkout } from './expenditure'
 
@@ -202,5 +202,32 @@ describe('device', () => {
     expect(healthDeviceOf({}, [{ source_app: 'Apple Watch' }])).toBe('watch')
     expect(healthDeviceOf({ healthDevice: 'phone' }, [{ source_app: 'Apple Watch' }])).toBe('phone')
     expect(routineContextOf({ officeSchedule: { days: [], start: 'x', end: 'y', phoneBreaks: [] } }, []).schedule).toBe(null)
+  })
+})
+
+describe('a work day away from the office', () => {
+  const W: OfficeSchedule = { days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] }
+  const SUN = '2026-11-01'
+  it('marked days have no hours without the phone — the day is costed like a day off', () => {
+    const off = withOfficeDay(W, SUN, true)
+    expect(off.offDays).toEqual([SUN])
+    expect(isValidOfficeSchedule(off)).toBe(true)
+    expect(noPhoneWindows(off, SUN)).toEqual([])
+    expect(noPhoneWindows(off, '2026-11-02').length).toBe(2) // only that day
+    const p = { sex: 'male' as const, age: 20, heightCm: 160, weightKg: 60 }
+    expect(routineEnergy(p, SUN, off, 1440, { stepsCounted: 7000 }).kcal).toBeCloseTo(routineEnergy(p, '2026-10-30', W, 1440, { stepsCounted: 7000 }).kcal, 5) // = a Friday
+    expect(isScheduledWorkday(off, SUN)).toBe(true) // still a work day of the schedule (the toggle stays)
+  })
+  it('unmarking restores the work hours; the field disappears when empty', () => {
+    const back = withOfficeDay(withOfficeDay(W, SUN, true), SUN, false)
+    expect(back).toEqual(W)
+    expect('offDays' in back).toBe(false)
+  })
+  it('keeps the last 120 marks, sorted; rejects malformed ones', () => {
+    let s = W
+    for (let i = 0; i < 130; i++) s = withOfficeDay(s, `2026-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`, true)
+    expect(s.offDays!.length).toBe(120)
+    expect([...s.offDays!].sort()).toEqual(s.offDays)
+    expect(isValidOfficeSchedule({ ...W, offDays: 'today' })).toBe(false)
   })
 })

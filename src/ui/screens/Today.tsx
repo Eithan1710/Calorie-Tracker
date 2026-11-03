@@ -11,6 +11,7 @@ import { usePhotoUrl } from '../../services/photos'
 import { InstallApp } from '../InstallApp'
 import { EnergyCard, StepsCard, WorkoutsCard } from './Energy'
 import { ActivityCheck } from './ActivityCheck'
+import { OfficeDay } from './OfficeDay'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -81,6 +82,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
         <div className="flex min-w-0 flex-col gap-4">
           <BalanceHero s={summary} isToday={date === today} />
           <EnergyCard s={summary} isToday={date === today} />
+          <OfficeDay date={date} isToday={date === today} />
           <StepsCard date={date} isToday={date === today} onOpen={actions.onSteps} />
           <WorkoutsCard s={summary} exercises={exercises} onOpen={actions.onExercise} />
           {date <= today && <ActivityCheck date={date} exercises={exercises} isToday={date === today} />}

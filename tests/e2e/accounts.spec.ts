@@ -645,6 +645,18 @@ test('work hours without the phone + the quick activity check: saved, estimated 
   expect(after - before).toBeGreaterThan(80)
   expect(after - before).toBeLessThan(180)
 
+  // a work day away from the office: one tap → the hours count as home time again (= no schedule), synced
+  const office = page.getByTestId('office-day')
+  await expect(office).toContainText('יום עבודה במשרד')
+  await office.getByRole('button', { name: 'לא במשרד היום' }).click()
+  await expect(office).toContainText('לא במשרד')
+  await expect.poll(burned).toBe(before)
+  await expect.poll(() => (sb.rows('mz_profiles', u.id)[0]?.routine_schedule as { offDays?: string[] })?.offDays).toEqual(['2026-10-06'])
+  await expect(energy.getByTestId('routine-explainer')).not.toContainText('עבודה מול מחשב')
+  await office.getByRole('button', { name: 'הייתי במשרד' }).click()
+  await expect.poll(burned).toBe(after)
+  await expect.poll(() => (sb.rows('mz_profiles', u.id)[0]?.routine_schedule as { offDays?: string[] })?.offDays).toBeUndefined()
+
   // the quick check: salsa (Apple Health didn't see it) → its estimate is added, once
   const check = page.getByTestId('activity-check')
   await check.getByRole('button', { name: /סלסה/ }).click()

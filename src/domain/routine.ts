@@ -55,6 +55,8 @@ export interface OfficeSchedule {
   end: string
   /** windows inside the work hours when the phone is with the user (Apple Health measures them) */
   phoneBreaks: [string, string][]
+  /** work days the user was not at the office ("YYYY-MM-DD") — those hours count as home time */
+  offDays?: string[]
 }
 
 const toMin = (hhmm: string) => {
@@ -81,7 +83,30 @@ export function officeScheduleError(s: OfficeSchedule): string | null {
 }
 
 export const isValidOfficeSchedule = (s: unknown): s is OfficeSchedule =>
-  !!s && typeof s === 'object' && Array.isArray((s as OfficeSchedule).days) && Array.isArray((s as OfficeSchedule).phoneBreaks) && officeScheduleError(s as OfficeSchedule) === null
+  !!s &&
+  typeof s === 'object' &&
+  Array.isArray((s as OfficeSchedule).days) &&
+  Array.isArray((s as OfficeSchedule).phoneBreaks) &&
+  ((s as OfficeSchedule).offDays === undefined || (Array.isArray((s as OfficeSchedule).offDays) && (s as OfficeSchedule).offDays!.every((d) => typeof d === 'string'))) &&
+  officeScheduleError(s as OfficeSchedule) === null
+
+/** A day of the week the schedule has work hours on (whether or not the user was at the office). */
+export const isScheduledWorkday = (schedule: OfficeSchedule | null | undefined, date: string) =>
+  isValidOfficeSchedule(schedule) && schedule.days.includes(weekdayOf(date))
+
+/** Marked as "not at the office" that day. */
+export const isOfficeOff = (schedule: OfficeSchedule | null | undefined, date: string) => !!schedule?.offDays?.includes(date)
+
+/** how many marked days are kept (the energy of older days is already in the history) */
+const OFF_DAYS_KEPT = 120
+
+/** The schedule with `date` marked (or unmarked) as a day away from the office. */
+export function withOfficeDay(schedule: OfficeSchedule, date: string, away: boolean): OfficeSchedule {
+  const rest = (schedule.offDays ?? []).filter((d) => d !== date)
+  const offDays = (away ? [...rest, date] : rest).sort().slice(-OFF_DAYS_KEPT)
+  const { offDays: _old, ...base } = schedule
+  return offDays.length ? { ...base, offDays } : base
+}
 
 const weekdayOf = (date: string) => {
   const [y, m, d] = date.split('-').map(Number)
@@ -93,7 +118,7 @@ const weekdayOf = (date: string) => {
  * Empty on a day off.
  */
 export function noPhoneWindows(schedule: OfficeSchedule | null | undefined, date: string): [number, number][] {
-  if (!isValidOfficeSchedule(schedule) || !schedule.days.includes(weekdayOf(date))) return []
+  if (!isValidOfficeSchedule(schedule) || !schedule.days.includes(weekdayOf(date)) || isOfficeOff(schedule, date)) return []
   let windows: [number, number][] = [[toMin(schedule.start), toMin(schedule.end)]]
   for (const [x, y] of schedule.phoneBreaks) {
     const bx = toMin(x)
