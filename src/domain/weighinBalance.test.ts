@@ -74,7 +74,7 @@ describe('does the scale agree with the numbers?', () => {
   it('the scale went down more than predicted → lighter', () => {
     const v = balanceVerdict({ predictedKg: -0.2, measuredKg: -1.2, days: 10 })
     expect(v.kind).toBe('lighter')
-    expect(v.kind !== 'match' && v.kcalPerDay).toBe(390) // 0.5 kg beyond the noise × 7,700 / 10
+    expect(v.kind === 'lighter' && v.kcalPerDay).toBe(390) // 0.5 kg beyond the noise × 7,700 / 10
   })
   it('keeps the scale to the hundredth', () => {
     const days = [day('2026-10-16', 1600, { active_kcal: 300, resting_kcal: 1500 })]
