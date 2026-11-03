@@ -56,6 +56,12 @@ describe('energy balance between two weigh-ins', () => {
 })
 
 describe('does the scale agree with the numbers?', () => {
+  it('2.11 59.95 → 3.11 70.0: +10 kg in a day is a typo, not something to explain with calories', () => {
+    expect(balanceVerdict({ predictedKg: -0.09, measuredKg: 10.05, days: 1 })).toEqual({ kind: 'implausible' })
+  })
+  it('under a week: no verdict (water dominates)', () => {
+    expect(balanceVerdict({ predictedKg: -0.2, measuredKg: 0.6, days: 3 })).toEqual({ kind: 'short' })
+  })
   it('19.10 60.1 → 31.10 59.5 with a 4,000 kcal deficit: −0.52 predicted vs −0.6 measured → matches', () => {
     const v = balanceVerdict({ predictedKg: -4000 / 7700, measuredKg: -0.6, days: 12 })
     expect(v.kind).toBe('match')

@@ -1,4 +1,5 @@
 import type { DaySummary } from './day'
+import { plausibleChangeKg } from './weight'
 
 /**
  * Energy balance between two weigh-ins, from the same daily numbers the app shows.
@@ -64,7 +65,14 @@ export function balanceBetweenWeighins(opts: {
  */
 export const SCALE_NOISE_KG = 0.5
 
+/** fewer days than this between the weigh-ins: water dominates, no verdict */
+export const MIN_VERDICT_DAYS = 7
+
 export type BalanceVerdict =
+  /** too few days to judge */
+  | { kind: 'short' }
+  /** the scale moved more than body weight can (a typo in one of the weigh-ins) */
+  | { kind: 'implausible' }
   | { kind: 'match'; gapKg: number }
   /** the scale went down less (or up more) than the balance predicts: burn overestimated or food under-logged */
   | { kind: 'heavier'; gapKg: number; kcalPerDay: number }
@@ -72,6 +80,8 @@ export type BalanceVerdict =
   | { kind: 'lighter'; gapKg: number; kcalPerDay: number }
 
 export function balanceVerdict(r: Pick<WeighinBalance, 'predictedKg' | 'measuredKg' | 'days'>): BalanceVerdict {
+  if (Math.abs(r.measuredKg) > plausibleChangeKg(r.days)) return { kind: 'implausible' }
+  if (r.days < MIN_VERDICT_DAYS) return { kind: 'short' }
   const gapKg = Math.round((r.measuredKg - r.predictedKg) * 100) / 100
   if (Math.abs(gapKg) <= SCALE_NOISE_KG) return { kind: 'match', gapKg }
   // only the part beyond the scale's noise is something the numbers have to explain

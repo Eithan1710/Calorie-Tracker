@@ -588,8 +588,11 @@ test('balance vs scale: pick any two weigh-ins', async ({ page }) => {
   await openWeight(page)
   const sec = page.getByRole('region', { name: 'מאזן מול המשקל' })
   const b = sec.getByTestId('weighin-balance')
-  // the last two weigh-ins by default: 3.10 → 6.10, 3 days
+  // by default: the latest weigh-in at least a week before the last one → 29.9 → 6.10, 7 days
+  await expect(b).toContainText('7 ימים')
+  await sec.getByLabel('משקילה').selectOption('2026-10-03')
   await expect(b).toContainText('3 ימים')
+  await expect(sec.getByTestId('weighin-verdict')).toHaveText('טווח קצר מדי להשוואה') // under a week: no verdict
   // from the first weigh-in: 7 days × 463 = 3,241 deficit ≈ −0.42 kg; the scale says −0.9 → matches
   await sec.getByLabel('משקילה').selectOption('2026-09-29')
   await expect(b).toContainText('7 ימים')
@@ -601,6 +604,17 @@ test('balance vs scale: pick any two weigh-ins', async ({ page }) => {
   await expect(b).toContainText('1,852')
   await expect(b).toContainText('−0.45')
   await page.screenshot({ path: 'docs/screenshots/accounts-balance-vs-scale.png', fullPage: true })
+
+  // a typo like 70.0 after 59.2 is asked about before it is saved (and never judged as calories)
+  const entry = page.getByRole('form', { name: 'שקילה חדשה' })
+  await entry.getByLabel('שקילה חדשה').fill('70')
+  await expect(entry.getByTestId('weight-jump')).toContainText('טעות הקלדה?')
+  const n = sb.rows('mz_weights', u.id).length
+  await entry.locator('button[type=submit]').click()
+  await expect(entry.getByRole('button', { name: 'שמור בכל זאת' })).toBeVisible()
+  expect(sb.rows('mz_weights', u.id).length).toBe(n) // nothing saved yet
+  await entry.getByLabel('שקילה חדשה').fill('59.0')
+  await expect(entry.getByTestId('weight-jump')).toHaveCount(0)
 })
 
 test('work hours without the phone + the quick activity check: saved, estimated once, never asked twice', async ({ page }) => {

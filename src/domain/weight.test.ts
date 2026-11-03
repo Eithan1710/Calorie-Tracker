@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inRange, MIN_SPAN_KG, parseKg, smoothPath, summary, xAxis, yAxis, dayNum } from './weight'
+import { implausibleJump, inRange, MIN_SPAN_KG, parseKg, smoothPath, summary, xAxis, yAxis, dayNum } from './weight'
 
 const pts = [
   { date: '2026-07-01', kg: 63.0 },
@@ -72,5 +72,20 @@ describe('smooth line', () => {
 describe('typed weight', () => {
   it.each([['61.4', 61.4], ['61,4', 61.4], [' 72 ', 72], ['61.45', 61.45], ['59.65', 59.65], ['59,6', 59.6], ['abc', null], ['5', null], ['', null], ['900', null]])('%s', (t, v) => {
     expect(parseKg(t)).toBe(v)
+  })
+})
+
+describe('a weigh-in far from the others', () => {
+  const pts = [{ date: '2026-10-30', kg: 59.65 }, { date: '2026-11-01', kg: 59.8 }, { date: '2026-11-02', kg: 59.95 }]
+  it('70.0 the day after 59.95 is flagged (typo); 60.4 is not', () => {
+    expect(implausibleJump(pts, '2026-11-03', 70)).toEqual({ date: '2026-11-02', kg: 59.95, change: 10.05 })
+    expect(implausibleJump(pts, '2026-11-03', 60.4)).toBeNull()
+  })
+  it('a correction of the same day is compared with the other days; a first weigh-in is never flagged', () => {
+    expect(implausibleJump([...pts, { date: '2026-11-03', kg: 70 }], '2026-11-03', 60)).toBeNull()
+    expect(implausibleJump([], '2026-11-03', 70)).toBeNull()
+  })
+  it('more room over more days', () => {
+    expect(implausibleJump([{ date: '2026-09-01', kg: 64 }], '2026-10-01', 59)).toBeNull() // −5 in 30 days ≤ 9.5
   })
 })

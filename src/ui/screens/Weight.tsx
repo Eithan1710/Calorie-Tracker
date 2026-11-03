@@ -6,7 +6,7 @@ import { addDays, dayTarget, toDateKey } from '../../domain/goal'
 import { summarizeDay } from '../../domain/day'
 import { routineContextOf } from '../../domain/routine'
 import { balanceBetweenWeighins, balanceVerdict, KCAL_PER_KG_FAT, SCALE_NOISE_KG } from '../../domain/weighinBalance'
-import { dayNum, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
+import { dayNum, implausibleJump, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
 import { dateLong, dateShort, fmt, haptic } from '../format'
 import { showToast } from '../toast'
@@ -229,7 +229,9 @@ function BalanceVsScale({ points }: { points: WeightPoint[] }) {
   const dates = points.map((p) => p.date)
   const to = toSel && dates.includes(toSel) && dates.indexOf(toSel) > 0 ? toSel : dates.at(-1)!
   const fromOk = fromSel && dates.includes(fromSel) && fromSel < to
-  const from = fromOk ? fromSel : dates[Math.max(0, dates.indexOf(to) - 1)]
+  // by default the latest weigh-in at least a week before (else the one just before)
+  const weekBefore = dates.filter((d) => d < to && dayNum(to) - dayNum(d) >= 7).at(-1)
+  const from = fromOk ? fromSel : (weekBefore ?? dates[Math.max(0, dates.indexOf(to) - 1)])
   const previous = points.find((p) => p.date === from)!
   const latest = points.find((p) => p.date === to)!
   const id = useId()
@@ -328,11 +330,23 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
         לפי החישוב: <b className="ltr num inline-block">{sign(r.predictedKg)}{kgFmt.format(Math.abs(r.predictedKg))}</b> ק״ג · במשקל בפועל:{' '}
         <b className="ltr num inline-block">{fmtChange(r.measuredKg)}</b> ק״ג
       </p>
-      <p className={`mt-2 font-semibold ${v.kind === 'match' ? 'text-good' : 'text-warn'}`} data-testid="weighin-verdict">
-        {v.kind === 'match' ? '✓ מתאים למשקל' : v.kind === 'heavier' ? 'המשקל ירד פחות מהחישוב' : 'ירדת במשקל יותר מהחישוב'}
+      <p className={`mt-2 font-semibold ${v.kind === 'match' ? 'text-good' : v.kind === 'short' ? 'text-ink-2' : 'text-warn'}`} data-testid="weighin-verdict">
+        {v.kind === 'implausible'
+          ? 'שינוי חריג במשקל — כנראה טעות הקלדה'
+          : v.kind === 'short'
+            ? 'טווח קצר מדי להשוואה'
+            : v.kind === 'match'
+              ? '✓ מתאים למשקל'
+              : v.kind === 'heavier'
+                ? 'המשקל ירד פחות מהחישוב'
+                : 'ירדת במשקל יותר מהחישוב'}
       </p>
       <p className="text-ink-2">
-        {v.kind === 'match'
+        {v.kind === 'implausible'
+          ? `${fmtChange(r.measuredKg)} ק״ג ב-${r.days} ${r.days === 1 ? 'יום' : 'ימים'} — הגוף לא משתנה כל כך מהר. בדוק את השקילות (אפשר לתקן ברשימה למטה).`
+          : v.kind === 'short'
+            ? `בפחות משבוע המשקל זז בעיקר ממים ומתכולת מעיים. בחר שקילות עם שבוע לפחות ביניהן.`
+            : v.kind === 'match'
           ? `הפער ${kgFmt.format(Math.abs(v.gapKg))} ק״ג — בתוך התנודה הרגילה של המשקל (±${kgFmt.format(SCALE_NOISE_KG)}).`
           : v.kind === 'heavier'
             ? `כדי להסביר את הפער: השריפה מוערכת ביתר, או שחסר ברישום — בערך ${fmt(v.kcalPerDay)} קק״ל ליום. או מים / מלח (בדוק שוב בשקילה הבאה).`
@@ -363,10 +377,18 @@ function QuickEntry({ latest }: { latest: WeightPoint | null }) {
   const kg = parseKg(text)
   const existing = weights[date] && !weights[date].deleted ? weights[date] : null
   const invalid = touched && text.trim() !== '' && kg === null
+  const jump = kg === null ? null : implausibleJump(toPoints(weightList({ weights })), date, kg)
+  // a jump like 59.95 → 70.0 is asked about once before it is saved
+  const [confirmed, setConfirmed] = useState<string | null>(null)
+  const needsConfirm = jump !== null && confirmed !== `${date}:${kg}`
 
   function save() {
     setTouched(true)
     if (kg === null || busy) return
+    if (needsConfirm) {
+      setConfirmed(`${date}:${kg}`)
+      return
+    }
     const before = existing ? { ...existing } : null
     const day = date
     saveWeight(day, kg)
@@ -412,9 +434,15 @@ function QuickEntry({ latest }: { latest: WeightPoint | null }) {
           </span>
         </label>
         <PrimaryButton type="submit" className="min-w-24 px-5" disabled={kg === null || busy}>
-          {busy ? 'שומר…' : existing ? 'עדכן' : 'שמור'}
+          {busy ? 'שומר…' : jump && !needsConfirm ? 'שמור בכל זאת' : existing ? 'עדכן' : 'שמור'}
         </PrimaryButton>
       </div>
+      {jump && (
+        <p className="text-sm text-warn" role="alert" data-testid="weight-jump">
+          <span className="ltr num inline-block">{fmtChange(jump.change)}</span> ק״ג מ-{dateShort(jump.date)} ({fmtKg(jump.kg)}) — טעות הקלדה?
+          {!needsConfirm && ' אם זה נכון, לחץ שוב לשמירה.'}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3" id={`${id}-hint`}>
         <DateChip value={date} max={today} onChange={(d) => setPicked(d === today ? null : d)} />
         {invalid ? (
@@ -462,9 +490,17 @@ function EditWeightSheet({ entry, onClose, today }: { entry: WeightEntry | null;
   }, [entry])
   const kg = parseKg(text)
   const clash = entry && date !== entry.date && weights[date] && !weights[date].deleted ? weights[date] : null
+  const others = toPoints(weightList({ weights })).filter((p) => p.date !== entry?.date)
+  const jump = kg === null ? null : implausibleJump(others, date, kg)
+  const [confirmed, setConfirmed] = useState<string | null>(null)
+  const needsConfirm = jump !== null && confirmed !== `${date}:${kg}`
 
   function save() {
     if (!entry || kg === null) return
+    if (needsConfirm) {
+      setConfirmed(`${date}:${kg}`)
+      return
+    }
     saveWeight(date, kg, entry.date)
     haptic(18)
     onClose()
@@ -489,7 +525,7 @@ function EditWeightSheet({ entry, onClose, today }: { entry: WeightEntry | null;
       footer={
         <div className="flex gap-2">
           <PrimaryButton className="flex-1" onClick={save} disabled={kg === null}>
-            שמירה
+            {jump && !needsConfirm ? 'שמור בכל זאת' : 'שמירה'}
           </PrimaryButton>
           <GhostButton onClick={remove} aria-label="מחיקת השקילה" className="min-h-14 px-4 text-surplus">
             <Trash2 className="size-5" />
@@ -523,6 +559,12 @@ function EditWeightSheet({ entry, onClose, today }: { entry: WeightEntry | null;
           />
         </label>
         {clash && <p className="text-sm text-warn">ביום הזה כבר יש שקילה ({fmtKg(clash.weight_kg)} {KG}) — היא תוחלף.</p>}
+        {jump && (
+          <p className="text-sm text-warn" role="alert">
+            <span className="ltr num inline-block">{fmtChange(jump.change)}</span> ק״ג מ-{dateShort(jump.date)} ({fmtKg(jump.kg)}) — טעות הקלדה?
+            {!needsConfirm && ' אם זה נכון, לחץ שוב לשמירה.'}
+          </p>
+        )}
       </div>
     </Sheet>
   )

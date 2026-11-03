@@ -103,3 +103,24 @@ export function parseKg(text: string): number | null {
   if (!Number.isFinite(n) || n < 20 || n > 400) return null
   return Math.round(n * 100) / 100
 }
+
+/**
+ * How far body weight can plausibly move between two weigh-ins: ~2 kg of water / food / gut
+ * contents on any day, plus ~0.25 kg a day of real change. Beyond that it is almost always a typo
+ * (60.0 typed as 70.0) — the app asks before saving it, and never judges the calories by it.
+ */
+export const plausibleChangeKg = (days: number) => 2 + 0.25 * Math.max(0, days)
+
+/** The nearest other weigh-in (within 60 days) if `kg` on `date` is an implausible jump from it. */
+export function implausibleJump(points: { date: string; kg: number }[], date: string, kg: number): { date: string; kg: number; change: number } | null {
+  let ref: { date: string; kg: number } | null = null
+  for (const p of points) {
+    if (p.date === date) continue
+    const d = Math.abs(dayNum(p.date) - dayNum(date))
+    if (d > 60) continue
+    if (!ref || d < Math.abs(dayNum(ref.date) - dayNum(date))) ref = p
+  }
+  if (!ref) return null
+  const change = Math.round((kg - ref.kg) * 100) / 100
+  return Math.abs(change) > plausibleChangeKg(Math.abs(dayNum(ref.date) - dayNum(date))) ? { ...ref, change } : null
+}
