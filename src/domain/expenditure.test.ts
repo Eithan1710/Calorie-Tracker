@@ -115,6 +115,22 @@ describe('Apple Health mode', () => {
     expect(e.active.kcal).toBe(Math.round(e.estimate.baseline + e.estimate.steps + 330))
   })
 
+  it('a morning with Resting Energy but no Active Energy (phone not moved yet): Apple day, routine added, no 5% guess', () => {
+    // 4.11, 11:38: the Shortcut sent resting 727, steps 0 and no active samples; Sun–Thu at the office without the phone
+    const routine = { phoneOnly: true, schedule: { days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] as [string, string][] } }
+    const W = '2026-11-04'
+    const e = dayEnergy({ date: W, profile: me, steps: 0, workouts: [], health: { resting_kcal: 727, health_as_of: iso(W, '11:38') }, routine, now: at(W, '11:40') })
+    expect(e.mode).toBe('health')
+    expect(e.active.kcal).toBe(0)
+    expect(e.active.source).toBe('apple')
+    expect(e.routine).toBeGreaterThan(150) // the work day without the phone is counted
+    expect(Math.abs(e.total - (e.resting.fullDay + e.routine))).toBeLessThan(2) // rounding of the parts
+    // with steps but no active samples (a Shortcut glitch): the steps are estimated, still no flat 5% on top of the routine
+    const g = dayEnergy({ date: W, profile: me, steps: 3000, workouts: [], health: { resting_kcal: 727, health_as_of: iso(W, '11:38') }, routine, now: at(W, '11:40') })
+    expect(g.active.source).toBe('estimate')
+    expect(g.active.kcal).toBe(g.estimate.steps)
+  })
+
   it('summarizeDay uses the Apple total for the balance', () => {
     const s = summarizeDay({
       date: D, food: [], exercises: [], steps: 0, profile: me, proteinTarget: 120,

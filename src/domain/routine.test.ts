@@ -130,13 +130,13 @@ describe('daily total — scenarios', () => {
   })
 
   it('3. partial Apple data: only the missing part is estimated', () => {
-    // Active Energy missing → movement estimated from steps (+ the model's baseline term); Apple's resting kept;
-    // the routine is not added on top of an estimate that already has everyday movement in it
+    // Active Energy missing → walking estimated from the steps; Apple's resting kept; the routine covers
+    // everyday movement (as on any iPhone day), so the model's flat baseline term is not added as well
     const noActive = day(SUNDAY, { active: null })
     expect(noActive.resting.source).toBe('apple')
     expect(noActive.active.source).toBe('estimate')
-    expect(noActive.routine).toBe(0)
-    expect(Math.abs(noActive.active.kcal - (noActive.estimate.baseline + noActive.estimate.steps))).toBeLessThan(2)
+    expect(noActive.routine).toBe(Math.round(routineEnergy(p, SUNDAY, WORK, 1440, { stepsCounted: 7000 }).kcal))
+    expect(Math.abs(noActive.active.kcal - noActive.estimate.steps)).toBeLessThan(2)
     // unfinished day at 14:00: resting projected from the hours covered, no future activity invented
     const mid = day(SUNDAY, { resting: 900, active: 120, asOf: `${SUNDAY}T14:00:00`, now: `${SUNDAY}T14:00:00` })
     expect(mid.partial).toBe(true)

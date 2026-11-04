@@ -337,7 +337,12 @@ export function dayEnergy(opts: {
   const restingSoFar = hasResting ? h!.resting_kcal! : (bmr * Math.min(minutes, 1440)) / 1440
   const restingFull = hasResting ? projectResting(h!.resting_kcal!, minutes, bmr) : bmr
 
+  // The routine (what an iPhone alone can't see) goes next to Apple's numbers from a phone. That includes
+  // a morning with Resting Energy but no Active Energy at all: an iPhone that hasn't moved (on the charger,
+  // at the office) has no active samples, so Health sends none — the day is still an Apple day, not a guess.
+  const routineApplies = (hasActive || hasResting) && !!opts.routine?.phoneOnly
   let active: number
+  let activeSource: ComponentSource = 'apple'
   let extra = 0
   const lines: WorkoutEnergy[] = []
   if (hasActive) {
@@ -351,7 +356,10 @@ export function dayEnergy(opts: {
       } else lines.push({ id: w.id, ...pickW(e), counting: 'included_in_active' })
     }
   } else {
-    active = baseline + stepsKcal + exerciseNet
+    // from steps and workouts; the flat everyday-movement term only when the routine doesn't cover it
+    active = (routineApplies ? 0 : baseline) + stepsKcal + exerciseNet
+    // nothing moved and nothing logged: Apple's "no active samples" is a measured 0
+    activeSource = routineApplies && active === 0 ? 'apple' : 'estimate'
     for (const w of opts.workouts) {
       const e = energies.get(w.id)!
       lines.push({ id: w.id, ...pickW(e), counting: dup.has(w.id) ? 'duplicate' : 'added', duplicateOf: dup.get(w.id) })
@@ -359,18 +367,16 @@ export function dayEnergy(opts: {
   }
 
   const tef = foodTef(opts.intake)
-  // only next to Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
   // full day for the balance; "so far" counts what was done by the snapshot (office hours as they pass)
-  // only on top of Apple's measured Active Energy from a phone (an estimated active part has the baseline term)
-  const r = hasActive && opts.routine?.phoneOnly ? routineAt(minutes) : null
+  const r = routineApplies ? routineAt(minutes) : null
   const routine = r?.kcal ?? 0
   const routineSoFar = r?.soFar ?? 0
   const total = restingFull + active + extra + routine + tef
-  const apple = (hasResting ? restingSoFar : 0) + (hasActive ? active : 0)
+  const apple = (hasResting ? restingSoFar : 0) + (activeSource === 'apple' ? active : 0)
   const sd = combine(
     hasResting ? restingSoFar * PART_ERROR.appleResting : 0,
     hasResting ? (restingFull - restingSoFar) * PART_ERROR.restingProjection : restingFull * PART_ERROR.bmr,
-    active * (hasActive ? PART_ERROR.appleActive : PART_ERROR.estimatedActive),
+    active * (activeSource === 'apple' ? PART_ERROR.appleActive : PART_ERROR.estimatedActive),
     extra * PART_ERROR.workout,
     routine * PART_ERROR.routine,
     tef * PART_ERROR.tef,
@@ -379,7 +385,7 @@ export function dayEnergy(opts: {
   return {
     mode: 'health',
     resting: { kcal: Math.round(restingSoFar), fullDay: Math.round(restingFull), source: hasResting ? 'apple' : 'estimate' },
-    active: { kcal: Math.round(active), source: hasActive ? 'apple' : 'estimate' },
+    active: { kcal: Math.round(active), source: activeSource },
     extra: Math.round(extra),
     routine: Math.round(routine),
     routineSoFar: Math.round(routineSoFar),
