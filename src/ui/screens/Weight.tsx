@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, CloudOff, Minus, Trash2 } from 'lucide-react'
-import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight, useStore, weightList } from '../../data/store'
+import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight, updateSettings, useStore, weightList } from '../../data/store'
+import { creatineFullKg, creatineProgress, creatineWaterKg, isValidCreatine, type Creatine } from '../../domain/creatine'
 import type { WeightEntry } from '../../data/types'
 import { addDays, dayTarget, toDateKey } from '../../domain/goal'
 import { summarizeDay } from '../../domain/day'
@@ -10,7 +11,7 @@ import { dayNum, implausibleJump, inRange, parseKg, smoothPath, summary, xAxis, 
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
 import { dateLong, dateShort, fmt, haptic } from '../format'
 import { showToast } from '../toast'
-import { pushWeightsNow, type WeightSaveResult } from '../../services/sync'
+import { pushProfile, pushWeightsNow, type WeightSaveResult } from '../../services/sync'
 
 // as typed: 59.6 → 59.6, 59.65 → 59.65 (never rounded to 59.7)
 const kgFmt = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
@@ -132,6 +133,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
           ) : (
             <p className="mt-2 text-[15px] text-ink-3">השקילה הראשונה. בשקילה הבאה יופיע כאן השינוי.</p>
           )}
+          <CreatineNow date={s.latest.date} kg={s.latest.kg} />
         </section>
       ) : (
         <section aria-label="עוד אין שקילות" className="flex flex-col items-center gap-2 pt-6 pb-6 text-center">
@@ -147,6 +149,8 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
       <SaveStatus />
 
       {points.length > 1 && <BalanceVsScale points={points} />}
+
+      <CreatineField today={today} />
 
       {points.length > 0 && (
         <section aria-label="מגמת משקל" className="mt-6">
@@ -318,7 +322,9 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
       </p>
     )
   }
-  const v = balanceVerdict(r)
+  // creatine water gained (or lost) between the two weigh-ins — not fat, so not in the calories
+  const water = Math.round((creatineWaterKg(settings.creatine, latest.date, latest.kg) - creatineWaterKg(settings.creatine, previous.date, previous.kg)) * 100) / 100
+  const v = balanceVerdict(r, water)
   const sign = (kg: number) => (kg > 0 ? '+' : kg < 0 ? '−' : '')
   return (
     <div className={box} data-testid="weighin-balance">
@@ -330,6 +336,12 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
         לפי החישוב: <b className="ltr num inline-block">{sign(r.predictedKg)}{kgFmt.format(Math.abs(r.predictedKg))}</b> ק״ג · במשקל בפועל:{' '}
         <b className="ltr num inline-block">{fmtChange(r.measuredKg)}</b> ק״ג
       </p>
+      {Math.abs(water) >= 0.05 && (
+        <p className="mt-1" data-testid="weighin-creatine">
+          💧 מים מקריאטין בטווח הזה: <b className="ltr num inline-block">{sign(water)}{kgFmt.format(Math.abs(water))}</b> ק״ג (הערכה) → צפוי במשקל:{' '}
+          <b className="ltr num inline-block">{sign(r.predictedKg + water)}{kgFmt.format(Math.abs(Math.round((r.predictedKg + water) * 100) / 100))}</b> ק״ג
+        </p>
+      )}
       <p className={`mt-2 font-semibold ${v.kind === 'match' ? 'text-good' : v.kind === 'short' ? 'text-ink-2' : 'text-warn'}`} data-testid="weighin-verdict">
         {v.kind === 'implausible'
           ? 'שינוי חריג במשקל — כנראה טעות הקלדה'
@@ -358,6 +370,145 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
         {r.estimatedBurn.length > 0 && ` ב-${r.estimatedBurn.length} ימים השריפה היא הערכה (בלי Apple Health).`}
       </p>
     </div>
+  )
+}
+
+// ── creatine ──────────────────────────────────────────────────────────────────
+
+/** Under the current weight: how much of it is creatine water right now. */
+function CreatineNow({ date, kg }: { date: string; kg: number }) {
+  const creatine = useStore((st) => st.settings.creatine)
+  const water = creatineWaterKg(creatine, date, kg)
+  if (water < 0.05) return null
+  return (
+    <p className="mt-1 text-sm text-ink-3" data-testid="weight-creatine-now">
+      💧 כולל ~<span className="num">{kgFmt.format(water)}</span> ק״ג מים מקריאטין (לא שומן)
+    </p>
+  )
+}
+
+/**
+ * Creatine on/off: when it was started (and how), what it does to the scale right now, and when the
+ * extra water is complete. Saved with the profile (synced).
+ */
+function CreatineField({ today }: { today: string }) {
+  const settings = useStore((st) => st.settings)
+  const c = isValidCreatine(settings.creatine) ? settings.creatine : null
+  const [editing, setEditing] = useState(false)
+  const [start, setStart] = useState(c?.start ?? today)
+  const [loading, setLoading] = useState(c?.loading ?? false)
+  const bodyKg = settings.profile?.weightKg ?? 60
+  const save = (next: Creatine | null) => {
+    updateSettings({ creatine: next })
+    void pushProfile()
+    setEditing(false)
+    haptic(12)
+  }
+  const box = 'card mt-6 p-4'
+
+  if (editing) {
+    return (
+      <section aria-label="קריאטין" className={box} data-testid="creatine">
+        <p className="font-semibold">💊 קריאטין</p>
+        <label className="mt-3 flex flex-col gap-1 text-sm text-ink-2">
+          התחלתי ב-
+          <input
+            type="date"
+            value={start}
+            max={today}
+            onChange={(e) => e.target.value && setStart(e.target.value)}
+            className="min-h-11 rounded-xl bg-surface-2 px-3 text-[15px] outline-none focus:ring-2 focus:ring-info"
+          />
+        </label>
+        <div className="mt-3">
+          <Segmented<'daily' | 'loading'>
+            label="מינון"
+            size="sm"
+            value={loading ? 'loading' : 'daily'}
+            onChange={(v) => setLoading(v === 'loading')}
+            options={[
+              { value: 'daily', label: '3–5 ג׳ ביום' },
+              { value: 'loading', label: 'העמסה (~20 ג׳)' },
+            ]}
+          />
+        </div>
+        <div className="mt-3 flex gap-2">
+          <PrimaryButton className="flex-1" onClick={() => save({ start, ...(loading ? { loading: true } : {}), ...(c?.stop && c.stop >= start ? { stop: c.stop } : {}) })}>
+            שמירה
+          </PrimaryButton>
+          <GhostButton onClick={() => setEditing(false)}>ביטול</GhostButton>
+        </div>
+      </section>
+    )
+  }
+
+  if (!c) {
+    return (
+      <section aria-label="קריאטין" className={`${box} flex items-center gap-3`} data-testid="creatine">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">💊 לוקח קריאטין?</p>
+          <p className="text-xs text-ink-3">הוא מוסיף לשרירים ~{kgFmt.format(creatineFullKg(bodyKg))} ק״ג מים בשבועות הראשונים — האתר יראה את זה במשקל ובהשוואה לקלוריות.</p>
+        </div>
+        <button type="button" onClick={() => setEditing(true)} className="pressable min-h-10 shrink-0 rounded-full bg-surface-2 px-3 text-sm font-medium">
+          סמן התחלה
+        </button>
+      </section>
+    )
+  }
+
+  const water = creatineWaterKg(c, today, bodyKg)
+  const full = creatineFullKg(bodyKg)
+  const progress = creatineProgress(c, today)
+  const fullBy = addDays(c.start, c.loading ? 6 : 28)
+  const stopped = !!c.stop && c.stop < today
+  return (
+    <section aria-label="קריאטין" className={box} data-testid="creatine">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">💊 קריאטין</p>
+          <p className="text-xs text-ink-3">
+            {stopped ? `${dateShort(c.start)}–${dateShort(c.stop!)}` : `מ-${dateShort(c.start)}`} · {c.loading ? 'העמסה ואז תחזוקה' : '3–5 ג׳ ביום'}
+          </p>
+        </div>
+        <button type="button" onClick={() => { setStart(c.start); setLoading(!!c.loading); setEditing(true) }} className="pressable min-h-9 shrink-0 rounded-xl px-2 text-sm text-ink-3">
+          עריכה
+        </button>
+      </div>
+      <div className="mt-3">
+        <div className="flex items-baseline justify-between text-sm">
+          <span className="text-ink-2">מים בשריר עכשיו (הערכה)</span>
+          <span>
+            <b className="num">~{kgFmt.format(water)}</b> <span className="text-ink-3">/ {kgFmt.format(full)} ק״ג</span>
+          </span>
+        </div>
+        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)} aria-label="מים מקריאטין">
+          <div className="h-full rounded-full bg-info" style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-3" data-testid="creatine-note">
+          {stopped
+            ? 'אחרי ההפסקה המים יוצאים בהדרגה תוך ~4 שבועות — המשקל ירד בלי קשר לקלוריות.'
+            : progress >= 0.95
+              ? 'הגיע למלוא ההשפעה — מעכשיו הקריאטין כבר לא מזיז את המשקל.'
+              : `המשקל עולה בהדרגה עד בערך ${dateShort(fullBy)} (מים, לא שומן) — ואז נשאר יציב.`}{' '}
+          הטווח משתנה מאדם לאדם (±50%). ההשוואה לקלוריות כבר מורידה את זה.
+        </p>
+      </div>
+      <div className="mt-3 flex gap-2">
+        {!c.stop && (
+          <button type="button" onClick={() => save({ ...c, stop: today })} className="pressable min-h-10 rounded-full bg-surface-2 px-3 text-sm font-medium">
+            הפסקתי היום
+          </button>
+        )}
+        {c.stop && (
+          <button type="button" onClick={() => { const { stop: _s, ...rest } = c; save(rest) }} className="pressable min-h-10 rounded-full bg-surface-2 px-3 text-sm font-medium">
+            חזרתי לקחת
+          </button>
+        )}
+        <button type="button" onClick={() => save(null)} className="pressable min-h-10 rounded-full px-3 text-sm text-ink-3">
+          הסרה
+        </button>
+      </div>
+    </section>
   )
 }
 
@@ -606,6 +757,8 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
   const dateOf = (n: number) => new Date(n * 86_400_000).toISOString().slice(0, 10)
   const first = shown[0]
   const last = shown.at(-1)
+  const creatine = useStore((st) => st.settings.creatine)
+  const cStart = isValidCreatine(creatine) && dayNum(creatine.start) >= from && dayNum(creatine.start) <= to ? creatine.start : null
   const label = first && last ? `גרף משקל: ${fmtKg(first.kg)} ק״ג ב-${dateShort(first.date)}, ${fmtKg(last.kg)} ק״ג ב-${dateShort(last.date)}` : 'אין שקילות בטווח הזה'
 
   return (
@@ -630,6 +783,14 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
             {dateShort(dateOf(n))}
           </text>
         ))}
+        {cStart && (
+          <g data-testid="chart-creatine">
+            <line x1={x(cStart)} x2={x(cStart)} y1={padT} y2={H - padB} stroke="var(--info)" strokeWidth={1.5} strokeDasharray="3 3" />
+            <text x={x(cStart) + 4} y={padT + 8} fontSize={11} fill="var(--info)" textAnchor="start">
+              קריאטין
+            </text>
+          </g>
+        )}
         {px.length > 1 && <path d={`${line}L${px.at(-1)!.x},${H - padB}L${px[0].x},${H - padB}Z`} fill="url(#wfill)" />}
         {px.length > 1 && <path d={line} fill="none" stroke="var(--ink)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />}
         {shown.map((p, i) => {
@@ -673,6 +834,9 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
         >
           <b className="num text-sm">{fmtKg(shown[active].kg)} ק״ג</b>
           <span className="opacity-70">{dateShort(shown[active].date)}</span>
+          {creatineWaterKg(creatine, shown[active].date, shown[active].kg) >= 0.05 && (
+            <span className="opacity-70">כולל ~{kgFmt.format(creatineWaterKg(creatine, shown[active].date, shown[active].kg))} מים מקריאטין</span>
+          )}
         </div>
       )}
     </div>

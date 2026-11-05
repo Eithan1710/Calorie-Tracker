@@ -1,5 +1,6 @@
 import type { DaySummary } from './day'
 import { plausibleChangeKg } from './weight'
+import { CREATINE_WATER_UNCERTAINTY } from './creatine'
 
 /**
  * Energy balance between two weigh-ins, from the same daily numbers the app shows.
@@ -79,13 +80,19 @@ export type BalanceVerdict =
   /** the scale went down more than predicted: burn underestimated, or water */
   | { kind: 'lighter'; gapKg: number; kcalPerDay: number }
 
-export function balanceVerdict(r: Pick<WeighinBalance, 'predictedKg' | 'measuredKg' | 'days'>): BalanceVerdict {
-  if (Math.abs(r.measuredKg) > plausibleChangeKg(r.days)) return { kind: 'implausible' }
+/**
+ * `waterKg`: a known change in body water over the window that isn't fat (creatine — see
+ * creatine.ts). It is added to what the calories predict, and half of it widens the tolerance
+ * (people's response to creatine varies by ±50%).
+ */
+export function balanceVerdict(r: Pick<WeighinBalance, 'predictedKg' | 'measuredKg' | 'days'>, waterKg = 0): BalanceVerdict {
+  if (Math.abs(r.measuredKg - waterKg) > plausibleChangeKg(r.days)) return { kind: 'implausible' }
   if (r.days < MIN_VERDICT_DAYS) return { kind: 'short' }
-  const gapKg = Math.round((r.measuredKg - r.predictedKg) * 100) / 100
-  if (Math.abs(gapKg) <= SCALE_NOISE_KG) return { kind: 'match', gapKg }
+  const gapKg = Math.round((r.measuredKg - r.predictedKg - waterKg) * 100) / 100
+  const tolerance = SCALE_NOISE_KG + Math.abs(waterKg) * CREATINE_WATER_UNCERTAINTY
+  if (Math.abs(gapKg) <= tolerance) return { kind: 'match', gapKg }
   // only the part beyond the scale's noise is something the numbers have to explain
-  const beyond = Math.abs(gapKg) - SCALE_NOISE_KG
+  const beyond = Math.abs(gapKg) - tolerance
   const kcalPerDay = Math.round((beyond * KCAL_PER_KG_FAT) / Math.max(1, r.days) / 10) * 10
   return gapKg > 0 ? { kind: 'heavier', gapKg, kcalPerDay } : { kind: 'lighter', gapKg, kcalPerDay }
 }

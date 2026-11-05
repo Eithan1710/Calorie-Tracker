@@ -155,3 +155,5 @@ jobs:
           grep -q 'routine schedule checks passed' routine.log
           $P -f supabase/tests/profile_weight.sql 2>&1 | tee pweight.log
           grep -q 'profile weight checks passed' pweight.log
+          $P -f supabase/tests/creatine.sql 2>&1 | tee creatine.log
+          grep -q 'creatine checks passed' creatine.log

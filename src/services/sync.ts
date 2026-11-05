@@ -1,3 +1,4 @@
+import { isValidCreatine } from '../domain/creatine'
 import { useSyncExternalStore } from 'react'
 import { getSupabase } from './supabase'
 import { hasSupabase } from './config'
@@ -417,7 +418,7 @@ function reconcileWeights(rows: WeightRow[]) {
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule', 'creatine'] as const
 
 /** JSON with sorted keys (and undefined = null), so the same value always compares equal */
 function stableJson(v: unknown): string {
@@ -466,6 +467,8 @@ async function syncProfile() {
       healthDevice: data.health_device === undefined ? st.healthDevice : data.health_device === 'phone' || data.health_device === 'watch' ? data.health_device : undefined,
       // routine_schedule: null = no work schedule; column absent before 20261026000000 → keep this device's
       officeSchedule: data.routine_schedule === undefined ? st.officeSchedule : isValidOfficeSchedule(data.routine_schedule) ? data.routine_schedule : null,
+      // creatine: null = none; column absent before 20261105000000 → keep this device's
+      creatine: data.creatine === undefined ? st.creatine : isValidCreatine(data.creatine) ? data.creatine : null,
       profileUpdatedAt: new Date(serverAt).toISOString(),
     }
     const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => k !== 'profileUpdatedAt' && stableJson(next[k]) !== stableJson(st[k]))
@@ -502,6 +505,7 @@ async function syncProfile() {
       step_goal: isValidStepGoal(st.stepGoal) ? st.stepGoal : null,
       health_device: st.healthDevice ?? null,
       routine_schedule: isValidOfficeSchedule(st.officeSchedule) ? st.officeSchedule : null,
+      creatine: isValidCreatine(st.creatine) ? st.creatine : null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {

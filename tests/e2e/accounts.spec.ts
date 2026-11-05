@@ -615,6 +615,21 @@ test('balance vs scale: pick any two weigh-ins', async ({ page }) => {
   expect(sb.rows('mz_weights', u.id).length).toBe(n) // nothing saved yet
   await entry.getByLabel('שקילה חדשה').fill('59.0')
   await expect(entry.getByTestId('weight-jump')).toHaveCount(0)
+
+  // creatine from 29.9: its water shows under the weight, on the chart and in the comparison (synced)
+  const cr = page.getByRole('region', { name: 'קריאטין' })
+  await cr.getByRole('button', { name: 'סמן התחלה' }).click()
+  await cr.getByLabel('התחלתי ב-').fill('2026-09-29')
+  await cr.getByRole('button', { name: 'שמירה' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toEqual({ start: '2026-09-29' })
+  await expect(page.getByTestId('weight-creatine-now')).toContainText('מים מקריאטין')
+  await expect(cr.getByTestId('creatine-note')).toContainText('מים, לא שומן')
+  await expect(page.getByTestId('chart-creatine')).toBeVisible()
+  await expect(sec.getByTestId('weighin-creatine')).toContainText('מים מקריאטין') // 29.9 → 3.10: ~+0.28 kg of water
+  await page.screenshot({ path: 'docs/screenshots/accounts-creatine.png', fullPage: true })
+  await cr.getByRole('button', { name: 'הסרה' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toBeNull()
+  await expect(page.getByTestId('weight-creatine-now')).toHaveCount(0)
 })
 
 test('work hours without the phone + the quick activity check: saved, estimated once, never asked twice', async ({ page }) => {

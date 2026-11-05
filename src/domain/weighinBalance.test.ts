@@ -81,3 +81,12 @@ describe('does the scale agree with the numbers?', () => {
     expect(balanceBetweenWeighins({ previous: { date: '2026-10-16', kg: 60.1 }, latest: { date: '2026-10-17', kg: 59.65 }, days })!.measuredKg).toBe(-0.45)
   })
 })
+
+describe('creatine water in the comparison', () => {
+  it('16.10 → 5.11 with creatine from 25.10: the scale is up ~0.7 kg of water, so a flat scale still matches a deficit', () => {
+    // 20 days, 4,000 deficit ≈ −0.52 kg fat; creatine water +0.7 → expected +0.18; the scale says +0.1
+    expect(balanceVerdict({ predictedKg: -0.52, measuredKg: 0.1, days: 20 }, 0.7).kind).toBe('match')
+    // without the water the same numbers look like "the scale went down less than predicted"
+    expect(balanceVerdict({ predictedKg: -0.52, measuredKg: 0.9, days: 20 }).kind).toBe('heavier')
+  })
+})
