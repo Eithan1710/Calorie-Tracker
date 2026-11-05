@@ -60,7 +60,7 @@ describe('analyzeFood pipeline', () => {
         status: 'ok', meal_title_he: 'יוגורט', emoji: '🥣', overall_confidence: 0.9,
         items: [{ name_he: 'יוגורט GO', name_en: 'Yoplait GO yogurt', db_key: 'yoplait_go', brand: 'יופלה', grams: 200, state: 'as_sold', quantity_basis: 'counted', est_per100: per100, per100_from_label: fromLabel, confidence: 0.9, assumptions: [] }],
       })
-    const img = { data: 'AAAA', mimeType: 'image/jpeg' }
+    const img = { data: 'AAAA', mimeType: 'image/jpeg' as const }
     const r = await analyzeFood({ mode: 'analyze', text: '', image: img }, { env: noEnv(), providers: [fake('a', go(true))] })
     expect(r.ok).toBe(true)
     if (!r.ok) return
