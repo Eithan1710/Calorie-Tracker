@@ -53,7 +53,7 @@ jobs:
           supabase --version | tee deploy.log
           # all of these authenticate themselves (member session / Shortcuts token / cron secret / GitHub OIDC)
           for fn in analyze-food health-ingest send-reminders mz-config; do
-            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api 2>&1 | tee -a deploy.log
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api --yes 2>&1 | tee -a deploy.log
           done
 
       - name: Publish the deploy log (failed runs)
