@@ -17,6 +17,10 @@ concurrency:
 env:
   SUPABASE_PROJECT_REF: kjfihzskaqcboeejnkak
 
+# contents: write only to publish the deploy log of a failed run (ci/deploy-log) — no secrets in it
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -45,10 +49,20 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
+          set -o pipefail
+          supabase --version | tee deploy.log
           # all of these authenticate themselves (member session / Shortcuts token / cron secret / GitHub OIDC)
           for fn in analyze-food health-ingest send-reminders mz-config; do
-            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt --use-api 2>&1 | tee -a deploy.log
           done
+
+      - name: Publish the deploy log (failed runs)
+        if: failure()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          mkdir -p out && cp deploy.log out/ 2>/dev/null || echo "no log" > out/deploy.log
+          cd out && git init -q -b ci/deploy-log && git config user.name bot && git config user.email bot@users.noreply.github.com
+          git add -A && git commit -qm "deploy log" && git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ci/deploy-log
 
       - name: Remove retired functions
         env:
