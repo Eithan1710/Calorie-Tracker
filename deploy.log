@@ -1,0 +1,6 @@
+3.0.0
+Warning: --project-ref is deprecated and will be removed in v4. Use --remote=<ref> instead
+Target: project kjfihzskaqcboeejnkak
+WARN: auth.email.enable_signup is deprecated and will be removed in v4, use auth.email.enabled instead.
+Confirmation required: Deploy 1 Function (target: project kjfihzskaqcboeejnkak). This run can't ask because stdout is not a terminal. Nothing was changed.
+Re-run with --yes to confirm.
