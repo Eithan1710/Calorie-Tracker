@@ -52,6 +52,33 @@ describe('analyzeFood pipeline', () => {
     expect(r.analysis.provider).toBe('a')
   })
 
+  it('a nutrition label read from the photo beats the table entry for that product line', async () => {
+    // 5.11: Yoplait GO in hand — label 71 kcal / P 10 / F 1.5 / C 4.4 per 100 g, 143 kcal per 200 g cup;
+    // the table's yoplait_go (natural, 68 / 10 / 1.8 / 3.0) gave 136 kcal
+    const go = (fromLabel: boolean, per100 = { kcal: 71, protein_g: 10, fat_g: 1.5, carbs_g: 4.4 }) =>
+      JSON.stringify({
+        status: 'ok', meal_title_he: 'יוגורט', emoji: '🥣', overall_confidence: 0.9,
+        items: [{ name_he: 'יוגורט GO', name_en: 'Yoplait GO yogurt', db_key: 'yoplait_go', brand: 'יופלה', grams: 200, state: 'as_sold', quantity_basis: 'counted', est_per100: per100, per100_from_label: fromLabel, confidence: 0.9, assumptions: [] }],
+      })
+    const img = { data: 'AAAA', mimeType: 'image/jpeg' }
+    const r = await analyzeFood({ mode: 'analyze', text: '', image: img }, { env: noEnv(), providers: [fake('a', go(true))] })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const it0 = r.analysis.items[0]
+    expect(it0.calories).toBe(142) // 2 × 71 (the label's own per-unit line says 143 — rounding)
+    expect(it0.protein_g).toBeCloseTo(20)
+    expect(it0.fat_g).toBeCloseTo(3)
+    expect(it0.carbs_g).toBeCloseTo(8.8)
+    expect(it0.verification).toBe('label')
+    expect(it0.confidence).toBeGreaterThanOrEqual(0.95)
+    // not read from a label → the table entry as before
+    const t = await analyzeFood({ mode: 'analyze', text: '', image: img }, { env: noEnv(), providers: [fake('a', go(false))] })
+    expect(t.ok && t.analysis.items[0].calories).toBe(136)
+    // a misread label (numbers that don't add up) falls back to the table
+    const bad = await analyzeFood({ mode: 'analyze', text: '', image: img }, { env: noEnv(), providers: [fake('a', go(true, { kcal: 300, protein_g: 10, fat_g: 1.5, carbs_g: 4.4 }))] })
+    expect(bad.ok && bad.analysis.items[0].calories).toBe(136)
+  })
+
   it('falls back to the next provider on invalid JSON', async () => {
     const bad = fake('bad', '{"items": "lots of food", "calories": "about 600"}')
     const good = fake('good', burgerJson)

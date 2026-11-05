@@ -41,6 +41,8 @@ export const AiItemSchema = z.object({
   quantity_basis: z.enum(['stated', 'counted', 'estimated']).default('estimated'),
   /** model's own per-100 g estimate — required when db_key is null */
   est_per100: Per100Schema.nullable().optional(),
+  /** est_per100 was copied from a nutrition label readable in the photo → it beats any table value */
+  per100_from_label: z.boolean().nullable().optional(),
   confidence: num(0, 1).default(0.6),
   assumptions: z.array(z.string().max(200)).max(6).default([]),
 })

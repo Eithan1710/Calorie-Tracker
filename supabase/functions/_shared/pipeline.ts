@@ -64,6 +64,7 @@ export const AI_JSON_SCHEMA = {
             },
             required: ['kcal', 'protein_g', 'fat_g', 'carbs_g'],
           },
+          per100_from_label: { type: ['boolean', 'null'] },
           confidence: { type: 'number' },
           assumptions: { type: 'array', items: { type: 'string' } },
         },
@@ -180,8 +181,21 @@ async function resolveItem(ai: AiItem, ctx: ResolveCtx): Promise<Resolved | null
     if (c.ref.verification === 'estimate') confidence = Math.min(confidence, 0.65)
   }
 
+  // 0) the product's own nutrition label, read from the photo: the exact variant in hand beats any
+  //    table or database value (flavours / fat % of one product line differ). Only when the numbers
+  //    are physically consistent — a misread label falls through to the table.
+  const label = ai.per100_from_label && ai.est_per100 ? ai.est_per100 : null
+  if (label && isPlausiblePer100(label) && Math.abs(atwaterKcal(label) - label.kcal) <= Math.max(15, label.kcal * 0.2)) {
+    per100 = { kcal: label.kcal, protein_g: label.protein_g, fat_g: label.fat_g, carbs_g: label.carbs_g }
+    source = 'ai'
+    confidence = Math.max(confidence, ai.quantity_basis === 'estimated' ? 0.8 : 0.95)
+    const known = ai.db_key ? FOOD_BY_KEY[ai.db_key] : undefined
+    if (known) emoji = known.emoji
+    prov = { origin: 'ai', verification: 'label', ref_name: 'התווית בתמונה', ...(ai.brand ? { brand: ai.brand } : {}) }
+  }
+
   // 1) curated core table (the model picked a key)
-  const ref = ai.db_key ? FOOD_BY_KEY[ai.db_key] : undefined
+  const ref = !per100 && ai.db_key ? FOOD_BY_KEY[ai.db_key] : undefined
   if (ref) useCurated(ref)
 
   // 2) full food database: Israeli MoH, USDA, Israeli packaged products

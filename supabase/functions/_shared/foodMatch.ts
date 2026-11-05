@@ -281,7 +281,7 @@ export const STATE_LABEL_HE: Record<string, string> = { raw: 'לא מבושל', 
 /** Label + tone for the trust badge shown next to a food (short = for item rows). */
 export function trustBadge(v: Verification | undefined, origin?: string, short = false): { text: string; tone: 'good' | 'info' | 'warn' } {
   if (v === 'official') return { text: short ? 'מאומת' : origin === 'usda' ? 'מאומת · USDA' : 'מאומת · משרד הבריאות', tone: 'good' }
-  if (v === 'label') return { text: 'תווית יצרן', tone: 'good' }
+  if (v === 'label') return { text: origin === 'ai' ? 'מהתווית בתמונה' : 'תווית יצרן', tone: 'good' }
   if (v === 'recipe') return { text: short ? 'מתכון' : 'מתכון מחושב', tone: 'info' }
   if (v === 'community') return { text: 'לא מאומת', tone: 'warn' }
   return { text: 'הערכה', tone: 'warn' }

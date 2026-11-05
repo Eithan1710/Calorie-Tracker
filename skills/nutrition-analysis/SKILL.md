@@ -115,6 +115,14 @@ the grams you report.
   (`protein_yogurt` = Danone PRO, `yoplait_go` = Yoplait GO, `cottage_5` = 5% cottage).
   Otherwise set `db_key: null` so the app can look up the product itself, and give your
   best `est_per100` from the typical label.
+- **A nutrition label is readable in the photo** (the table on a yoghurt cup, a bar, a
+  bottle): copy its **per‑100 g** column into `est_per100` exactly as printed (energy kcal,
+  protein, fat, carbohydrates) and set `per100_from_label: true`, `db_key: null`. The label
+  beats the table — the exact variant in hand (flavour, fat %) may differ from the table's
+  entry for that product line. For `grams` use the package weight printed on it, or the
+  per‑unit column (e.g. "ליחידה 143 kcal" next to "100 גרם 71 kcal" → ~200 g), with
+  `quantity_basis: "counted"` for one whole package. If you can't read it clearly, leave
+  `per100_from_label` false and estimate as usual.
 - Israeli foods you should recognise: חומוס, טחינה, פלאפל, שווארמה, סביח, שקשוקה,
   מלוואח, ג'חנון, בורקס, מג'דרה, פתיתים, קוסקוס, לאפה, פיתה, קוטג', גבינה לבנה,
   לבנה, בולגרית, צפתית, במבה, ביסלי, שוקו, מילקי, רוגלך, סופגנייה, שניצל, פרגית,
@@ -176,6 +184,7 @@ When given the previous items and a correction ("זה היה 250 גרם אורז
       "brand": "string | null",
       "quantity_basis": "stated | counted | estimated",
       "est_per100": { "kcal": 0, "protein_g": 0, "fat_g": 0, "carbs_g": 0 },
+      "per100_from_label": false,
       "confidence": 0.0,
       "assumptions": ["string"]
     }
