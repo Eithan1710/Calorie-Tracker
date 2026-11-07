@@ -43,11 +43,13 @@ describe('expenditure measured from intake and the trend', () => {
     expect(m.plusMinus).toBe(90) // 0.25 kg × 7,700 / 21
     expect(m.appBurn).toBe(2150)
   })
-  it('creatine water is taken out: the same loss hidden under +0.43 kg of water gives the same 2,220', () => {
+  it('creatine water is taken out: the same 0.6 kg loss under 21 days of creatine water gives the same 2,220', () => {
     const creatine = { start: day(0) }
-    const m = measuredExpenditure({ trend: trend(60, 59.4 + 0.43, 21), days: logged(21), creatine })!
-    expect(m.waterKg).toBeGreaterThan(0.4)
-    expect(Math.abs(m.expenditure - 2220)).toBeLessThanOrEqual(20)
+    // by hand: 1.3% × ~59.8 kg × (1 − e^(−21/9)) ≈ 0.70 kg of water by day 21
+    const water = 0.013 * 59.8 * (1 - Math.exp(-21 / 9))
+    const m = measuredExpenditure({ trend: trend(60, 59.4 + water, 21), days: logged(21), creatine })!
+    expect(m.waterKg).toBeCloseTo(water, 1)
+    expect(Math.abs(m.expenditure - 2220)).toBeLessThan(21)
   })
   it('needs 14 consecutive logged days right before the latest weigh-in', () => {
     expect(measuredExpenditure({ trend: trend(60, 59.8, 10), days: logged(10) })).toBeNull()
