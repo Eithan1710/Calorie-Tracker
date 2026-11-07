@@ -41,32 +41,31 @@ export function Login() {
     `flex min-h-14 items-center rounded-2xl bg-surface-2 px-4 focus-within:ring-2 ${bad ? 'ring-2 ring-surplus' : 'focus-within:ring-info'}`
 
   return (
-    <main className="safe-top mx-auto grid min-h-dvh w-full max-w-md gap-x-12 px-5 pb-8 lg:max-w-5xl lg:grid-cols-[1.1fr_1fr] lg:items-center lg:px-8">
-      <div className="animate-rise flex flex-col gap-6 pt-8 lg:py-8">
-        <div className="flex flex-col gap-4">
-          <Logo className="size-14" />
-          <div>
-            <h1 className="text-[34px] leading-tight font-bold tracking-tight lg:text-[44px]">מאזן</h1>
-            <p className="mt-1 text-lg text-ink-2 lg:text-xl">כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.</p>
-          </div>
+    <main className="safe-top mx-auto grid min-h-dvh w-full max-w-md content-center gap-x-12 gap-y-6 px-5 py-8 lg:max-w-5xl lg:grid-cols-[1.1fr_1fr] lg:px-8">
+      {/* phone: title → login → what the app does (a returning member never scrolls); desktop: two columns */}
+      <div className="animate-rise flex flex-col gap-4 lg:col-start-1 lg:row-start-1">
+        <Logo className="size-14" />
+        <div>
+          <h1 className="text-[34px] leading-tight font-bold tracking-tight lg:text-[44px]">מאזן</h1>
+          <p className="mt-1 text-lg text-ink-2 lg:text-xl">כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.</p>
         </div>
-        <ul className="grid gap-3 sm:grid-cols-2" aria-label="מה מאזן עושה">
-          {FEATURES.map(({ icon: Icon, title, text }) => (
-            <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-1)]">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2" aria-hidden>
-                <Icon className="size-5 text-ink-2" />
-              </span>
-              <span>
-                <span className="block font-semibold">{title}</span>
-                <span className="block text-sm leading-relaxed text-ink-3">{text}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
       </div>
 
-      <div className="animate-rise flex flex-col justify-center gap-5 py-8">
+      <ul className="animate-rise grid gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-start-2 lg:self-start" aria-label="מה מאזן עושה">
+        {FEATURES.map(({ icon: Icon, title, text }) => (
+          <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-1)]">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2" aria-hidden>
+              <Icon className="size-5 text-ink-2" />
+            </span>
+            <span>
+              <span className="block font-semibold">{title}</span>
+              <span className="block text-sm leading-relaxed text-ink-3">{text}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
 
+      <div className="animate-rise flex flex-col justify-center gap-5 max-lg:row-start-2 lg:col-start-2 lg:row-span-2 lg:row-start-1">
         <form onSubmit={(e) => void submit(e)} className="card flex flex-col gap-4 p-5" noValidate>
           <h2 className="text-xl font-semibold">התחברות</h2>
 

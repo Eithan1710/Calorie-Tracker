@@ -326,7 +326,8 @@ function BalanceResult({ previous, latest, points }: { previous: WeightPoint; la
     )
   }
   if (!r) return null
-  const range = `${dateShort(r.from)}–${dateShort(r.through)}`
+  // LTR-isolated so the range reads from → to inside Hebrew text (not "2.10–29.9")
+  const range = `\u2066${dateShort(r.from)}–${dateShort(r.through)}\u2069`
   if (r.missingFood.length) {
     return (
       <p className={box} data-testid="weighin-balance">
@@ -448,7 +449,7 @@ function MeasuredExpenditureCard({ trend }: { trend: TrendPoint[] }) {
       {m ? (
         <div className="mt-3 rounded-2xl bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-ink-2">
           <p>
-            לפי מה שאכלת ב-{m.days} הימים האחרונים ({dateShort(m.from)}–{dateShort(m.through)}) ומגמת המשקל, הגוף שרף בערך{' '}
+            לפי מה שאכלת ב-{m.days} הימים האחרונים ({`\u2066${dateShort(m.from)}–${dateShort(m.through)}\u2069`}) ומגמת המשקל, הגוף שרף בערך{' '}
             <b className="num text-ink">{fmt(m.expenditure)}</b> קק״ל ליום <span className="ltr num inline-block">(±{fmt(m.plusMinus)})</span>.
           </p>
           <p className="mt-1">
@@ -568,7 +569,7 @@ function CreatineField({ today }: { today: string }) {
         <div>
           <p className="font-semibold">💊 קריאטין</p>
           <p className="text-xs text-ink-3">
-            {stopped ? `${dateShort(c.start)}–${dateShort(c.stop!)}` : `מ-${dateShort(c.start)}`} · {c.loading ? 'העמסה ואז תחזוקה' : '3–5 ג׳ ביום'}
+            {stopped ? `\u2066${dateShort(c.start)}–${dateShort(c.stop!)}\u2069` : `מ-${dateShort(c.start)}`} · {c.loading ? 'העמסה ואז תחזוקה' : '3–5 ג׳ ביום'}
           </p>
         </div>
         <button type="button" onClick={() => { setStart(c.start); setLoading(!!c.loading); setEditing(true) }} className="pressable min-h-9 shrink-0 rounded-xl px-2 text-sm text-ink-3">
