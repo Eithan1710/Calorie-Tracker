@@ -4,13 +4,19 @@ import './index.css'
 import App from './App'
 import { startSession } from './services/session'
 import { initInstall } from './services/install'
+import { initErrorReporting } from './services/errors'
+import { ErrorBoundary } from './ui/ErrorBoundary'
 
 const root = createRoot(document.getElementById('root')!)
 root.render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )
+
+initErrorReporting()
 
 // before anything else: the browser fires its install event once per page load
 initInstall()

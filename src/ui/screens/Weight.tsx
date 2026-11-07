@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 import { ArrowDown, ArrowUp, CloudOff, Minus, Trash2 } from 'lucide-react'
 import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight, updateSettings, useStore, weightList } from '../../data/store'
 import { creatineFullKg, creatineProgress, creatineWaterKg, isValidCreatine, type Creatine } from '../../domain/creatine'
+import { measuredExpenditure, trendWeights, weeklyRate, type TrendPoint } from '../../domain/trend'
 import type { WeightEntry } from '../../data/types'
 import { addDays, dayTarget, toDateKey } from '../../domain/goal'
 import { summarizeDay } from '../../domain/day'
@@ -106,6 +107,8 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
   const [showAll, setShowAll] = useState(false)
   const today = toDateKey(new Date())
   const points = useMemo(() => toPoints(list), [list])
+  const trend = useMemo(() => trendWeights(points), [points])
+  const rate = weeklyRate(trend)
   const s = summary(points)
   const newestFirst = [...list].reverse()
   const visible = showAll ? newestFirst : newestFirst.slice(0, 6)
@@ -133,6 +136,12 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
           ) : (
             <p className="mt-2 text-[15px] text-ink-3">השקילה הראשונה. בשקילה הבאה יופיע כאן השינוי.</p>
           )}
+          {rate !== null && trend.length >= 5 && (
+            <p className="mt-1 text-sm text-ink-3" data-testid="weight-trend-rate">
+              מגמה: <span className="ltr num inline-block font-medium text-ink-2">{fmtChange(rate)}</span> ק״ג בשבוע
+              <span className="text-ink-3"> (ממוצע משוקלל, בלי תנודות יומיות)</span>
+            </p>
+          )}
           <CreatineNow date={s.latest.date} kg={s.latest.kg} />
         </section>
       ) : (
@@ -149,6 +158,8 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
       <SaveStatus />
 
       {points.length > 1 && <BalanceVsScale points={points} />}
+
+      {trend.length >= 3 && <MeasuredExpenditureCard trend={trend} />}
 
       <CreatineField today={today} />
 
@@ -170,7 +181,7 @@ export function Weight({ switcher }: { switcher: ReactNode }) {
               />
             </div>
           </div>
-          <WeightChart points={points} range={range} today={today} />
+          <WeightChart points={points} trend={trend} range={range} today={today} />
         </section>
       )}
 
@@ -283,6 +294,7 @@ function BalanceResult({ previous, latest, points }: { previous: WeightPoint; la
   const exercise = useStore((st) => st.exercise)
   const health = useStore((st) => st.health)
   const settings = useStore((st) => st.settings)
+  const weights = useStore((st) => st.weights)
   const n = dayNum(latest.date) - dayNum(previous.date)
   const r = useMemo(() => {
     if (n < 1 || n > MAX_COMPARE_DAYS) return null
@@ -300,10 +312,11 @@ function BalanceResult({ previous, latest, points }: { previous: WeightPoint; la
         proteinTarget: settings.proteinTarget,
         target,
         routine,
+        weights,
       })
     })
     return balanceBetweenWeighins({ previous, latest, days })
-  }, [food, exercise, health, settings, previous, latest, n])
+  }, [food, exercise, health, settings, weights, previous, latest, n])
   const box = 'mt-3 rounded-2xl bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-ink-2'
   if (n > MAX_COMPARE_DAYS) {
     return (
@@ -391,6 +404,73 @@ function BalanceResult({ previous, latest, points }: { previous: WeightPoint; la
         {r.estimatedBurn.length > 0 && ` ב-${r.estimatedBurn.length} ימים השריפה היא הערכה (בלי Apple Health).`}
       </p>
     </div>
+  )
+}
+
+// ── expenditure measured from the scale ───────────────────────────────────────
+
+/**
+ * What the body actually burned, from the food logged and the trend weight (MacroFactor-style),
+ * next to what the app calculated for the same days — the most direct check of the numbers.
+ */
+function MeasuredExpenditureCard({ trend }: { trend: TrendPoint[] }) {
+  const food = useStore((st) => st.food)
+  const exercise = useStore((st) => st.exercise)
+  const health = useStore((st) => st.health)
+  const settings = useStore((st) => st.settings)
+  const weights = useStore((st) => st.weights)
+  const last = trend.at(-1)!
+  const m = useMemo(() => {
+    const target = dayTarget(settings)
+    const routine = routineContextOf(settings, Object.values(exercise))
+    const days = Array.from({ length: 28 }, (_, i) => {
+      const date = addDays(last.date, -(28 - i))
+      const d = summarizeDay({
+        date,
+        food: foodForDate({ food }, date),
+        exercises: exercisesForDate({ exercise }, date),
+        steps: health[date]?.steps ?? 0,
+        health: health[date],
+        profile: settings.profile,
+        proteinTarget: settings.proteinTarget,
+        target,
+        routine,
+        weights,
+      })
+      return { date, eaten: d.eaten, burned: d.burned, hasFood: d.hasFood }
+    })
+    return measuredExpenditure({ trend, days, creatine: settings.creatine })
+  }, [food, exercise, health, settings, weights, trend, last.date])
+
+  return (
+    <section aria-label="הוצאה לפי המשקל" className="mt-6" data-testid="measured-expenditure">
+      <h2 className="text-lg font-semibold">הוצאה לפי המשקל</h2>
+      {m ? (
+        <div className="mt-3 rounded-2xl bg-surface-2 px-3.5 py-3 text-sm leading-relaxed text-ink-2">
+          <p>
+            לפי מה שאכלת ב-{m.days} הימים האחרונים ({dateShort(m.from)}–{dateShort(m.through)}) ומגמת המשקל, הגוף שרף בערך{' '}
+            <b className="num text-ink">{fmt(m.expenditure)}</b> קק״ל ליום <span className="ltr num inline-block">(±{fmt(m.plusMinus)})</span>.
+          </p>
+          <p className="mt-1">
+            החישוב של מאזן לאותם ימים: <b className="num text-ink">{fmt(m.appBurn)}</b> ·{' '}
+            {Math.abs(m.appBurn - m.expenditure) <= m.plusMinus
+              ? 'מתאים ✓'
+              : m.appBurn > m.expenditure
+                ? `גבוה ב-${fmt(m.appBurn - m.expenditure)}`
+                : `נמוך ב-${fmt(m.expenditure - m.appBurn)}`}
+          </p>
+          <p className="mt-1 text-xs text-ink-3">
+            ממוצע אכילה {fmt(m.avgIntake)} · שינוי במגמה בלי מים מקריאטין <span className="ltr num inline-block">{fmtChange(m.tissueKg)}</span> ק״ג
+            {Math.abs(m.waterKg) >= 0.05 ? ` (מים מקריאטין ${m.waterKg > 0 ? '+' : '−'}${kgFmt.format(Math.abs(m.waterKg))})` : ''}. זו מדידה עקיפה — היא מתחדדת ככל
+            שיש יותר ימים ושקילות; פער קבוע מהחישוב של מאזן מרמז על הערכת שריפה או רישום אוכל לא מדויקים.
+          </p>
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-ink-3">
+          אחרי {14} ימים רצופים עם רישום אוכל ושקילות כל כמה ימים, יופיע כאן כמה הגוף שלך שורף בפועל — לפי המשקל, לא לפי הערכה.
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -748,7 +828,7 @@ function EditWeightSheet({ entry, onClose, today }: { entry: WeightEntry | null;
  * One line, measured points only, honest axis (≥ 4 kg visible, round-kg gridlines).
  * Time runs right → left like the rest of the app (RTL): the newest weigh-in is on the left.
  */
-function WeightChart({ points, range, today }: { points: WeightPoint[]; range: WeightRange; today: string }) {
+function WeightChart({ points, trend, range, today }: { points: WeightPoint[]; trend: TrendPoint[]; range: WeightRange; today: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [w, setW] = useState(340)
   const [active, setActive] = useState<number | null>(null)
@@ -774,6 +854,10 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
   const y = (kg: number) => padT + ((hi - kg) / (hi - lo || 1)) * (H - padT - padB)
   const px = shown.map((p) => ({ x: x(p.date), y: y(p.kg) })).sort((a, b) => a.x - b.x)
   const line = smoothPath(px)
+  // the smoothed trend over the same weigh-ins (drawn only with enough of them to mean something)
+  const shownDates = new Set(shown.map((p) => p.date))
+  const trendShown = trend.filter((t) => shownDates.has(t.date))
+  const tpx = trendShown.length >= 3 ? trendShown.map((t) => ({ x: x(t.date), y: y(t.trend) })).sort((a, b) => a.x - b.x) : []
   const xTicks = [0, 1, 2, 3].map((i) => Math.round(from + ((to - from) * i) / 3))
   const dateOf = (n: number) => new Date(n * 86_400_000).toISOString().slice(0, 10)
   const first = shown[0]
@@ -813,7 +897,10 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
           </g>
         )}
         {px.length > 1 && <path d={`${line}L${px.at(-1)!.x},${H - padB}L${px[0].x},${H - padB}Z`} fill="url(#wfill)" />}
-        {px.length > 1 && <path d={line} fill="none" stroke="var(--ink)" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />}
+        {px.length > 1 && (
+          <path d={line} fill="none" stroke="var(--ink)" strokeOpacity={tpx.length ? 0.35 : 1} strokeWidth={tpx.length ? 1.5 : 2.25} strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {tpx.length > 1 && <path d={smoothPath(tpx)} fill="none" stroke="var(--ink)" strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round" data-testid="chart-trend" />}
         {shown.map((p, i) => {
           const newest = i === shown.length - 1
           // dots only while they have room (≥ 9 px apart); the newest weigh-in is always marked
@@ -855,6 +942,9 @@ function WeightChart({ points, range, today }: { points: WeightPoint[]; range: W
         >
           <b className="num text-sm">{fmtKg(shown[active].kg)} ק״ג</b>
           <span className="opacity-70">{dateShort(shown[active].date)}</span>
+          {trendShown.length >= 3 && trend.find((t) => t.date === shown[active].date) && (
+            <span className="opacity-70">מגמה {kgFmt.format(trend.find((t) => t.date === shown[active].date)!.trend)}</span>
+          )}
           {creatineWaterKg(creatine, shown[active].date, shown[active].kg) >= 0.05 && (
             <span className="opacity-70">כולל ~{kgFmt.format(creatineWaterKg(creatine, shown[active].date, shown[active].kg))} מים מקריאטין</span>
           )}

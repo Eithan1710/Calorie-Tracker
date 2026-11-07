@@ -114,7 +114,8 @@ async function callOnce(body: AnalyzeRequest, timer?: PhotoFlowTimer): Promise<A
     return body.mode === 'analyze' && !isPhoto ? localFallback(text, 'unavailable') : { ok: false, code: 'invalid', message: MSG.unclear }
   }
   const err = (json ?? {}) as { error?: string; message?: string; clarification?: string | null }
-  if ((res.status === 401 || res.status === 404 || res.status >= 500) && body.mode === 'analyze' && !isPhoto) {
+  // unavailable or over the daily AI limit: known foods in text still log through the offline parser
+  if ((res.status === 401 || res.status === 404 || res.status === 429 || res.status >= 500) && body.mode === 'analyze' && !isPhoto) {
     // auth missing / no backend deployed / provider outage → deterministic parser still helps
     const fb = await localFallback(text, 'unavailable')
     if (fb.ok) return fb

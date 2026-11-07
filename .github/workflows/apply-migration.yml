@@ -11,8 +11,9 @@ on:
       migration:
         description: Migration file
         type: choice
-        default: 20261105000000_creatine.sql
+        default: 20261107000000_client_errors.sql
         options:
+          - 20261107000000_client_errors.sql
           - 20261105000000_creatine.sql
           - 20261101000000_profile_weight_hundredths.sql
           - 20261026000000_routine_schedule.sql

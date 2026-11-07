@@ -5,6 +5,7 @@ import { analyzeFood } from '../_shared/pipeline.ts'
 import { toDbFood, type SearchFoods } from '../_shared/foodMatch.ts'
 import { AnalyzeRequestSchema } from '../_shared/schema.ts'
 import { corsHeaders, json } from '../_shared/http.ts'
+import { QUOTA_MESSAGE, quotaExceeded } from '../_shared/quota.ts'
 import { getSecret } from '../_shared/secrets.ts'
 
 // AI keys: function env vars first, else Vault (synced from GitHub secrets by
@@ -78,6 +79,19 @@ Deno.serve(async (req) => {
   if (body === BAD_BODY) return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
   const parsed = AnalyzeRequestSchema.safeParse(body)
   if (!parsed.success) return json({ error: 'bad_request', message: 'משהו בבקשה לא תקין. נסה שוב.' }, 400)
+
+  // per-member daily limit (indexed count on user_id, created_at); a failed count never blocks
+  if (userId) {
+    const since = new Date(Date.now() - 24 * 3600_000).toISOString()
+    const { count, error } = await admin
+      .from('mz_ai_analysis_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('created_at', since)
+      .abortSignal(AbortSignal.timeout(1500))
+      .then((r: { count: number | null; error: unknown }) => r, () => ({ count: null, error: true }))
+    if (!error && quotaExceeded(count)) return json({ error: 'quota', message: QUOTA_MESSAGE }, 429)
+  }
 
   // the food database (mz_foods). If it isn't installed yet or is slow, matching
   // simply falls back to the curated table + USDA — analysis never fails because of it.

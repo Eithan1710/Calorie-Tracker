@@ -47,6 +47,7 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
   const exercise = useStore((s) => s.exercise)
   const health = useStore((s) => s.health)
   const settings = useStore((s) => s.settings)
+  const weights = useStore((s) => s.weights)
   return useMemo(() => {
     const st = { food, exercise }
     const f = foodForDate(st, date)
@@ -54,9 +55,9 @@ export function useDaySummary(date: string): { summary: DaySummary; food: FoodEn
     return {
       food: f,
       exercises: ex,
-      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings), routine: routineContextOf(settings, Object.values(exercise)) }),
+      summary: summarizeDay({ date, food: f, exercises: ex, steps: health[date]?.steps ?? 0, health: health[date], profile: settings.profile, proteinTarget: settings.proteinTarget, target: dayTarget(settings), routine: routineContextOf(settings, Object.values(exercise)), weights }),
     }
-  }, [food, exercise, health, settings, date])
+  }, [food, exercise, health, settings, weights, date])
 }
 
 export function Today({ date, actions, reminder }: { date: string; actions: TodayActions; reminder: boolean }) {
@@ -87,9 +88,17 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
           <WorkoutsCard s={summary} exercises={exercises} onOpen={actions.onExercise} />
           {date <= today && <ActivityCheck date={date} exercises={exercises} isToday={date === today} />}
           <ProteinCard s={summary} />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <MacroTile label="שומן" value={summary.fat} color="var(--fat)" />
             <MacroTile label="פחמימות" value={summary.carbs} color="var(--carbs)" />
+            <MacroTile
+              label="סיבים"
+              value={summary.fiber}
+              color="var(--good)"
+              // recommended ~14 g per 1,000 kcal (≈ 25–38 g/day); partial when some foods have no fibre value
+              hint={summary.hasFood && summary.fiberCoverage < 0.8 ? 'חלקי' : 'מומלץ 25+'}
+              testId="fiber-tile"
+            />
           </div>
         </div>
         <FoodLog food={food} total={summary.eaten} onAdd={actions.onAddFood} onOpen={actions.onOpenEntry} />
@@ -276,9 +285,9 @@ function ProteinCard({ s }: { s: DaySummary }) {
   )
 }
 
-function MacroTile({ label, value, color }: { label: string; value: number; color: string }) {
+function MacroTile({ label, value, color, hint, testId }: { label: string; value: number; color: string; hint?: string; testId?: string }) {
   return (
-    <div className="card animate-rise px-4 py-3.5" style={{ animationDelay: '100ms' }}>
+    <div className="card animate-rise px-4 py-3.5" style={{ animationDelay: '100ms' }} data-testid={testId}>
       <p className="flex items-center gap-1.5 text-sm text-ink-3">
         <span className="size-2 rounded-full" style={{ background: color }} aria-hidden />
         {label}
@@ -287,6 +296,7 @@ function MacroTile({ label, value, color }: { label: string; value: number; colo
         <AnimatedNumber value={value} format={fmt} />
         <span className="ms-1 text-base font-normal text-ink-3">ג׳</span>
       </p>
+      {hint && <p className="text-xs text-ink-3">{hint}</p>}
     </div>
   )
 }

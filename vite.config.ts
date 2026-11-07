@@ -27,7 +27,7 @@ export default defineConfig({
       registerType: 'prompt',
       injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
-      injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+      injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,woff2}'], globIgnores: ['og-image.png', '404.html'] },
       // Installable PWA (Android Chrome "Install app", iOS "Add to Home Screen").
       // Paths are relative so the app works under the GitHub Pages sub-path (/Calorie-Tracker/).
       manifest: {

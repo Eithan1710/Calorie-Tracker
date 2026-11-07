@@ -1,12 +1,20 @@
 import { useId, useState } from 'react'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Activity, Camera, Eye, EyeOff, Loader2, Scale, Sigma } from 'lucide-react'
 import { PrimaryButton } from '../primitives'
 import { Logo } from './Onboarding'
 import { signIn } from '../../services/auth'
 import { InstallApp } from '../InstallApp'
 
+/** What מאזן does, for someone who lands here without an account. */
+const FEATURES = [
+  { icon: Camera, title: 'מצלמים — וזהו', text: 'צילום של הצלחת או של התווית, והערכים התזונתיים מוכנים. כל פריט אפשר לתקן במגע.' },
+  { icon: Activity, title: 'השריפה מ-Apple Health', text: 'אנרגיה במנוחה ופעילה מהאייפון, בלי לספור אימונים פעמיים.' },
+  { icon: Sigma, title: 'כל מספר מוסבר', text: 'רואים מאיפה כל קלוריה באה — מה נמדד ומה הערכה, ובאיזה טווח.' },
+  { icon: Scale, title: 'בודק את עצמו מול המשקל', text: 'משווה את הגירעון שנרשם לשינוי במשקל, כולל מים מקריאטין.' },
+] as const
+
 /**
- * Login with a username and password. Hebrew, RTL, one screen.
+ * The logged-out screen: what the app does + login with a username and password. Hebrew, RTL.
  * Closed app: there is no sign-up — accounts are created by the owner.
  */
 export function Login() {
@@ -33,15 +41,31 @@ export function Login() {
     `flex min-h-14 items-center rounded-2xl bg-surface-2 px-4 focus-within:ring-2 ${bad ? 'ring-2 ring-surplus' : 'focus-within:ring-info'}`
 
   return (
-    <main className="safe-top mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-8">
-      <div className="animate-rise flex flex-1 flex-col justify-center gap-7 py-8">
+    <main className="safe-top mx-auto grid min-h-dvh w-full max-w-md gap-x-12 px-5 pb-8 lg:max-w-5xl lg:grid-cols-[1.1fr_1fr] lg:items-center lg:px-8">
+      <div className="animate-rise flex flex-col gap-6 pt-8 lg:py-8">
         <div className="flex flex-col gap-4">
           <Logo className="size-14" />
           <div>
-            <h1 className="text-[34px] leading-tight font-bold tracking-tight">מאזן</h1>
-            <p className="mt-1 text-lg text-ink-2">כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.</p>
+            <h1 className="text-[34px] leading-tight font-bold tracking-tight lg:text-[44px]">מאזן</h1>
+            <p className="mt-1 text-lg text-ink-2 lg:text-xl">כמה נכנס, כמה נשרף, כמה חלבון. 10 שניות ביום.</p>
           </div>
         </div>
+        <ul className="grid gap-3 sm:grid-cols-2" aria-label="מה מאזן עושה">
+          {FEATURES.map(({ icon: Icon, title, text }) => (
+            <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-1)]">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-2" aria-hidden>
+                <Icon className="size-5 text-ink-2" />
+              </span>
+              <span>
+                <span className="block font-semibold">{title}</span>
+                <span className="block text-sm leading-relaxed text-ink-3">{text}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="animate-rise flex flex-col justify-center gap-5 py-8">
 
         <form onSubmit={(e) => void submit(e)} className="card flex flex-col gap-4 p-5" noValidate>
           <h2 className="text-xl font-semibold">התחברות</h2>
@@ -107,7 +131,7 @@ export function Login() {
           </PrimaryButton>
         </form>
 
-        <p className="text-center text-sm text-ink-3">הגישה רק למשתמשים קיימים. נשארים מחוברים גם אחרי סגירת האפליקציה.</p>
+        <p className="text-center text-sm text-ink-3">מאזן פתוח כרגע בהזמנה בלבד — החשבונות נפתחים אישית. נשארים מחוברים גם אחרי סגירת האפליקציה.</p>
         <InstallApp variant="link" />
       </div>
     </main>

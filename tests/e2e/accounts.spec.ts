@@ -65,6 +65,10 @@ test('login screen is Hebrew, has no sign-up; wrong password gets a clear Hebrew
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
   await expect(page.getByRole('button', { name: 'כניסה' })).toBeDisabled()
   await expect(page.getByText(/משתמש חדש|הרשמה|יצירת חשבון/)).toHaveCount(0)
+  // what the app does, for a visitor without an account
+  await expect(page.getByRole('list', { name: 'מה מאזן עושה' }).getByRole('listitem')).toHaveCount(4)
+  await expect(page.getByText('בהזמנה בלבד')).toBeVisible()
+  await page.screenshot({ path: 'docs/screenshots/accounts-login.png', fullPage: true })
   await login(page, 'זובקוב', 'wrong-pass')
   await expect(page.getByRole('alert')).toHaveText('שם משתמש או סיסמה שגויים.')
   await login(page, 'משתמש_לא_קיים', '123456')

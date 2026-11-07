@@ -269,6 +269,7 @@ async function push() {
         proteinTarget: st.settings.proteinTarget,
         target: dayTarget(st.settings),
         routine: routineContextOf(st.settings, Object.values(st.exercise)),
+        weights: st.weights,
       })
       return {
         user_id: userId,
@@ -325,7 +326,7 @@ const summaryRefresh = new Set<string>()
  * for iPhone-only users; version 2 = summaries now follow
  * Apple Health energy that arrives after the day was logged (older ones kept the first estimate).
  */
-const SUMMARIES_VERSION = 11
+const SUMMARIES_VERSION = 12
 
 function queueSummaryBackfill() {
   const st = getState()

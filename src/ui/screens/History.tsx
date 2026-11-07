@@ -15,6 +15,7 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
   const exercise = useStore((s) => s.exercise)
   const health = useStore((s) => s.health)
   const settings = useStore((s) => s.settings)
+  const weights = useStore((s) => s.weights)
   const today = toDateKey(new Date())
 
   const target = useMemo(() => dayTarget(settings), [settings])
@@ -33,9 +34,10 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
         proteinTarget: settings.proteinTarget,
         target,
         routine,
+        weights,
       })
     })
-  }, [food, exercise, health, settings, range, today, target, routine])
+  }, [food, exercise, health, settings, range, today, target, routine, weights])
 
   const { min: TARGET_MIN, max: TARGET_MAX } = target
   const targetHint = bandLabel(target)
