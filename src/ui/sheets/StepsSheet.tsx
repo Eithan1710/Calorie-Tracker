@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Copy, ChevronDown } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Copy, ChevronDown, RefreshCw } from 'lucide-react'
 import { Sheet, PrimaryButton, NumberField, GhostButton } from '../primitives'
 import { setSteps, updateSettings, useStore } from '../../data/store'
 import { DEFAULT_STEP_GOAL, STEP_GOAL_LIMITS, STEP_GOAL_PRESETS, stepGoalError, stepGoalOf } from '../../domain/steps'
-import { pushProfile } from '../../services/sync'
+import { pushProfile, syncNow } from '../../services/sync'
 import { createIngestToken, HEALTH_INGEST_URL } from '../../services/health'
 import { hasSupabase } from '../../services/config'
 import { fmt, haptic } from '../format'
@@ -142,74 +142,16 @@ export function HealthConnect() {
             אפליקציית אינטרנט לא יכולה לקרוא את Apple Health ישירות — אפל מאפשרת את זה רק לאפליקציות מותקנות. הגשר: אפליקציית <b>קיצורים</b> (Shortcuts) של אפל, חינמית ומובנית באייפון.
           </p>
           {canBackground ? (
-            <>
-              <LastAppleSync />
-              <p className="font-medium text-ink">סנכרון אוטומטי ברקע (מומלץ)</p>
-              <ol className="list-decimal space-y-1.5 ps-5">
-                <li>קיצורים ← אוטומציה ← חדשה ← <b>שעה ביום</b> (כמה פעמים ביום, ופעם אחת ב-23:50 כדי שהיום ייסגר מלא) ← ״הפעל מיד״.</li>
-                <li>
-                  <b>חיפוש דגימות בריאות</b> ← סוג: <b>צעדים</b> ← תאריך התחלה: <b>היום</b> ← ואז <b>חישוב סטטיסטיקה</b> ← <b>סכום</b>.
-                </li>
-                <li>
-                  אותו דבר עם סוג <b>אנרגיה פעילה</b> (Active Energy) ← סכום.
-                </li>
-                <li>
-                  אותו דבר עם סוג <b>אנרגיה במנוחה</b> (Resting Energy) ← סכום.
-                </li>
-                <li>
-                  <b>תאריך נוכחי</b> ← <b>עיצוב תאריך</b> ← תבנית <b>ISO 8601</b> (כולל שעה).
-                </li>
-                <li>
-                  <b>קבלת תוכן מכתובת URL</b> ← שיטה POST ← כותרת <span className="ltr">Authorization: Bearer &lt;הקוד&gt;</span> ← גוף JSON עם השדות:
-                  <span className="ltr mt-1 block rounded-xl bg-surface p-2 font-mono text-xs leading-relaxed">
-                    steps (Number) · active_kcal (Number) · resting_kcal (Number) · as_of (Text)
-                  </span>
-                </li>
-              </ol>
-              <details className="rounded-2xl bg-surface p-3 text-sm">
-                <summary className="cursor-pointer font-medium text-ink">אימונים אוטומטיים (Strava, Hevy, השעון) — אם האייפון מאפשר</summary>
-                <div className="mt-2 flex flex-col gap-1.5">
-                  <p>
-                    אפשרי רק אם ברשימת הסוגים של <b>חיפוש דגימות בריאות</b> מופיע <b>אימונים</b> (Workouts) — זה תלוי בגרסת iOS. אם הוא לא מופיע, אין צורך: הקלוריות של האימונים כבר נכללות באנרגיה הפעילה.
-                  </p>
-                  <ol className="list-decimal space-y-1 ps-5">
-                    <li>חיפוש דגימות בריאות ← סוג אימונים ← תאריך התחלה: היום.</li>
-                    <li>
-                      <b>חזרה עם כל פריט</b> ← <b>מילון</b> עם: <span className="ltr">type</span> (שם/סוג האימון), <span className="ltr">start</span> ו-<span className="ltr">end</span> (תאריכי ההתחלה והסיום בעיצוב ISO 8601), <span className="ltr">duration_min</span>, <span className="ltr">distance_km</span>, <span className="ltr">kcal</span>, <span className="ltr">source</span> — מה שזמין ב<b>פרטי דגימת בריאות</b>.
-                    </li>
-                    <li><b>הוספה למשתנה</b> ״אימונים״, ובגוף ה-JSON: <span className="ltr">workouts</span> (Array) = האימונים.</li>
-                  </ol>
-                  <p className="text-ink-3">שליחה חוזרת של אותו אימון מעדכנת אותו ולא יוצרת כפילות. אימון שמחקת באפליקציה לא יחזור.</p>
-                </div>
-              </details>
-              <div className="flex flex-col gap-2 rounded-2xl bg-surface p-3">
-                <p className="text-sm text-ink-3">כתובת:</p>
-                <button type="button" onClick={() => void copy(HEALTH_INGEST_URL ?? '')} className="ltr flex items-center gap-2 text-start text-sm break-all">
-                  <Copy className="size-4 shrink-0" aria-hidden /> {HEALTH_INGEST_URL}
-                </button>
-                {token ? (
-                  <button type="button" onClick={() => void copy(token)} className="ltr flex items-center gap-2 text-start text-sm break-all">
-                    <Copy className="size-4 shrink-0" aria-hidden /> {token}
-                  </button>
-                ) : (
-                  <GhostButton
-                    disabled={busy}
-                    onClick={async () => {
-                      setBusy(true)
-                      setToken(await createIngestToken())
-                      setBusy(false)
-                    }}
-                  >
-                    צור קוד אישי חדש
-                  </GhostButton>
-                )}
-                {token ? (
-                  <p className="text-xs text-ink-3">הקוד מוצג פעם אחת בלבד. יצירת קוד חדש מבטלת את הקודם.</p>
-                ) : (
-                  <p className="text-xs text-ink-3">כבר יש לך קוד בקיצור הקיים? אפשר להמשיך להשתמש בו — אין צורך בקוד חדש.</p>
-                )}
-              </div>
-            </>
+            <HealthSetupSteps
+              token={token}
+              busy={busy}
+              copy={copy}
+              onCreateToken={async () => {
+                setBusy(true)
+                setToken(await createIngestToken())
+                setBusy(false)
+              }}
+            />
           ) : (
             <>
               <p className="font-medium text-ink">דרך קיצור דרך שפותח את האפליקציה</p>
@@ -229,5 +171,143 @@ export function HealthConnect() {
         </div>
       )}
     </div>
+  )
+}
+
+/** One numbered step of the setup guide. */
+function SetupStep({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  return (
+    <li className="flex gap-3 rounded-2xl bg-surface p-3.5">
+      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-sm font-semibold text-inverse" aria-hidden>
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold text-ink">{title}</p>
+        <div className="mt-1 flex flex-col gap-1.5 text-sm text-ink-2">{children}</div>
+      </div>
+    </li>
+  )
+}
+
+/** An action name in the Shortcuts app, in both languages (it depends on the iPhone's language). */
+const Action = ({ he, en }: { he: string; en: string }) => (
+  <b className="text-ink">
+    {he} <span className="ltr inline-block font-normal text-ink-3">({en})</span>
+  </b>
+)
+
+/**
+ * Background sync, step by step, for a member setting it up alone: a personal code, one shortcut
+ * (steps + active + resting energy → POST), automations a few times a day, and a check that the
+ * numbers arrived. Exactly the body health-ingest accepts: steps, active_kcal, resting_kcal, as_of.
+ */
+function HealthSetupSteps({ token, busy, copy, onCreateToken }: { token: string | null; busy: boolean; copy: (s: string) => Promise<void>; onCreateToken: () => Promise<void> }) {
+  const [checking, setChecking] = useState(false)
+  const fields: [string, string, string][] = [
+    ['steps', 'מספר (Number)', 'הסכום של הצעדים'],
+    ['active_kcal', 'מספר (Number)', 'הסכום של האנרגיה הפעילה'],
+    ['resting_kcal', 'מספר (Number)', 'הסכום של האנרגיה במנוחה'],
+    ['as_of', 'טקסט (Text)', 'התאריך המעוצב'],
+  ]
+  return (
+    <>
+      <LastAppleSync />
+      <p className="font-medium text-ink">הגדרה חד-פעמית, בערך 5 דקות, באפליקציית קיצורים באייפון:</p>
+      <ol className="flex flex-col gap-2" aria-label="שלבי חיבור Apple Health">
+        <SetupStep n={1} title="קוד אישי">
+          <p>הקוד מזהה אותך בלי סיסמה. שמור אותו להמשך — הוא מוצג פעם אחת.</p>
+          {token ? (
+            <button type="button" onClick={() => void copy(token)} className="ltr flex min-h-10 items-center gap-2 rounded-xl bg-surface-2 px-3 text-start text-sm break-all" data-testid="ingest-token">
+              <Copy className="size-4 shrink-0" aria-hidden /> {token}
+            </button>
+          ) : (
+            <GhostButton disabled={busy} onClick={() => void onCreateToken()}>
+              צור קוד אישי
+            </GhostButton>
+          )}
+          <p className="text-xs text-ink-3">{token ? 'קוד חדש מבטל את הקודם.' : 'כבר הגדרת קיצור עם קוד? הוא ממשיך לעבוד, אין צורך בחדש.'}</p>
+        </SetupStep>
+
+        <SetupStep n={2} title="קיצור חדש: שלושה מספרים מ-Apple Health">
+          <p>
+            בלשונית <b>קיצורים</b> ← <b>+</b>. הוסף <Action he="מצא דגימות בריאות" en="Find Health Samples" />: סוג <b>צעדים</b>, תאריך התחלה <b>היום</b>, ואחריה{' '}
+            <Action he="חשב סטטיסטיקה" en="Calculate Statistics" /> ← <b>סכום</b>.
+          </p>
+          <p>
+            חזור על זה פעמיים: עם <b>אנרגיה פעילה</b> (Active Energy) ועם <b>אנרגיה במנוחה</b> (Resting Energy).
+          </p>
+          <p>
+            הוסף <Action he="תאריך נוכחי" en="Current Date" /> ← <Action he="עצב תאריך" en="Format Date" /> בתבנית <b className="ltr inline-block">ISO 8601</b> עם השעה.
+          </p>
+        </SetupStep>
+
+        <SetupStep n={3} title="שליחה למאזן">
+          <p>
+            הוסף <Action he="קבל תוכן של URL" en="Get Contents of URL" /> עם הכתובת:
+          </p>
+          <button type="button" onClick={() => void copy(HEALTH_INGEST_URL ?? '')} className="ltr flex min-h-10 items-center gap-2 rounded-xl bg-surface-2 px-3 text-start text-sm break-all">
+            <Copy className="size-4 shrink-0" aria-hidden /> {HEALTH_INGEST_URL}
+          </button>
+          <p>
+            שיטה <b className="ltr inline-block">POST</b>. כותרת (Header): <span className="ltr inline-block font-mono text-xs">Authorization</span> ={' '}
+            <span className="ltr inline-block font-mono text-xs">Bearer הקוד-שלך</span> (המילה Bearer, רווח, והקוד משלב 1).
+          </p>
+          <p>
+            גוף הבקשה: <b className="ltr inline-block">JSON</b>, עם ארבעה שדות:
+          </p>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-ink-3">
+                <th className="py-1 text-start font-medium">שם השדה</th>
+                <th className="py-1 text-start font-medium">סוג</th>
+                <th className="py-1 text-start font-medium">ערך</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map(([k, t, v]) => (
+                <tr key={k} className="border-t border-[var(--line)]">
+                  <td className="ltr py-1 text-start font-mono">{k}</td>
+                  <td className="py-1">{t}</td>
+                  <td className="py-1">{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </SetupStep>
+
+        <SetupStep n={4} title="שיפעל לבד, כמה פעמים ביום">
+          <p>
+            בלשונית <b>אוטומציה</b> ← <b>+</b> ← <b>שעה ביום</b>. צור כמה כאלה — למשל 12:00, 18:00 ו-<b>23:50</b> (האחרונה סוגרת את היום מלא) — ובכל אחת בחר את
+            הקיצור ו<b>״הפעל מיד״</b> (בלי לשאול).
+          </p>
+        </SetupStep>
+
+        <SetupStep n={5} title="בדיקה">
+          <p>הפעל את הקיצור פעם אחת ידנית, ואז:</p>
+          <GhostButton
+            disabled={checking}
+            onClick={async () => {
+              setChecking(true)
+              await syncNow().catch(() => {})
+              setChecking(false)
+            }}
+          >
+            <RefreshCw className={`size-4 ${checking ? 'animate-spin' : ''}`} aria-hidden /> בדוק אם הנתונים הגיעו
+          </GhostButton>
+          <p className="text-xs text-ink-3">כשזה עובד, השורה ״התקבל לאחרונה״ למעלה מתעדכנת עם הצעדים והאנרגיה של היום. אם לא — בדוק את הקוד בכותרת ואת שמות השדות.</p>
+        </SetupStep>
+      </ol>
+      <details className="rounded-2xl bg-surface p-3 text-sm">
+        <summary className="cursor-pointer font-medium text-ink">אימונים אוטומטיים (Strava, Hevy, השעון) — לא חובה</summary>
+        <div className="mt-2 flex flex-col gap-1.5">
+          <p>הקלוריות של האימונים כבר נכללות באנרגיה הפעילה, אז אין בזה צורך לחישוב. זה רק כדי לראות את האימונים ברשימה.</p>
+          <p>
+            אם ב<b>מצא דגימות בריאות</b> מופיע הסוג <b>אימונים</b> (Workouts — תלוי בגרסת iOS): עבור על כל אימון עם <b>חזור עם כל פריט</b>, בנה <b>מילון</b> עם{' '}
+            <span className="ltr">type, start, end, duration_min, distance_km, kcal, source</span>, הוסף למשתנה, ושלח בגוף ה-JSON כשדה <span className="ltr">workouts</span>{' '}
+            (Array). שליחה חוזרת לא יוצרת כפילות.
+          </p>
+        </div>
+      </details>
+    </>
   )
 }
