@@ -293,7 +293,7 @@ test('prepare variants: decode + resize + encode', async ({ page }, info) => {
     const g = c.getContext('2d')!
     // photo-like: smooth gradients, a few large shapes, mild grain
     const grd = g.createRadialGradient(2000, 1500, 100, 2000, 1500, 2600)
-    grd.addColorStop(0, '#f3e2c4'), grd.addColorStop(0.5, '#c8673a'), grd.addColorStop(1, '#3a2a20')
+    grd.addColorStop(0, '#f3e2c4'); grd.addColorStop(0.5, '#c8673a'); grd.addColorStop(1, '#3a2a20')
     g.fillStyle = grd
     g.fillRect(0, 0, 4032, 3024)
     for (let i = 0; i < 60; i++) {
