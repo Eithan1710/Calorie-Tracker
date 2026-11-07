@@ -123,7 +123,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
   const est = isValidProfile(profile) ? workoutDisplay(input, profile) : null
   const kcal = est?.kcal ?? 0
   const pace = paceSecPerKm(input)
-  const valid = type === 'run' ? Boolean(input.distanceKm || minutes) : Boolean(minutes)
+  // a run or walk can be logged by distance alone (it is costed by distance)
+  const valid = hasDistance ? Boolean(input.distanceKm || minutes) : Boolean(minutes)
   const hint = INTENSITY_HINT[type]?.[intensity]
 
   const save = () => {
@@ -135,7 +136,7 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
       type,
       distance_km: input.distanceKm,
       duration_min: minutes ? Math.round(minutes * 10) / 10 : undefined,
-      intensity: type === 'run' && input.distanceKm ? undefined : intensity,
+      intensity: hasDistance && input.distanceKm ? undefined : intensity,
       rest: type === 'strength' ? rest : undefined,
       muscles: type === 'strength' && muscles.length ? muscles : undefined,
       volume_kg: input.volumeKg ? Math.round(input.volumeKg) : undefined,
@@ -249,11 +250,13 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
           </div>
         )}
 
-        {type === 'run' ? (
+        {hasDistance ? (
+          // with a distance the pace doesn't change the estimate (costed per km), so it isn't asked
           !distance && minutes ? (
             <div>
               <p className="mb-1.5 text-sm font-medium text-ink-2">קצב</p>
               <Segmented label="קצב" value={intensity} onChange={setIntensity} options={[{ value: 'low', label: 'קליל' }, { value: 'moderate', label: 'בינוני' }, { value: 'high', label: 'מהיר' }]} />
+              {type === 'walk' && hint && <p className="mt-1.5 text-sm text-ink-3">{hint}</p>}
             </div>
           ) : null
         ) : (

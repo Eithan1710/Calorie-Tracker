@@ -44,8 +44,10 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
   const inTarget = finished.filter((d) => d.goal?.status === 'success').length
   const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null)
   const avgBalance = avg(finished.map((d) => d.eaten - d.burned))
-  const avgProtein = avg(logged.map((d) => d.protein))
-  const proteinDays = logged.filter((d) => d.proteinMet).length
+  // a day still being logged (today before the evening) would pull the averages down
+  const proteinBase = finished.length ? finished : logged
+  const avgProtein = avg(proteinBase.map((d) => d.protein))
+  const proteinDays = proteinBase.filter((d) => d.proteinMet).length
   const stepDays = days.filter((d) => d.steps > 0)
   const avgSteps = avg(stepDays.map((d) => d.steps))
 
@@ -72,7 +74,7 @@ export function History({ onOpenDay, switcher }: { onOpenDay: (date: string) => 
         <Stat label="ימים ביעד" value={finished.length ? `${inTarget}/${finished.length}` : '—'} hint={targetHint} />
         {/* only finished days count (today is still going on) — say how many, so it can be compared */}
         <Stat label="מאזן ממוצע" value={avgBalance === null ? '—' : fmtBalance(-avgBalance)} hint={finished.length ? `${KCAL} · ${finished.length} ימים מלאים` : KCAL} ltr />
-        <Stat label="חלבון ממוצע" value={avgProtein === null ? '—' : `${fmt(avgProtein)} ג׳`} hint={logged.length ? `ביעד ${proteinDays}/${logged.length} ימים` : ''} />
+        <Stat label="חלבון ממוצע" value={avgProtein === null ? '—' : `${fmt(avgProtein)} ג׳`} hint={proteinBase.length ? `ביעד ${proteinDays}/${proteinBase.length} ימים` : ''} />
         <Stat label="צעדים ממוצע" value={avgSteps === null ? '—' : fmt(avgSteps)} hint="ליום" />
       </div>
 

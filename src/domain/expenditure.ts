@@ -247,9 +247,14 @@ function localKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Full-day resting energy from a partial snapshot. */
+/**
+ * Full-day resting energy from a partial snapshot. Linear up to midnight: a 23:30 snapshot still
+ * misses 30 minutes of resting energy (≈ 30 kcal) — "complete" (≥ 23:00) only decides how the day
+ * is judged, not how much rest it had.
+ */
 export function projectResting(soFar: number, minutes: number, bmr: number): number {
-  if (minutes >= COMPLETE_DAY_MINUTES) return soFar
+  // the last few minutes (a 23:59 end-of-day snapshot) are within rounding
+  if (minutes >= 1440 - 5) return soFar
   if (minutes <= 0) return bmr
   const linear = (soFar * 1440) / minutes
   if (minutes >= PROJECTION_BLEND_MINUTES) return linear

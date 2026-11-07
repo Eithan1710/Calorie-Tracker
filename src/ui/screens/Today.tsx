@@ -233,6 +233,12 @@ function BalanceHero({ s, isToday }: { s: DaySummary; isToday: boolean }) {
               ±{fmt(s.energy.uncertainty)} · ביטחון {s.energy.confidence === 'high' ? 'גבוה' : s.energy.confidence === 'medium' ? 'בינוני' : 'נמוך'}
             </p>
           )}
+          {s.energy?.mode === 'health' && s.energy.partial && isToday && (
+            // the forecast projects only the resting part: walking still to come is not guessed
+            <p className="text-xs text-ink-3" data-testid="burn-partial-note">
+              יעלה עם הצעדים של המשך היום
+            </p>
+          )}
         </div>
       </div>
       <p className="sr-only">

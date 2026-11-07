@@ -70,7 +70,11 @@
  *      session estimate and not its basis.
  *
  *    Running with a distance: gross ≈ 1.0 kcal/kg/km, roughly independent of
- *    speed (Margaria 1963; ACSM). Net = gross − resting × minutes.
+ *    speed (Margaria 1963; ACSM). Net = gross − resting × minutes — ≈ 0.89 kcal/kg/km
+ *    at 6 min/km, between Cureton/Williams' measured net 0.87 and ACSM's 1.0.
+ *    Walking with a distance: net ≈ 0.5 kcal/kg/km, the same ACSM walking equation
+ *    the step count uses (net VO₂ = 0.1 ml/kg per metre at 3–6 km/h), so a logged
+ *    5 km walk costs what 5 km of steps would — not a MET guess from the time.
  *
  * 5. TEF — thermic effect of food ≈ 10% of intake. At a near-maintenance
  *    intake intake ≈ expenditure, so TEF is modelled as +10% of the
@@ -148,6 +152,8 @@ export const RUN_CADENCE_SPM = 160
 export const WALK_CADENCE_SPM = 110
 /** assumed pace when a run has a distance but no time (only used to subtract resting energy) */
 const ASSUMED_RUN_MIN_PER_KM = 6
+/** assumed walking pace (5 km/h) when a walk has a distance but no time */
+const ASSUMED_WALK_MIN_PER_KM = 12
 
 /** Gross MET values — 2024 Adult Compendium of Physical Activities. */
 export const STRENGTH_METS: Record<RestStyle, Record<Intensity, number>> = {
@@ -184,6 +190,7 @@ const UNCERTAINTY: Record<ExerciseType, number> = {
   other: 0.3,
 }
 const RUN_DISTANCE_UNCERTAINTY = 0.1
+const WALK_DISTANCE_UNCERTAINTY = 0.15
 
 /** Running MET by speed (Compendium 12xxx codes). */
 export function runMetForSpeed(kmh: number): number {
@@ -283,7 +290,7 @@ export interface WorkoutEstimate {
   low: number
   high: number
   met: number | null
-  method: 'met' | 'run_distance'
+  method: 'met' | 'run_distance' | 'walk_distance'
   /** part of `net` that comes from the total volume lifted (strength only) */
   fromVolume: number
 }
@@ -307,6 +314,13 @@ export function workoutEstimate(ex: ExerciseInput, p: Profile): WorkoutEstimate 
     gross = ex.distanceKm * kg * RUN_GROSS_KCAL_PER_KG_KM
     restDuring = restPerMin * (minutes || ex.distanceKm * ASSUMED_RUN_MIN_PER_KM)
     uncertainty = RUN_DISTANCE_UNCERTAINTY
+  } else if (ex.type === 'walk' && ex.distanceKm && ex.distanceKm > 0) {
+    method = 'walk_distance'
+    // net by distance (ACSM); resting energy over the walk's time is only for the gross figure
+    const walkMin = minutes || ex.distanceKm * ASSUMED_WALK_MIN_PER_KM
+    restDuring = restPerMin * walkMin
+    gross = ex.distanceKm * kg * WALK_NET_KCAL_PER_KG_KM + restDuring
+    uncertainty = WALK_DISTANCE_UNCERTAINTY
   } else {
     if (!minutes) return EMPTY
     met = workoutMet(ex)!

@@ -249,7 +249,9 @@ function EnergyExplainer({ e }: { e: DayEnergy }) {
           ? e.routine > 0
             ? 'כפי ש-Apple Health מדווח מהאייפון: הליכה (כשהטלפון עליך) והאימונים ש-Hevy / Strava כותבים אליו.'
             : 'כפי ש-Apple Health מדווח מה-Apple Watch — כולל האימונים ותנועות השגרה, כי השעון מודד כל תנועה.'
-          : `מוערכת לפי הצעדים והאימונים שנרשמו, ועוד כ-${fmt(e.estimate.baseline)} קק״ל של תנועה יומיומית${e.routineDetail ? ' (פירוט למטה)' : ' (כ-5% מהמנוחה)'}.`}
+          : e.routineDetail
+            ? 'Apple Health לא שלח אנרגיה פעילה ליום הזה, אז היא מוערכת לפי הצעדים והאימונים שנרשמו. תנועות השגרה נספרות בנפרד (פירוט למטה).'
+            : `מוערכת לפי הצעדים והאימונים שנרשמו, ועוד כ-${fmt(e.estimate.baseline)} קק״ל של תנועה יומיומית (כ-5% מהמנוחה).`}
       </p>
       {e.routineDetail && <RoutineExplainer e={e} />}
       <p>

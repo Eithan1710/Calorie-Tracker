@@ -89,7 +89,9 @@ describe('Apple Health mode', () => {
   it('early-morning projection is blended with BMR (not 24× a tiny sample)', () => {
     expect(projectResting(125, 120, BMR)).toBeCloseTo(0.5 * 1500 + 0.5 * BMR, 6)
     expect(projectResting(10, 0, BMR)).toBe(BMR)
-    expect(projectResting(1480, 23 * 60 + 30, BMR)).toBe(1480)
+    // 23:30 still misses half an hour of rest: 1,480 × 1,440 / 1,410 (was taken as the full day)
+    expect(projectResting(1480, 23 * 60 + 30, BMR)).toBeCloseTo(1511.5, 1)
+    expect(projectResting(1480, 1440, BMR)).toBe(1480)
   })
 
   it('a manual workout marked "not measured by Apple Health" is added; nothing else is', () => {
