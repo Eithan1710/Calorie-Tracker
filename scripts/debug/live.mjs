@@ -22,7 +22,7 @@ for (const [name, opts] of [['mobile', { viewport: { width: 390, height: 844 }, 
   const names = new Set(bodies.flatMap((x) => x.match(/assets\/[\w.-]+\.js/g) || []))
   for (const n of names) bodies.push(await (await p.request.get(new URL(n, url).href)).text().catch(() => ''))
   const has = (t) => bodies.some((b) => b.includes(t))
-  log.push(`[${name}] js files: ${bodies.length} · audit: ${has('יעלה עם הצעדים של המשך היום')&&has('משוואות ACSM')}`)
+  log.push(`[${name}] js files: ${bodies.length} · launch: ${has('בהזמנה בלבד')&&has('הוצאה לפי המשקל')&&has('סיבים')&&has('משהו השתבש בתצוגה')}`)
   await p.screenshot({ path: `out/${name}.png` })
   await ctx.close()
 }
