@@ -72,7 +72,7 @@ const foodToRow = (f: FoodEntry, uid: string) => ({
   deleted_at: f.deleted ? f.updated_at : null,
 })
 
-interface FoodRow extends ReturnType<typeof foodToRow> {}
+type FoodRow = ReturnType<typeof foodToRow>
 
 const rowToFood = (r: FoodRow): FoodEntry => ({
   id: r.id,
@@ -123,7 +123,7 @@ const exToRow = (e: Exercise, uid: string) => ({
 })
 /** columns added by 20261012000000_health_energy_workouts.sql — left out until the database has them */
 const HEALTH_EX_COLUMNS = ['origin', 'started_at', 'ended_at', 'source_app', 'title', 'reported_kcal', 'outside_health'] as const
-interface ExRow extends ReturnType<typeof exToRow> {}
+type ExRow = ReturnType<typeof exToRow>
 const rowToEx = (r: ExRow): Exercise => ({
   id: r.id,
   date: r.date,

@@ -198,7 +198,7 @@ test('startup: repeat launches (installed app, warm service worker)', async ({ p
     }).observe(document, { childList: true, subtree: true })
     try {
       new PerformanceObserver((l) => {
-        for (const e of l.getEntries()) (w.__mz.longtask_ms ??= 0), (w.__mz.longtask_ms += e.duration)
+        for (const e of l.getEntries()) w.__mz.longtask_ms = (w.__mz.longtask_ms ?? 0) + e.duration
       }).observe({ type: 'longtask', buffered: true })
     } catch { /* not supported */ }
   })
@@ -255,7 +255,7 @@ test('photo: client overhead from picking a 12 MP photo to the result', async ({
     c.height = 3024
     const g = c.getContext('2d')!
     const grd = g.createLinearGradient(0, 0, 4032, 3024)
-    grd.addColorStop(0, '#c33'), grd.addColorStop(1, '#fd5')
+    grd.addColorStop(0, "#c33"); grd.addColorStop(1, "#fd5")
     g.fillStyle = grd
     g.fillRect(0, 0, 4032, 3024)
     for (let i = 0; i < 40000; i++) {

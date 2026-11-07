@@ -169,7 +169,7 @@ async function resolveItem(ai: AiItem, ctx: ResolveCtx): Promise<Resolved | null
   let usedRef: FoodRef | undefined
   let prov: Partial<FoodItem> = {}
 
-  const useCurated = (ref: FoodRef) => {
+  const applyCurated = (ref: FoodRef) => {
     const c = fromCurated(ref, ctx.statedOil, assumptions)
     per100 = c.per100
     source = 'db'
@@ -196,7 +196,7 @@ async function resolveItem(ai: AiItem, ctx: ResolveCtx): Promise<Resolved | null
 
   // 1) curated core table (the model picked a key)
   const ref = !per100 && ai.db_key ? FOOD_BY_KEY[ai.db_key] : undefined
-  if (ref) useCurated(ref)
+  if (ref) applyCurated(ref)
 
   // 2) full food database: Israeli MoH, USDA, Israeli packaged products
   if (!per100 && ctx.searchFoods) {
@@ -207,7 +207,7 @@ async function resolveItem(ai: AiItem, ctx: ResolveCtx): Promise<Resolved | null
     if (!match && ai.name_en) match = pickCandidate(await safe(ai.name_en), target, ctx)
     if (match) {
       const cur = curatedFor(match.food)
-      if (cur) useCurated(cur)
+      if (cur) applyCurated(cur)
       else {
         const f = match.food
         per100 = per100FromDb(f)

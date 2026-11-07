@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { getAll, putMany, clearAll, dbNameFor, dropDatabase, LEGACY_DB, useDatabase } from './idb'
+import { getAll, putMany, clearAll, dbNameFor, dropDatabase, LEGACY_DB, selectDatabase } from './idb'
 import { DEFAULT_SETTINGS, type Exercise, type FoodEntry, type HealthDay, type Settings, type WeightEntry } from './types'
 
 /**
@@ -84,7 +84,7 @@ const byId = <T extends { id: string }>(arr: T[]) => Object.fromEntries(arr.map(
 /** Load the local copy for an account (or local mode when userId is null). */
 export async function initStore(userId: string | null = null): Promise<void> {
   settingsKey = settingsKeyFor(userId)
-  useDatabase(dbNameFor(userId))
+  selectDatabase(dbNameFor(userId))
   // render settings immediately; records follow from IndexedDB
   state = { ready: false, userId, settings: loadSettings(settingsKey), food: {}, exercise: {}, health: {}, weights: {} }
   emit()
@@ -110,7 +110,7 @@ export async function initStore(userId: string | null = null): Promise<void> {
 export function resetStore() {
   state = { ready: false, userId: null, settings: { ...DEFAULT_SETTINGS }, food: {}, exercise: {}, health: {}, weights: {} }
   settingsKey = LEGACY_SETTINGS_KEY
-  useDatabase(LEGACY_DB)
+  selectDatabase(LEGACY_DB)
   emit()
 }
 

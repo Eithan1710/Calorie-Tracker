@@ -18,7 +18,7 @@ const handles = new Map<string, Promise<IDBDatabase | null>>()
 let current = LEGACY_DB
 
 /** Which database the store reads/writes. */
-export function useDatabase(name: string) {
+export function selectDatabase(name: string) {
   current = name
 }
 
