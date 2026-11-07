@@ -96,7 +96,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
               value={summary.fiber}
               color="var(--good)"
               // recommended ~14 g per 1,000 kcal (≈ 25–38 g/day); partial when some foods have no fibre value
-              hint={summary.hasFood && summary.fiberCoverage < 0.8 ? 'חלקי' : 'מומלץ 25+'}
+              hint={summary.hasFood && summary.fiberCoverage < 0.8 ? 'חלקי' : 'מומלץ \u206625–35\u2069 ג׳'}
               testId="fiber-tile"
             />
           </div>
