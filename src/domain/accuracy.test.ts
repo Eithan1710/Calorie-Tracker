@@ -87,8 +87,8 @@ describe('a whole day without Apple Health (estimate model)', () => {
 describe('a whole day with Apple Health: nothing counted twice', () => {
   const D = '2026-11-02'
   it('resting + active (Apple) + digestion; the imported run is inside Active Energy, not added', () => {
-    const run = { id: 'r', origin: 'apple_health' as const, input: { type: 'run' as const, distanceKm: 5, durationMin: 30 }, reportedKcal: 290, startedAt: `${D}T07:00:00+02:00`, endedAt: `${D}T07:30:00+02:00` }
-    const e = dayEnergy({ date: D, profile: eithan, steps: 10032, workouts: [run], health: { resting_kcal: 1559, active_kcal: 403, health_as_of: `${D}T23:59:00+02:00` }, intake: { protein_g: 120, carbs_g: 200, fat_g: 60 }, now: new Date('2026-11-03T08:00:00+02:00') })
+    const run = { id: 'r', origin: 'apple_health' as const, input: { type: 'run' as const, distanceKm: 5, durationMin: 30 }, reportedKcal: 290, startedAt: `${D}T07:00:00`, endedAt: `${D}T07:30:00` }
+    const e = dayEnergy({ date: D, profile: eithan, steps: 10032, workouts: [run], health: { resting_kcal: 1559, active_kcal: 403, health_as_of: `${D}T23:59:00` }, intake: { protein_g: 120, carbs_g: 200, fat_g: 60 }, now: new Date('2026-11-03T08:00:00') })
     expect(e.total).toBe(Math.round(1559 + 403 + 190.8))
     expect(e.workouts[0].counting).toBe('included_in_active')
   })
