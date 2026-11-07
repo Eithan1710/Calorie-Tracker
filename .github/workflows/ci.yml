@@ -30,8 +30,9 @@ jobs:
       - name: Lint (TypeScript + React hooks rules)
         run: |
           # installed only for this step, so the lockfile stays as is
-          npm install --no-save --no-audit --no-fund eslint@9 typescript-eslint@8 eslint-plugin-react-hooks@5
-          npx eslint . --max-warnings=50
+          set -o pipefail
+          npm install --no-save --no-audit --no-fund eslint@9 typescript-eslint@8 eslint-plugin-react-hooks@5 2>&1 | tail -5 | tee lint.log
+          npx eslint . --max-warnings=50 2>&1 | tee -a lint.log || { scripts/annotate-failure.sh 'lint' lint.log; exit 1; }
       - name: Unit tests
         run: |
           set -o pipefail
