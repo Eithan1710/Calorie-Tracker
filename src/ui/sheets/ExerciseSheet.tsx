@@ -261,8 +261,8 @@ export function ExerciseSheet({ open, onClose, date }: { open: boolean; onClose:
           ) : null
         ) : (
           <div>
-            <p className="mb-1.5 text-sm font-medium text-ink-2">{type === 'walk' ? 'קצב' : 'עצימות'}</p>
-            <Segmented label={type === 'walk' ? 'קצב' : 'עצימות'} value={intensity} onChange={setIntensity} options={INTENSITY} />
+            <p className="mb-1.5 text-sm font-medium text-ink-2">עצימות</p>
+            <Segmented label="עצימות" value={intensity} onChange={setIntensity} options={INTENSITY} />
             {hint && <p className="mt-1.5 text-sm text-ink-3">{hint}</p>}
           </div>
         )}
