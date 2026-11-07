@@ -7,7 +7,7 @@ import { addDays, dayTarget, toDateKey } from '../../domain/goal'
 import { summarizeDay } from '../../domain/day'
 import { routineContextOf } from '../../domain/routine'
 import { balanceBetweenWeighins, balanceVerdict, KCAL_PER_KG_FAT, SCALE_NOISE_KG } from '../../domain/weighinBalance'
-import { dayNum, implausibleJump, inRange, parseKg, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
+import { dayNum, implausibleJump, inRange, parseKg, weighinSwing, smoothPath, summary, xAxis, yAxis, type WeightPoint, type WeightRange } from '../../domain/weight'
 import { GhostButton, PrimaryButton, Segmented, Sheet } from '../primitives'
 import { dateLong, dateShort, fmt, haptic } from '../format'
 import { showToast } from '../toast'
@@ -273,12 +273,12 @@ function BalanceVsScale({ points }: { points: WeightPoint[] }) {
           </select>
         </label>
       </div>
-      <BalanceResult previous={previous} latest={latest} />
+      <BalanceResult previous={previous} latest={latest} points={points} />
     </section>
   )
 }
 
-function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: WeightPoint }) {
+function BalanceResult({ previous, latest, points }: { previous: WeightPoint; latest: WeightPoint; points: WeightPoint[] }) {
   const food = useStore((st) => st.food)
   const exercise = useStore((st) => st.exercise)
   const health = useStore((st) => st.health)
@@ -326,6 +326,23 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
   const water = Math.round((creatineWaterKg(settings.creatine, latest.date, latest.kg) - creatineWaterKg(settings.creatine, previous.date, previous.kg)) * 100) / 100
   const v = balanceVerdict(r, water)
   const sign = (kg: number) => (kg > 0 ? '+' : kg < 0 ? '−' : '')
+  // the words follow what the scale actually did: "went up more" ≠ "went down less"
+  const offTitle =
+    v.kind === 'heavier'
+      ? r.measuredKg > 0
+        ? 'המשקל עלה יותר מהצפוי'
+        : 'המשקל ירד פחות מהצפוי'
+      : r.measuredKg < 0
+        ? 'המשקל ירד יותר מהצפוי'
+        : 'המשקל עלה פחות מהצפוי'
+  // an end of the range sitting on a one-day water swing (e.g. the morning after a big meal)
+  const swing = (['latest', 'previous'] as const)
+    .map((k) => ({ k, p: k === 'latest' ? latest : previous, s: weighinSwing(points, (k === 'latest' ? latest : previous).date) }))
+    .find((x) => x.s && (v.kind === 'heavier' ? (x.k === 'latest' ? x.s.change > 0 : x.s.change < 0) : v.kind === 'lighter' ? (x.k === 'latest' ? x.s.change < 0 : x.s.change > 0) : false))
+  const swingText = swing?.s
+    ? `השקילה של ${dateShort(swing.p.date)} (${fmtKg(swing.p.kg)}) ${swing.s.change > 0 ? 'גבוהה' : 'נמוכה'} ב-${kgFmt.format(Math.abs(swing.s.change))} ק״ג מזו של ${dateShort(swing.s.date)} — קפיצה של יום היא כמעט תמיד מים (ארוחה גדולה או מלוחה, פחמימות), לא שומן. בחר שקילה אחרת או בדוק שוב בעוד כמה ימים.`
+    : null
+  const shortRange = r.days < 14
   return (
     <div className={box} data-testid="weighin-balance">
       <p>
@@ -349,9 +366,9 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
             ? 'טווח קצר מדי להשוואה'
             : v.kind === 'match'
               ? '✓ מתאים למשקל'
-              : v.kind === 'heavier'
-                ? 'המשקל ירד פחות מהחישוב'
-                : 'ירדת במשקל יותר מהחישוב'}
+              : swingText || shortRange
+                ? `${offTitle} — כנראה מים`
+                : offTitle}
       </p>
       <p className="text-ink-2">
         {v.kind === 'implausible'
@@ -360,13 +377,17 @@ function BalanceResult({ previous, latest }: { previous: WeightPoint; latest: We
             ? `בפחות משבוע המשקל זז בעיקר ממים ומתכולת מעיים. בחר שקילות עם שבוע לפחות ביניהן.`
             : v.kind === 'match'
           ? `הפער ${kgFmt.format(Math.abs(v.gapKg))} ק״ג — בתוך התנודה הרגילה של המשקל (±${kgFmt.format(SCALE_NOISE_KG)}).`
-          : v.kind === 'heavier'
-            ? `כדי להסביר את הפער: השריפה מוערכת ביתר, או שחסר ברישום — בערך ${fmt(v.kcalPerDay)} קק״ל ליום. או מים / מלח (בדוק שוב בשקילה הבאה).`
-            : `ייתכן שאתה שורף בערך ${fmt(v.kcalPerDay)} קק״ל ליום יותר מהחישוב — או שזו ירידת מים.`}
+          : swingText
+            ? swingText
+            : shortRange
+              ? `בפחות משבועיים הסבר סביר יותר הוא מים. אם הפער חוזר גם בטווח ארוך, ${v.kind === 'heavier' ? `ייתכן שהשריפה מוערכת ביתר או שחסר ברישום — בערך ${fmt(v.kcalPerDay)} קק״ל ליום` : `ייתכן שאתה שורף בערך ${fmt(v.kcalPerDay)} קק״ל ליום יותר מהחישוב`}.`
+              : v.kind === 'heavier'
+                ? `כדי להסביר את הפער: השריפה מוערכת ביתר, או שחסר ברישום — בערך ${fmt(v.kcalPerDay)} קק״ל ליום. או מים / מלח (בדוק שוב בשקילה הבאה).`
+                : `ייתכן שאתה שורף בערך ${fmt(v.kcalPerDay)} קק״ל ליום יותר מהחישוב — או שזו ירידת מים.`}
       </p>
       <p className="mt-1 text-xs text-ink-3">
         לפי ~{fmt(KCAL_PER_KG_FAT)} קק״ל לק״ג שומן. המשקל זז גם עם מים, גליקוגן ותכולת מעיים — שקילה בודדת יכולה לסטות בחצי ק״ג.
-        {r.days < 14 && ' בטווח של פחות משבועיים ההשוואה גסה; טווח ארוך יותר אמין יותר.'}
+        {shortRange && !swingText && v.kind === 'match' && ' בטווח של פחות משבועיים ההשוואה גסה; טווח ארוך יותר אמין יותר.'}
         {r.estimatedBurn.length > 0 && ` ב-${r.estimatedBurn.length} ימים השריפה היא הערכה (בלי Apple Health).`}
       </p>
     </div>

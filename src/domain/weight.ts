@@ -124,3 +124,25 @@ export function implausibleJump(points: { date: string; kg: number }[], date: st
   const change = Math.round((kg - ref.kg) * 100) / 100
   return Math.abs(change) > plausibleChangeKg(Math.abs(dayNum(ref.date) - dayNum(date))) ? { ...ref, change } : null
 }
+
+/**
+ * A one-day swing at a weigh-in: how far it is from the closest other weigh-in within 3 days, when
+ * that is ≥ 0.5 kg. Such a jump is almost always water (a large or salty meal, carbs, gut contents),
+ * so a comparison that ends (or starts) on it is mostly measuring that day's water.
+ */
+export function weighinSwing(points: { date: string; kg: number }[], date: string): { date: string; kg: number; change: number } | null {
+  const at = points.find((p) => p.date === date)
+  if (!at) return null
+  let near: { date: string; kg: number } | null = null
+  for (const p of points) {
+    if (p.date === date) continue
+    const d = Math.abs(dayNum(p.date) - dayNum(date))
+    if (d > 3) continue
+    // the closest one; on a tie, the one before
+    const best = near ? Math.abs(dayNum(near.date) - dayNum(date)) : Infinity
+    if (d < best || (d === best && p.date < date)) near = p
+  }
+  if (!near) return null
+  const change = Math.round((at.kg - near.kg) * 100) / 100
+  return Math.abs(change) >= 0.5 ? { ...near, change } : null
+}

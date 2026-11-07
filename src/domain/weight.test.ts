@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { implausibleJump, inRange, MIN_SPAN_KG, parseKg, smoothPath, summary, xAxis, yAxis, dayNum } from './weight'
+import { implausibleJump, weighinSwing, inRange, MIN_SPAN_KG, parseKg, smoothPath, summary, xAxis, yAxis, dayNum } from './weight'
 
 const pts = [
   { date: '2026-07-01', kg: 63.0 },
@@ -87,5 +87,17 @@ describe('a weigh-in far from the others', () => {
   })
   it('more room over more days', () => {
     expect(implausibleJump([{ date: '2026-09-01', kg: 64 }], '2026-10-01', 59)).toBeNull() // −5 in 30 days ≤ 9.5
+  })
+})
+
+describe('a one-day swing at a weigh-in', () => {
+  // 7.11: 60.75 the morning after a 2,821 kcal day — 6.11 was 60.0
+  const pts = [{ date: '2026-11-04', kg: 59.7 }, { date: '2026-11-05', kg: 59.95 }, { date: '2026-11-06', kg: 60 }, { date: '2026-11-07', kg: 60.75 }]
+  it('flags +0.75 overnight, not +0.25', () => {
+    expect(weighinSwing(pts, '2026-11-07')).toEqual({ date: '2026-11-06', kg: 60, change: 0.75 })
+    expect(weighinSwing(pts, '2026-11-05')).toBeNull()
+  })
+  it('no neighbour within 3 days → nothing to compare', () => {
+    expect(weighinSwing([{ date: '2026-10-01', kg: 60 }, { date: '2026-10-10', kg: 61 }], '2026-10-10')).toBeNull()
   })
 })
