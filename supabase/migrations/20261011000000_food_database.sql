@@ -11,6 +11,9 @@
 -- only read. Re-running is harmless (IF NOT EXISTS / OR REPLACE everywhere).
 
 create extension if not exists pg_trgm with schema extensions;
+-- Load pg_trgm in this session so its settings are known: otherwise the `set pg_trgm.…` clause on
+-- mz_search_foods below is treated as an unknown placeholder, which only a superuser may set.
+select extensions.similarity('a', 'a');
 
 -- ── normalisation: lower-case, no niqqud / quotes / geresh, final letters → regular,
 --    punctuation → spaces. "קוטג׳ 5%" and "קוטג' 5%" and "קוטג 5%" all become "קוטג 5%".
