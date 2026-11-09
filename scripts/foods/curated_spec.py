@@ -186,10 +186,15 @@ FOODS = [
       {'unit': 35, 'serving': 70}),
 
     # ── Fish ──────────────────────────────────────────────────────────────
-    E('tuna_water', 'טונה במים', 'Tuna canned in water, drained', '🐟', ['טונה', 'טונה במים'], 'as_sold', 'moh:1360',
-      {'can': 112, 'unit': 112, 'serving': 112}, alt=['fdc:173709']),
-    E('tuna_oil', 'טונה בשמן', 'Tuna canned in oil, drained', '🐟', ['טונה בשמן'], 'as_sold', 'moh:1358', {'can': 112, 'unit': 112, 'serving': 112},
-      alt=['moh:8586']),
+    # canned tuna: the label of the can on Israeli shelves (StarKist, per 100 g drained) — the Tzameret
+    # records (86 kcal / 19.4 g protein in water; 198 / 29.1 in oil) don't match what's in the can
+    E('tuna_water', 'טונה במים', 'Tuna canned in water, drained', '🐟', ['טונה', 'טונה במים'], 'as_sold', 'off:7290005287251',
+      {'can': 112, 'unit': 112, 'serving': 112}, alt=['moh:1360', 'fdc:173709'], note='סטארקיסט טונה בהירה במים — לפי התווית'),
+    E('tuna_oil', 'טונה בשמן', 'Tuna canned in oil, drained', '🐟', ['טונה בשמן'], 'as_sold', 'off:7290002551003', {'can': 112, 'unit': 112, 'serving': 112},
+      alt=['moh:1358', 'moh:8586'], note='סטארקיסט נתחי טונה בהירה בשמן — לפי התווית'),
+    E('tuna_smoked', 'טונה מעושנת בשמן', 'Smoked tuna canned in oil, drained', '🐟', ['טונה מעושנת', 'טונה מעושנת בשמן', 'טונה בטעם מעושן'], 'as_sold',
+      'off:7290002551003', {'can': 112, 'unit': 112, 'serving': 112}, alt=['moh:1355'],
+      note='סטארקיסט טונה בשמן בטעם מעושן: אותה תווית כמו הטונה בשמן (194 קק״ל, 26 ג׳ חלבון, 10 ג׳ שומן ל-100 ג׳ מסונן)'),
     E('salmon_cooked', 'סלמון (אפוי)', 'Salmon, farmed, baked', '🐟', ['סלמון', 'פילה סלמון', 'סלמון בתנור'], 'cooked', 'fdc:175168',
       {'unit': 180, 'serving': 180}, alt=['moh:1298'], note='סלמון מגודל (הנפוץ בישראל) שמן יותר מהערך במאגר משרד הבריאות'),
     E('white_fish_cooked', 'דג לבן (אמנון/דניס) מבושל', 'White fish, cooked', '🐟',
@@ -377,8 +382,8 @@ FOODS = [
     # ── Drinks ────────────────────────────────────────────────────────────
     E('cafe_hafuch', 'קפה הפוך', 'Café hafuch / latte (3% milk)', '☕', ['הפוך', 'קפה הפוך', 'קפה', 'לאטה', "קפוצ'ינו", 'קפה עם חלב'], 'as_sold',
       R([('moh:15', 200), ('fdc:171891', 40)], '200 מ״ל חלב 3% + אספרסו'), {'cup': 240, 'unit': 240, 'serving': 240}, includes=['milk_3']),
-    E('black_coffee', 'קפה שחור / אספרסו', 'Black coffee / espresso', '☕', ['קפה שחור', 'אספרסו', 'נס קפה בלי חלב', 'קפה בלי חלב'], 'as_sold', 'fdc:171891',
-      {'cup': 240, 'serving': 60}),
+    E('black_coffee', 'קפה שחור / אספרסו', 'Black coffee / espresso', '☕', ['קפה שחור', 'אספרסו', 'נס קפה בלי חלב', 'קפה בלי חלב'], 'as_sold', 'fdc:171890',
+      {'cup': 240, 'serving': 60}, alt=['fdc:171891'], note='קפה מחולט (≈1 קק״ל ל-100 מ״ל); אספרסו כמעט זהה בכמויות של כוס'),
     E('cola', 'קולה', 'Cola / sweetened soft drink', '🥤', ['קולה', 'קוקה קולה', 'ספרייט', 'פאנטה', 'משקה מוגז', 'שתייה מתוקה', 'פפסי'], 'as_sold', 'moh:4843',
       {'can': 330, 'cup': 240, 'serving': 330}),
     E('cola_zero', 'קולה זירו / דיאט', 'Diet / zero cola', '🥤', ['קולה זירו', 'קולה דיאט', 'זירו', 'דיאט קולה', 'פפסי מקס'], 'as_sold', 'moh:4844',

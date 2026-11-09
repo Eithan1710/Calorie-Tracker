@@ -362,6 +362,11 @@ async function pull() {
   for (const row of (food.data ?? []) as FoodRow[]) {
     const local = s.food[row.id]
     if (local?.dirty && local.updated_at > row.updated_at) continue
+    // a meal changed elsewhere (another device, a server-side correction): its day's cached summary is stale
+    if (local && local.updated_at !== row.updated_at) {
+      summaryRefresh.add(row.date)
+      if (local.date !== row.date) summaryRefresh.add(local.date)
+    }
     upsertFood(rowToFood(row), { fromServer: true })
   }
   for (const row of (ex.data ?? []) as ExRow[]) {
