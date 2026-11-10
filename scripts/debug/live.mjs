@@ -22,7 +22,7 @@ for (const [name, opts] of [['mobile', { viewport: { width: 390, height: 844 }, 
   const names = new Set(bodies.flatMap((x) => x.match(/assets\/[\w.-]+\.js/g) || []))
   for (const n of names) bodies.push(await (await p.request.get(new URL(n, url).href)).text().catch(() => ''))
   const has = (t) => bodies.some((b) => b.includes(t))
-  log.push(`[${name}] js files: ${bodies.length} · polish: ${has('שלבי חיבור Apple Health')&&has('בדוק אם הנתונים הגיעו')}`)
+  log.push(`[${name}] js files: ${bodies.length} · favorites: ${has('מועדפים · נגיעה אחת')&&has('הוסף למועדפים')}`)
   await p.screenshot({ path: `out/${name}.png` })
   await ctx.close()
 }
