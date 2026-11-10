@@ -1,4 +1,5 @@
 import { isValidCreatine } from '../domain/creatine'
+import { favoritesOf } from '../domain/favorites'
 import { useSyncExternalStore } from 'react'
 import { getSupabase } from './supabase'
 import { hasSupabase } from './config'
@@ -424,7 +425,7 @@ function reconcileWeights(rows: WeightRow[]) {
  * Profile & targets live in mz_profiles (one row per account) so every device
  * of the same user computes with the same body data. Newest change wins.
  */
-const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule', 'creatine'] as const
+const TARGET_COLUMNS = ['goal_phase', 'calorie_mode', 'custom_deficit_min', 'custom_deficit_max', 'step_goal', 'health_device', 'routine_schedule', 'creatine', 'favorites'] as const
 
 /** JSON with sorted keys (and undefined = null), so the same value always compares equal */
 function stableJson(v: unknown): string {
@@ -475,6 +476,8 @@ async function syncProfile() {
       officeSchedule: data.routine_schedule === undefined ? st.officeSchedule : isValidOfficeSchedule(data.routine_schedule) ? data.routine_schedule : null,
       // creatine: null = none; column absent before 20261105000000 → keep this device's
       creatine: data.creatine === undefined ? st.creatine : isValidCreatine(data.creatine) ? data.creatine : null,
+      // favorites: null = none; column absent before 20261110000000 → keep this device's
+      favorites: data.favorites === undefined ? st.favorites : favoritesOf(data.favorites),
       profileUpdatedAt: new Date(serverAt).toISOString(),
     }
     const changed = (Object.keys(next) as (keyof typeof next)[]).filter((k) => k !== 'profileUpdatedAt' && stableJson(next[k]) !== stableJson(st[k]))
@@ -512,6 +515,7 @@ async function syncProfile() {
       health_device: st.healthDevice ?? null,
       routine_schedule: isValidOfficeSchedule(st.officeSchedule) ? st.officeSchedule : null,
       creatine: isValidCreatine(st.creatine) ? st.creatine : null,
+      favorites: st.favorites?.length ? favoritesOf(st.favorites) : null,
     }
     let { error: upErr } = await sb.from('mz_profiles').upsert(row)
     if (upErr && TARGET_COLUMNS.some((c) => upErr!.message?.includes(c))) {

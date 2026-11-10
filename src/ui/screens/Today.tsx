@@ -12,6 +12,7 @@ import { InstallApp } from '../InstallApp'
 import { EnergyCard, StepsCard, WorkoutsCard } from './Energy'
 import { ActivityCheck } from './ActivityCheck'
 import { OfficeDay } from './OfficeDay'
+import { FavoritesBar } from '../Favorites'
 
 export interface TodayActions {
   onAddFood: () => void
@@ -101,7 +102,7 @@ export function Today({ date, actions, reminder }: { date: string; actions: Toda
             />
           </div>
         </div>
-        <FoodLog food={food} total={summary.eaten} onAdd={actions.onAddFood} onOpen={actions.onOpenEntry} />
+        <FoodLog date={date} food={food} total={summary.eaten} onAdd={actions.onAddFood} onOpen={actions.onOpenEntry} />
       </div>
     </div>
   )
@@ -314,7 +315,7 @@ export function EntryThumb({ entry, size = 'size-11' }: { entry: FoodEntry; size
   )
 }
 
-function FoodLog({ food, total, onAdd, onOpen }: { food: FoodEntry[]; total: number; onAdd: () => void; onOpen: (id: string) => void }) {
+function FoodLog({ date, food, total, onAdd, onOpen }: { date: string; food: FoodEntry[]; total: number; onAdd: () => void; onOpen: (id: string) => void }) {
   const groups = MEALS.map((m) => ({ ...m, entries: food.filter((f) => f.meal === m.id) })).filter((g) => g.entries.length)
   return (
     <section aria-label="מה אכלתי" className="card animate-rise p-2 sm:p-3" style={{ animationDelay: '120ms' }}>
@@ -326,6 +327,7 @@ function FoodLog({ food, total, onAdd, onOpen }: { food: FoodEntry[]; total: num
           </span>
         )}
       </div>
+      <FavoritesBar date={date} className="px-3 pb-2" />
 
       {groups.length === 0 ? (
         <div className="px-3 pt-2 pb-4 text-center">
