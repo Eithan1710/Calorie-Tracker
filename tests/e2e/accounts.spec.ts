@@ -885,3 +885,31 @@ test('Apple Health setup: five numbered steps, a personal code, a check button',
   await dlg.getByTestId('ingest-token').scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'docs/screenshots/accounts-health-setup.png' })
 })
+
+test('favourite meals come with the account: one tap logs and syncs; un-starring syncs too', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  const coffee = {
+    id: 'fav-coffee',
+    title: 'קפה עם סוכר',
+    emoji: '☕',
+    items: [
+      { name: 'קפה הפוך', grams: 55, calories: 29, protein_g: 1.5, fat_g: 1.6, carbs_g: 2.4, confidence: 0.9 },
+      { name: 'סוכר', grams: 5, calories: 19, protein_g: 0, fat_g: 0, carbs_g: 5, confidence: 0.9 },
+    ],
+    totals: { calories: 48, protein_g: 1.5, fat_g: 1.6, carbs_g: 7.4 },
+    confidence: 0.9,
+    provider: 'gemini',
+  }
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { favorites: [coffee] }))
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  const log = page.getByRole('region', { name: 'מה אכלתי' })
+  await log.getByRole('button', { name: 'הוסף קפה עם סוכר' }).click()
+  await expect(log.getByRole('button', { name: /קפה עם סוכר.*48/ }).last()).toBeVisible()
+  await expect.poll(() => sb.rows('mz_food_entries', u.id).length).toBe(1)
+  expect(sb.rows('mz_food_entries', u.id)[0]).toMatchObject({ title: 'קפה עם סוכר', calories: 48 })
+
+  await log.getByRole('button', { name: /קפה עם סוכר/ }).last().click()
+  await page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.favorites).toBeNull()
+})

@@ -1,4 +1,5 @@
 import type { Creatine } from '../domain/creatine'
+import type { Favorite } from '../domain/favorites'
 import type { Analysis, FoodItem, Totals } from '../../supabase/functions/_shared/schema.ts'
 import type { ExerciseType, Intensity, Lift, MuscleGroup, Profile, RestStyle } from '../domain/energy'
 import type { CalorieMode, DeficitTarget, GoalPhase } from '../domain/goal'
@@ -114,6 +115,8 @@ export interface Settings {
   activityCheck?: Record<string, { no: string[]; skipped?: boolean }>
   /** creatine taken (start / loading / stop) — its water shows on the scale, see domain/creatine.ts */
   creatine?: Creatine | null
+  /** favourite meals, logged again with one tap (newest first) — see domain/favorites.ts */
+  favorites?: Favorite[]
   /** daily step goal (absent = the default, 8,000) */
   stepGoal?: number
   /** when profile/targets last changed on this device (for cross-device sync) */

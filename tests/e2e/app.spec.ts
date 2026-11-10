@@ -217,6 +217,39 @@ test.describe('daily logging', () => {
     await page.getByRole('dialog').getByRole('button', { name: /יוגורט חלבון/ }).click()
     await expect(hero(page)).toContainText('232')
   })
+
+  test('favourite meal: star it once, then one tap on the Today screen logs it again', async ({ page }, info) => {
+    await page.goto('/')
+    await addText(page, 'יוגורט חלבון')
+    await page.getByRole('dialog').getByRole('button', { name: 'אישור' }).click()
+    await expect(hero(page)).toContainText('116')
+    const log = page.getByRole('region', { name: 'מה אכלתי' })
+    await expect(log.getByTestId('favorites')).toHaveCount(0)
+    // star it from the meal's edit sheet
+    await log.getByRole('button', { name: /יוגורט חלבון/ }).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'הוסף למועדפים' }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' })).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // one tap on Today, no sheet
+    await log.getByRole('button', { name: 'הוסף יוגורט חלבון' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(hero(page)).toContainText('232')
+    await page.screenshot({ path: shot('favorites', info.project.name) })
+    // undo from the toast
+    await page.getByRole('button', { name: 'ביטול' }).click()
+    await expect(hero(page)).toContainText('116')
+    // also first in the add sheet; kept after a reload
+    await page.reload()
+    await page.getByRole('button', { name: 'הוסף אוכל' }).first().click()
+    await page.getByRole('dialog').getByTestId('favorites').getByRole('button', { name: 'הוסף יוגורט חלבון' }).click()
+    await expect(hero(page)).toContainText('232')
+    // un-star (from a logged row, not the chip)
+    await log.getByRole('listitem').getByRole('button', { name: /יוגורט חלבון/ }).first().click()
+    await page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' }).click()
+    await page.keyboard.press('Escape')
+    await expect(log.getByTestId('favorites')).toHaveCount(0)
+  })
 })
 
 test.describe('energy & goal', () => {

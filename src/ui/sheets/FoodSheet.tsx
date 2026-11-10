@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { ImagePlus, Loader2, RotateCcw, Search, Trash2, WifiOff, X } from 'lucide-react'
+import { ImagePlus, Loader2, RotateCcw, Search, Star, Trash2, WifiOff, X } from 'lucide-react'
 import { Sheet, PrimaryButton, GhostButton } from '../primitives'
 import { analyzePhoto, analyzeText } from '../../services/ai'
 import { startPhotoFlow, type PhotoFlowTimer } from '../../services/perf'
@@ -10,6 +10,8 @@ import { MEALS, mealForTime, type Analysis, type FoodEntry, type Meal } from '..
 import { newId, totalsOf } from '../../../supabase/functions/_shared/nutrition.ts'
 import { showToast } from '../toast'
 import { fmt, haptic, KCAL } from '../format'
+import { FavoritesBar, toggleFavoriteEntry, useFavorites } from '../Favorites'
+import { findFavorite } from '../../domain/favorites'
 
 type Phase = 'input' | 'search' | 'analyzing' | 'review' | 'error'
 
@@ -123,7 +125,8 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
   const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
   const foodMap = useStore((s) => s.food)
-  const recents = useMemo(() => recentMeals({ ...getState(), food: foodMap }, 6), [foodMap])
+  const favorites = useFavorites()
+  const recents = useMemo(() => recentMeals({ ...getState(), food: foodMap }, 6 + favorites.length).filter((r) => !findFavorite(favorites, r.title)).slice(0, 6), [foodMap, favorites])
   const lastRequest = useRef<() => void>(() => {})
 
   // reset each time the sheet opens
@@ -385,6 +388,7 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
                 <span className="font-normal text-ink-3">· מוצר או מאכל מדויק</span>
               </button>
             )}
+            {!photo && <FavoritesBar date={date} meal={meal} onLogged={onClose} />}
             {recents.length > 0 && !photo && (
               <div>
                 <p className="mb-2 text-sm font-medium text-ink-3">שוב אותו דבר? נגיעה אחת</p>
@@ -456,6 +460,7 @@ export function AddFoodSheet({ open, onClose, date, initialPhoto }: { open: bool
 
 export function EntrySheet({ entryId, onClose }: { entryId: string | null; onClose: () => void }) {
   const entry = useStore((s) => (entryId ? s.food[entryId] : undefined))
+  const favorites = useFavorites()
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [meal, setMeal] = useState<Meal>('lunch')
   const [busy, setBusy] = useState(false)
@@ -504,6 +509,17 @@ export function EntrySheet({ entryId, onClose }: { entryId: string | null; onClo
             <PrimaryButton className="flex-1" onClick={save}>
               שמירה
             </PrimaryButton>
+          )}
+          {entry.status === 'ok' && (
+            <GhostButton
+              onClick={() => toggleFavoriteEntry(entry)}
+              aria-label={findFavorite(favorites, entry.title) ? 'הסר מהמועדפים' : 'הוסף למועדפים'}
+              aria-pressed={Boolean(findFavorite(favorites, entry.title))}
+              className="min-h-14 px-4"
+              data-testid="favorite-toggle"
+            >
+              <Star className={`size-5 ${findFavorite(favorites, entry.title) ? 'fill-current text-warn' : ''}`} />
+            </GhostButton>
           )}
           <GhostButton onClick={remove} aria-label="מחיקה" className={analysis ? 'min-h-14 px-4 text-surplus' : 'min-h-14 flex-1 text-surplus'}>
             <Trash2 className="size-5" /> {!analysis && 'מחיקה'}
