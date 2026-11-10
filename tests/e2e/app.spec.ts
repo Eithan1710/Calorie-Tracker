@@ -244,8 +244,8 @@ test.describe('daily logging', () => {
     await page.getByRole('button', { name: 'הוסף אוכל' }).first().click()
     await page.getByRole('dialog').getByTestId('favorites').getByRole('button', { name: 'הוסף יוגורט חלבון' }).click()
     await expect(hero(page)).toContainText('232')
-    // un-star
-    await log.getByRole('button', { name: /יוגורט חלבון/ }).first().click()
+    // un-star (from a logged row, not the chip)
+    await log.getByRole('listitem').getByRole('button', { name: /יוגורט חלבון/ }).first().click()
     await page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' }).click()
     await page.keyboard.press('Escape')
     await expect(log.getByTestId('favorites')).toHaveCount(0)
