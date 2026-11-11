@@ -275,3 +275,4 @@ export function parseLocally(text: string): LocalParseResult {
   }
   return { analysis, unmatched }
 }
+export { withStatedNutrition } from './statedNutrition.ts'
