@@ -38,6 +38,7 @@ async function localFallback(text: string, reason: 'offline' | 'unavailable'): P
   if (!mod) return { ok: false, code: reason, message: reason === 'offline' ? MSG.offline : MSG.unavailable, canQueue: true }
   const { parseLocally } = mod
   const local = parseLocally(text)
+  if (local.analysis) local.analysis = mod.withStatedNutrition(local.analysis, { text })
   if (local.analysis && local.unmatched.length === 0) return { ok: true, analysis: local.analysis, offline: true }
   if (local.analysis) {
     local.analysis.clarification = `לא זיהיתי בלי AI: ${local.unmatched.join(', ')}`

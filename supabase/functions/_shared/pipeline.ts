@@ -21,6 +21,7 @@ import { extractJson, ProviderError, providersFromEnv, type Env, type NutritionA
 import { atwaterKcal, isPlausiblePer100, newId, overallConfidence, per100FromRef, provenanceFromRef, scale, totalsOf } from './nutrition.ts'
 import { lookupUsda } from './usda.ts'
 import { parseLocally } from './localParser.ts'
+import { withStatedNutrition } from './statedNutrition.ts'
 import { curatedFor, displayName, per100FromDb, pickCandidate, searchPhrase, type MatchTarget, type SearchFoods } from './foodMatch.ts'
 import type { FoodRef } from './foodDb.ts'
 
@@ -375,7 +376,9 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
         break
       }
       const t1 = Date.now()
-      const analysis = await toAnalysis(parsed.data, provider.id, res.model, { env: deps.env, fetchFn, searchFoods: deps.searchFoods })
+      const resolvedAnalysis = await toAnalysis(parsed.data, provider.id, res.model, { env: deps.env, fetchFn, searchFoods: deps.searchFoods })
+      // values the user wrote (menu / label) beat any database record or estimate
+      const analysis = resolvedAnalysis && withStatedNutrition(resolvedAnalysis, req)
       timing.resolve = Date.now() - t1
       if (!analysis) {
         attempts.push({ provider: provider.id, error: 'no_resolvable_items' })
@@ -399,6 +402,7 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
   // last resort for text: the deterministic offline parser
   if (req.mode === 'analyze' && req.text && !req.image) {
     const local = parseLocally(req.text)
+    if (local.analysis) local.analysis = withStatedNutrition(local.analysis, req)
     if (local.analysis) {
       if (local.unmatched.length) {
         local.analysis.clarification = `לא זיהיתי: ${local.unmatched.join(', ')} — אפשר להוסיף בנפרד.`
