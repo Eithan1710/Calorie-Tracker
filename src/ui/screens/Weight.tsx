@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, CloudOff, Minus, Trash2 } from 'lucide-react'
 import { deleteWeight, exercisesForDate, foodForDate, restoreWeight, saveWeight, updateSettings, useStore, weightList } from '../../data/store'
-import { creatineFullKg, creatineProgress, creatineWaterKg, isValidCreatine, type Creatine } from '../../domain/creatine'
+import { creatineFullBy, creatineFullKg, creatineProgress, creatineWaterKg, isValidCreatine, resumeCreatine, type Creatine, type CreatineBreak } from '../../domain/creatine'
 import { measuredExpenditure, trendWeights, weeklyRate, type TrendPoint } from '../../domain/trend'
 import type { WeightEntry } from '../../data/types'
 import { addDays, dayTarget, toDateKey } from '../../domain/goal'
@@ -499,7 +499,16 @@ function CreatineField({ today }: { today: string }) {
   const [editing, setEditing] = useState(false)
   const [start, setStart] = useState(c?.start ?? today)
   const [loading, setLoading] = useState(c?.loading ?? false)
+  const [breaks, setBreaks] = useState<CreatineBreak[]>(c?.breaks ?? [])
   const bodyKg = settings.profile?.weightKg ?? 60
+  const draft: Creatine = {
+    start,
+    ...(loading ? { loading: true } : {}),
+    ...(breaks.length ? { breaks: [...breaks].sort((a, b) => a.from.localeCompare(b.from)) } : {}),
+    ...(c?.stop && c.stop >= start ? { stop: c.stop } : {}),
+  }
+  const draftOk = isValidCreatine(draft)
+  const dateInput = 'min-h-11 w-full rounded-xl bg-surface-2 px-3 text-[15px] outline-none focus:ring-2 focus:ring-info'
   const save = (next: Creatine | null) => {
     updateSettings({ creatine: next })
     void pushProfile()
@@ -534,8 +543,33 @@ function CreatineField({ today }: { today: string }) {
             ]}
           />
         </div>
+        <div className="mt-4" data-testid="creatine-breaks">
+          <p className="text-sm text-ink-2">הפסקות (ימים שלא לקחתי)</p>
+          {breaks.map((b, i) => (
+            <div key={i} className="mt-2 flex items-end gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-ink-3">
+                מ-
+                <input type="date" value={b.from} min={start} max={today} aria-label={`הפסקה ${i + 1} — מתאריך`}
+                  onChange={(e) => e.target.value && setBreaks(breaks.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)))} className={dateInput} />
+              </label>
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-ink-3">
+                עד (כולל)
+                <input type="date" value={b.to} min={start} max={today} aria-label={`הפסקה ${i + 1} — עד תאריך`}
+                  onChange={(e) => e.target.value && setBreaks(breaks.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)))} className={dateInput} />
+              </label>
+              <button type="button" onClick={() => setBreaks(breaks.filter((_, j) => j !== i))} aria-label={`מחק הפסקה ${i + 1}`} className="pressable grid size-11 shrink-0 place-items-center rounded-xl text-ink-3">
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setBreaks([...breaks, { from: addDays(today, -7) > start ? addDays(today, -7) : addDays(start, 1), to: addDays(today, -1) }])}
+            className="pressable mt-2 min-h-10 rounded-full bg-surface-2 px-3 text-sm font-medium">
+            + הוסף הפסקה
+          </button>
+          {!draftOk && <p className="mt-2 text-xs text-warn" role="alert">ההפסקות צריכות להיות אחרי תאריך ההתחלה, בלי חפיפה, ו״עד״ אחרי ״מ-״.</p>}
+        </div>
         <div className="mt-3 flex gap-2">
-          <PrimaryButton className="flex-1" onClick={() => save({ start, ...(loading ? { loading: true } : {}), ...(c?.stop && c.stop >= start ? { stop: c.stop } : {}) })}>
+          <PrimaryButton className="flex-1" disabled={!draftOk} onClick={() => save(draft)}>
             שמירה
           </PrimaryButton>
           <GhostButton onClick={() => setEditing(false)}>ביטול</GhostButton>
@@ -561,8 +595,9 @@ function CreatineField({ today }: { today: string }) {
   const water = creatineWaterKg(c, today, bodyKg)
   const full = creatineFullKg(bodyKg)
   const progress = creatineProgress(c, today)
-  const fullBy = addDays(c.start, c.loading ? 6 : 28)
+  const fullBy = creatineFullBy(c, today)
   const stopped = !!c.stop && c.stop < today
+  const lastBreak = c.breaks?.at(-1)
   return (
     <section aria-label="קריאטין" className={box} data-testid="creatine">
       <div className="flex items-start justify-between gap-3">
@@ -571,8 +606,14 @@ function CreatineField({ today }: { today: string }) {
           <p className="text-xs text-ink-3">
             {stopped ? `\u2066${dateShort(c.start)}–${dateShort(c.stop!)}\u2069` : `מ-${dateShort(c.start)}`} · {c.loading ? 'העמסה ואז תחזוקה' : '3–5 ג׳ ביום'}
           </p>
+          {lastBreak && (
+            <p className="text-xs text-ink-3" data-testid="creatine-break">
+              הפסקה {`\u2066${dateShort(lastBreak.from)}–${dateShort(lastBreak.to)}\u2069`}
+              {(c.breaks?.length ?? 0) > 1 ? ` (ועוד ${(c.breaks?.length ?? 1) - 1})` : ''}
+            </p>
+          )}
         </div>
-        <button type="button" onClick={() => { setStart(c.start); setLoading(!!c.loading); setEditing(true) }} className="pressable min-h-9 shrink-0 rounded-xl px-2 text-sm text-ink-3">
+        <button type="button" onClick={() => { setStart(c.start); setLoading(!!c.loading); setBreaks(c.breaks ?? []); setEditing(true) }} className="pressable min-h-9 shrink-0 rounded-xl px-2 text-sm text-ink-3">
           עריכה
         </button>
       </div>
@@ -589,7 +630,7 @@ function CreatineField({ today }: { today: string }) {
         <p className="mt-1.5 text-xs leading-relaxed text-ink-3" data-testid="creatine-note">
           {stopped
             ? 'אחרי ההפסקה המים יוצאים בהדרגה תוך ~4 שבועות — המשקל ירד בלי קשר לקלוריות.'
-            : progress >= 0.95
+            : !fullBy
               ? 'הגיע למלוא ההשפעה — מעכשיו הקריאטין כבר לא מזיז את המשקל.'
               : `המשקל עולה בהדרגה עד בערך ${dateShort(fullBy)} (מים, לא שומן) — ואז נשאר יציב.`}{' '}
           הטווח משתנה מאדם לאדם (±50%). ההשוואה לקלוריות כבר מורידה את זה.
@@ -602,7 +643,7 @@ function CreatineField({ today }: { today: string }) {
           </button>
         )}
         {c.stop && (
-          <button type="button" onClick={() => { const { stop: _s, ...rest } = c; save(rest) }} className="pressable min-h-10 rounded-full bg-surface-2 px-3 text-sm font-medium">
+          <button type="button" onClick={() => save(resumeCreatine(c, today))} className="pressable min-h-10 rounded-full bg-surface-2 px-3 text-sm font-medium">
             חזרתי לקחת
           </button>
         )}
