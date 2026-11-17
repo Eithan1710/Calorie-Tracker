@@ -631,6 +631,19 @@ test('balance vs scale: pick any two weigh-ins', async ({ page }) => {
   await expect(page.getByTestId('chart-creatine')).toBeVisible()
   await expect(sec.getByTestId('weighin-creatine')).toContainText('מים מקריאטין') // 29.9 → 3.10: ~+0.28 kg of water
   await page.screenshot({ path: 'docs/screenshots/accounts-creatine.png', fullPage: true })
+  // stopped and back the same day: no gap
+  await cr.getByRole('button', { name: 'הפסקתי היום' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toEqual({ start: '2026-09-29', stop: '2026-10-06' })
+  await cr.getByRole('button', { name: 'חזרתי לקחת' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toEqual({ start: '2026-09-29' })
+  // a pause in the middle is kept as a break (the water drains, then refills) — not erased
+  await cr.getByRole('button', { name: 'עריכה' }).click()
+  await cr.getByRole('button', { name: '+ הוסף הפסקה' }).click()
+  await cr.getByLabel('הפסקה 1 — מתאריך').fill('2026-10-01')
+  await cr.getByLabel('הפסקה 1 — עד תאריך').fill('2026-10-03')
+  await cr.getByRole('button', { name: 'שמירה' }).click()
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toEqual({ start: '2026-09-29', breaks: [{ from: '2026-10-01', to: '2026-10-03' }] })
+  await expect(cr.getByTestId('creatine-break')).toContainText('הפסקה')
   await cr.getByRole('button', { name: 'הסרה' }).click()
   await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.creatine).toBeNull()
   await expect(page.getByTestId('weight-creatine-now')).toHaveCount(0)
