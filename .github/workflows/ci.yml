@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu 26.04 yet
     permissions:
       contents: write
     steps:
@@ -87,7 +87,7 @@ jobs:
   # build passes validation, the migration applies (twice) on Postgres, and search
   # quality / access rules hold. Uses the raw datasets on the data/sources branch.
   food-data:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright has no Chromium build for ubuntu 26.04 yet
     services:
       postgres:
         image: postgres:16

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { applyStatedNutrition, describesWholeMeal, parseStatedNutrition } from './statedNutrition.ts'
+import { applyStatedNutrition, describesWholeMeal, parseStatedNutrition, statedFoodName } from './statedNutrition.ts'
 import { analyzeFood } from './pipeline.ts'
-import type { NutritionAIProvider } from './providers.ts'
+import { ProviderError, type NutritionAIProvider } from './providers.ts'
 
 const noEnv = (k: string) => ({ USDA_FDC_DISABLED: 'true' })[k as 'USDA_FDC_DISABLED']
 const fake = (reply: string): NutritionAIProvider => ({ id: 'a', supportsVision: true, complete: vi.fn(async () => ({ text: reply, model: 'm' })) })
@@ -70,5 +70,40 @@ describe('values the user wrote', () => {
     // without stated values the table is used as before
     const plain = await analyzeFood({ mode: 'analyze', text: 'טוקיו נודלס' }, { env: noEnv, providers: [fake(reply)] })
     expect(plain.ok && plain.analysis.items[0].ref).toBe('cur:pasta_cooked')
+  })
+})
+
+describe('stated values without waiting for the AI (19.11)', () => {
+  const text = 'ציקן לימון 1,300 קלוריות בסך הכול:\n\n\t•\tחלבון: כ-60 גרם\n\t•\tפחמימות: כ-160 גרם\n\t•\tשומן: כ-40 גרם'
+
+  it('reads "חלבון: כ-60 גרם" and never gives one nutrient the next one\'s number', () => {
+    expect(parseStatedNutrition(text)).toEqual({ kcal: 1300, protein_g: 60, carbs_g: 160, fat_g: 40, per100: false })
+    expect(parseStatedNutrition('חלבון: 60 גרם פחמימות: 160 גרם שומן: 40 גרם')).toEqual({ kcal: 1240, protein_g: 60, carbs_g: 160, fat_g: 40, per100: false })
+    expect(statedFoodName(text)).toBe('ציקן לימון')
+    expect(statedFoodName('1,300 קלוריות בסך הכול: חלבון: כ-60 גרם')).toBe('ארוחה')
+  })
+
+  it('all four values written → logged at once, the AI is not called', async () => {
+    const slow = { id: 'a', supportsVision: true, complete: vi.fn(async () => ({ text: '{}', model: 'm' })) }
+    const r = await analyzeFood({ mode: 'analyze', text }, { env: noEnv, providers: [slow] })
+    expect(slow.complete).not.toHaveBeenCalled()
+    expect(r.ok && r.analysis.totals).toEqual({ calories: 1300, protein_g: 60, fat_g: 40, carbs_g: 160 })
+    expect(r.ok && r.analysis.items[0].name).toBe('ציקן לימון')
+  })
+
+  it('only calories written and every AI down → still logged with the calories', async () => {
+    const down = { id: 'a', supportsVision: true, complete: vi.fn(async () => { throw new ProviderError('timeout', 'timeout') }) }
+    const r = await analyzeFood({ mode: 'analyze', text: 'ציקן לימון 1,300 קלוריות' }, { env: noEnv, providers: [down] })
+    expect(r.ok && r.analysis.totals.calories).toBe(1300)
+  })
+
+  it('a provider that hangs leaves time for the next one', async () => {
+    const hang: NutritionAIProvider = { id: 'gemini', supportsVision: true, complete: (_r, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new ProviderError('timeout', 'timeout')))) }
+    const reply = JSON.stringify({ status: 'ok', meal_title_he: 'תפוח', emoji: '🍎', overall_confidence: 0.9, clarification_he: null, items: [{ name_he: 'תפוח', name_en: 'apple', db_key: 'apple', grams: 150, state: 'raw', quantity_basis: 'estimated', confidence: 0.9, assumptions: [] }] })
+    const env = (k: string) => ({ USDA_FDC_DISABLED: 'true', AI_TIMEOUT_MS: '900', AI_FALLBACK_RESERVE_MS: '400' })[k as 'USDA_FDC_DISABLED']
+    const t = Date.now()
+    const r = await analyzeFood({ mode: 'analyze', text: 'תפוח' }, { env, providers: [hang, fake(reply)] })
+    expect(r.ok && r.analysis.provider).toBe('a')
+    expect(Date.now() - t).toBeLessThan(800)
   })
 })
