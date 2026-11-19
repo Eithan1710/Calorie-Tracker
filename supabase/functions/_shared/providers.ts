@@ -305,7 +305,13 @@ export class OpenAICompatProvider implements NutritionAIProvider {
 
 // ── Factory ───────────────────────────────────────────────────────────────
 
-export const DEFAULT_GEMINI_MODELS = 'gemini-3.5-flash,gemini-3-flash-preview' // gemini-2.5-flash: 404 since Oct 2026
+/**
+ * Probed 19.11.2026 (real prompt, two rounds): 3.5-flash answered 503 "overloaded" within ~3 s,
+ * 3-flash-preview took 30–45 s, 3.1-flash-lite (GA) answered every time in ~7 s. So: the best model
+ * first (fails fast when overloaded), the reliable lite one next, the slow preview last.
+ * gemini-2.5-flash / -lite: 404 since Oct 2026.
+ */
+export const DEFAULT_GEMINI_MODELS = 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3-flash-preview'
 /**
  * Groq renames its preview models often (qwen3.6 → qwen3.8 returned 404 on 26.10.2026): a list, tried
  * in order on 404. qwen3.8-27b is multimodal + JSON mode (preview); gpt-oss-120b is production, text only.
