@@ -21,7 +21,7 @@ import { extractJson, ProviderError, providersFromEnv, type Env, type NutritionA
 import { atwaterKcal, isPlausiblePer100, newId, overallConfidence, per100FromRef, provenanceFromRef, scale, totalsOf } from './nutrition.ts'
 import { lookupUsda } from './usda.ts'
 import { parseLocally } from './localParser.ts'
-import { withStatedNutrition } from './statedNutrition.ts'
+import { analysisFromStated, parseStatedNutrition, statedIsComplete, withStatedNutrition } from './statedNutrition.ts'
 import { curatedFor, displayName, per100FromDb, pickCandidate, searchPhrase, type MatchTarget, type SearchFoods } from './foodMatch.ts'
 import type { FoodRef } from './foodDb.ts'
 
@@ -343,6 +343,17 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
     return { ok: false, error: 'bad_request', message: ERROR_MESSAGES.bad_request }
   }
 
+  // the text already has calories + protein + carbs + fat ("ציקן לימון 1,300 קלוריות, חלבון 60…"):
+  // nothing for an AI to add — logged instantly, and never lost to a slow provider
+  const stated = req.mode === 'analyze' && !req.image ? parseStatedNutrition(req.text) : null
+  if (statedIsComplete(stated) && req.text) {
+    const direct = analysisFromStated(req.text, stated)
+    if (direct) {
+      deps.log?.({ provider: 'stated', ok: true, latency_ms: Date.now() - started, attempts })
+      return { ok: true, analysis: direct }
+    }
+  }
+
   const system = buildSystemPrompt()
   const systemCompact = buildCompactSystemPrompt()
   const user = buildUserPrompt(req)
@@ -352,12 +363,18 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
   const budget = AbortSignal.timeout(timeoutMs)
   const timing = deps.timing ?? {}
   timing.ai = 0
-  for (const provider of providers) {
+  // A stalled provider must not eat the whole budget: each one but the last stops in time to leave
+  // the next one FALLBACK_RESERVE_MS (production 11.2026: Gemini hung for all 25 s, so Groq
+  // started with nothing left and every request failed).
+  const reserveMs = Number(deps.env('AI_FALLBACK_RESERVE_MS') ?? 9000)
+  for (const [i, provider] of providers.entries()) {
     try {
       const t0 = Date.now()
+      const left = timeoutMs - (t0 - started)
+      const slice = i < providers.length - 1 && left - reserveMs >= Math.min(4000, timeoutMs / 3) ? AbortSignal.any([budget, AbortSignal.timeout(left - reserveMs)]) : budget
       let res
       try {
-        res = await provider.complete({ system, systemCompact, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, budget)
+        res = await provider.complete({ system, systemCompact, user, image: req.image, jsonSchema: AI_JSON_SCHEMA }, slice)
       } finally {
         timing.ai += Date.now() - t0
       }
@@ -398,6 +415,15 @@ export async function analyzeFood(req: AnalyzeRequest, deps: PipelineDeps): Prom
 
   if (sawNotFood) return fail('not_food')
   if (sawUnclear !== null) return fail(req.image ? 'unclear_image' : 'unclear_text', sawUnclear || undefined)
+
+  // no AI answer, but the text has the calories: log those (better than an error)
+  if (stated && req.text) {
+    const fromText = analysisFromStated(req.text, stated)
+    if (fromText) {
+      deps.log?.({ provider: 'stated', ok: true, latency_ms: Date.now() - started, attempts })
+      return { ok: true, analysis: fromText }
+    }
+  }
 
   // last resort for text: the deterministic offline parser
   if (req.mode === 'analyze' && req.text && !req.image) {

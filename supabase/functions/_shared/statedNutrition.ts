@@ -29,10 +29,17 @@ const KEYWORDS = {
 } as const
 type Key = keyof typeof KEYWORDS
 
-/** "750 קלוריות", "45 גרם חלבון", "25g fat" — and "קלוריות: 750", "חלבון - 45 גרם" (separator required) */
+/** "כ-60", "~60", "בערך 60" */
+const APPROX = `(?:כ\\s*-?\\s*|~\\s*|≈\\s*|בערך\\s+|about\\s+)?`
+const ANY_KEYWORD = `(?:${Object.values(KEYWORDS).join('|')})`
+/**
+ * "750 קלוריות", "45 גרם חלבון", "25g fat" — and "קלוריות: 750", "חלבון: כ-45 גרם" (separator required).
+ * A number that belongs to "<nutrient>: N" is never read as the next nutrient's "N <nutrient>"
+ * ("חלבון: 60 גרם פחמימות: 160" — the 60 is protein).
+ */
 const patterns = (k: Key) => [
-  new RegExp(`${NUM}\\s*${UNIT}\\s*(?:של\\s+)?${KEYWORDS[k]}(?![${HE}a-z])`, 'gi'),
-  new RegExp(`(?<![${HE}a-z])${KEYWORDS[k]}\\s*[:=\\-–]\\s*${NUM}`, 'gi'),
+  new RegExp(`(?<!${ANY_KEYWORD}\\s*[:=\\-–]\\s*${APPROX})(?<![\\d.])${NUM}\\s*${UNIT}\\s*(?:של\\s+)?${KEYWORDS[k]}(?![${HE}a-z])`, 'gi'),
+  new RegExp(`(?<![${HE}a-z])${KEYWORDS[k]}\\s*[:=\\-–]\\s*${APPROX}${NUM}(?:\\s*(?:גרם|גר['׳]?|ג['׳]|g|gr|grams?|kcal)(?![${HE}a-z]))?`, 'gi'),
 ]
 
 function normalize(text: string): string {
@@ -161,3 +168,56 @@ export function withStatedNutrition(a: Analysis, req: { mode?: string; text?: st
   if (!s || !req.text) return a
   return applyStatedNutrition(a, s, { wholeMeal: describesWholeMeal(req.text) })
 }
+
+/** The food's name from the text: what's left once the values, bullets and filler words are removed. */
+export function statedFoodName(raw: string): string {
+  const name = foodPart(normalize(raw))
+    .replace(/[•\t\n\r*·:;,()\-–]+/g, ' ')
+    .replace(/(?<![א-ת])(?:בסך\s+הכול|בסך\s+הכל|סה["״]?כ|סך\s+הכול|בערך|כ(?=\s|$)|total|about)(?![א-ת])/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return name.length >= 2 ? name.slice(0, 60) : 'ארוחה'
+}
+
+/**
+ * An analysis made from the stated values alone — no AI needed: the text already has the calories
+ * and all three macros ("ציקן לימון 1,300 קלוריות, חלבון 60, פחמימות 160, שומן 40"), or the AI is
+ * unavailable. The portion weight is unknown and estimated from a typical meal density (~160 kcal
+ * per 100 g); it doesn't change the calories.
+ */
+export function analysisFromStated(text: string, s: StatedNutrition): Analysis | null {
+  if (s.per100 || !describesWholeMeal(text)) return null
+  const name = statedFoodName(text)
+  const grams = Math.max(50, Math.round(s.kcal / 1.6 / 10) * 10)
+  const kcal100 = (s.kcal * 100) / grams
+  // unstated macros: a typical mixed meal's energy split (20% protein, 50% carbs, 30% fat)
+  const placeholder: FoodItem = {
+    id: newId(),
+    name,
+    grams,
+    per100: { kcal: kcal100, protein_g: (kcal100 * 0.2) / 4, fat_g: (kcal100 * 0.3) / 9, carbs_g: (kcal100 * 0.5) / 4 },
+    calories: s.kcal,
+    protein_g: (s.kcal * 0.2) / 4,
+    fat_g: (s.kcal * 0.3) / 9,
+    carbs_g: (s.kcal * 0.5) / 4,
+    confidence: 0.95,
+    assumptions: [],
+    source: 'manual',
+    basis: 'estimated',
+    emoji: '🍽️',
+  }
+  const base: Analysis = {
+    title: name,
+    emoji: '🍽️',
+    items: [placeholder],
+    totals: totalsOf([placeholder]),
+    overall_confidence: 0.95,
+    clarification: null,
+    provider: 'stated',
+  }
+  return applyStatedNutrition(base, s, { wholeMeal: true })
+}
+
+/** All of calories, protein, carbs and fat are written: nothing for an AI to add. */
+export const statedIsComplete = (s: StatedNutrition | null): s is StatedNutrition =>
+  !!s && !s.per100 && s.protein_g !== undefined && s.carbs_g !== undefined && s.fat_g !== undefined
