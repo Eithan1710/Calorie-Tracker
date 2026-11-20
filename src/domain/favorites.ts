@@ -14,6 +14,8 @@ export interface Favorite {
   totals: Totals
   confidence: number
   provider: string
+  /** days of the week it's offered on (0 = Sunday … 6 = Saturday); absent / empty = every day */
+  days?: number[]
 }
 
 export const MAX_FAVORITES = 12
@@ -29,7 +31,8 @@ export const isValidFavorite = (f: unknown): f is Favorite =>
   Array.isArray(f.items) &&
   f.items.length > 0 &&
   isObj(f.totals) &&
-  Number.isFinite(Number((f.totals as Record<string, unknown>).calories))
+  Number.isFinite(Number((f.totals as Record<string, unknown>).calories)) &&
+  (f.days === undefined || (Array.isArray(f.days) && f.days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)))
 
 /** The valid favourites of a stored list (anything else → empty). */
 export const favoritesOf = (v: unknown): Favorite[] => (Array.isArray(v) ? v.filter(isValidFavorite).slice(0, MAX_FAVORITES) : [])
@@ -78,3 +81,21 @@ export function entryFromFavorite(f: Favorite, o: { id: string; itemId: () => st
     deleted: false,
   }
 }
+
+/** Weekday of a "YYYY-MM-DD" day (0 = Sunday), independent of the device's time zone. */
+export const weekdayOf = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay()
+
+/** Offered on that day? (no days set = every day) */
+export const favoriteOnDay = (f: Favorite, date: string) => !f.days?.length || f.days.includes(weekdayOf(date))
+
+/** The favourite with these weekdays (sorted, unique; all 7 or none = every day). */
+export function withDays(list: Favorite[], id: string, days: number[]): Favorite[] {
+  const clean = [...new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+  return list.map((f) => {
+    if (f.id !== id) return f
+    const { days: _old, ...rest } = f
+    return clean.length && clean.length < 7 ? { ...rest, days: clean } : rest
+  })
+}
+
+export const WEEKDAY_LETTERS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'] as const

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { entryFromFavorite, favoriteFromEntry, favoritesOf, findFavorite, MAX_FAVORITES, toggleFavorite, type Favorite } from './favorites'
+import { entryFromFavorite, favoriteFromEntry, favoriteOnDay, favoritesOf, findFavorite, isValidFavorite, MAX_FAVORITES, toggleFavorite, weekdayOf, withDays, type Favorite } from './favorites'
 import type { FoodEntry } from '../data/types'
 
 const coffee = {
@@ -47,5 +47,23 @@ describe('favourite meals', () => {
     expect(favoritesOf([a, { id: 'x' }, null, { ...a, items: [] }, 'no'])).toEqual([a])
     expect(favoritesOf(null)).toEqual([])
     expect(favoritesOf({ a: 1 })).toEqual([])
+  })
+})
+
+describe('favourites on chosen weekdays', () => {
+  const base = { id: 'f', title: 'ארוחת שניצל בבגט', emoji: '🥖', items: [{ name: 'x', grams: 1, calories: 1, protein_g: 0, fat_g: 0, carbs_g: 0 }], totals: { calories: 1, protein_g: 0, fat_g: 0, carbs_g: 0 }, confidence: 0.9, provider: 'a' } as unknown as Favorite
+  it('a Friday-only favourite shows on Fridays only; no days = every day', () => {
+    const fri = { ...base, days: [5] }
+    expect(weekdayOf('2026-11-20')).toBe(5) // Friday
+    expect(favoriteOnDay(fri, '2026-11-20')).toBe(true)
+    expect(favoriteOnDay(fri, '2026-11-21')).toBe(false)
+    expect(favoriteOnDay(base, '2026-11-21')).toBe(true)
+    expect(isValidFavorite(fri)).toBe(true)
+    expect(isValidFavorite({ ...base, days: [7] })).toBe(false)
+  })
+  it('setting days: sorted and unique; all seven or none clears the limit', () => {
+    expect(withDays([base], 'f', [5, 4, 5])[0].days).toEqual([4, 5])
+    expect(withDays([base], 'f', [0, 1, 2, 3, 4, 5, 6])[0].days).toBeUndefined()
+    expect(withDays([{ ...base, days: [5] }], 'f', [])[0].days).toBeUndefined()
   })
 })

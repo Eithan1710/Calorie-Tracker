@@ -1,7 +1,7 @@
 import { Star } from 'lucide-react'
 import { deleteFood, getState, updateSettings, upsertFood, useStore } from '../data/store'
 import { mealForTime, type FoodEntry, type Meal } from '../data/types'
-import { entryFromFavorite, favoriteFromEntry, findFavorite, toggleFavorite, type Favorite } from '../domain/favorites'
+import { entryFromFavorite, favoriteFromEntry, favoriteOnDay, findFavorite, toggleFavorite, WEEKDAY_LETTERS, withDays, type Favorite } from '../domain/favorites'
 import { toDateKey } from '../domain/goal'
 import { pushProfile } from '../services/sync'
 import { newId } from '../../supabase/functions/_shared/nutrition.ts'
@@ -40,7 +40,7 @@ export function useFavorites(): Favorite[] {
 
 /** One-tap chips of the favourite meals. Nothing when there are none. */
 export function FavoritesBar({ date, meal, onLogged, className = '' }: { date: string; meal?: Meal; onLogged?: () => void; className?: string }) {
-  const favorites = useFavorites()
+  const favorites = useFavorites().filter((f) => favoriteOnDay(f, date))
   if (!favorites.length) return null
   return (
     <div className={className} data-testid="favorites">
@@ -64,6 +64,35 @@ export function FavoritesBar({ date, meal, onLogged, className = '' }: { date: s
             <span className="num shrink-0 text-ink-3">{fmt(f.totals.calories)}</span>
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/** Which weekdays a favourite is offered on (none selected = every day). */
+export function FavoriteDays({ fav }: { fav: Favorite }) {
+  const days = fav.days ?? []
+  const set = (next: number[]) => {
+    updateSettings({ favorites: withDays(getState().settings.favorites ?? [], fav.id, next) })
+    void pushProfile()
+    haptic()
+  }
+  return (
+    <div data-testid="favorite-days">
+      <p className="mb-2 flex items-center gap-1 text-sm text-ink-3">
+        <Star className="size-3.5 fill-current text-warn" aria-hidden /> במועדפים — {days.length ? 'רק בימים המסומנים' : 'בכל יום'}
+      </p>
+      <div className="flex gap-1.5" role="group" aria-label="באילו ימים להציג">
+        {WEEKDAY_LETTERS.map((l, d) => {
+          const on = days.includes(d)
+          return (
+            <button key={d} type="button" aria-pressed={on} aria-label={`יום ${l}`}
+              onClick={() => set(on ? days.filter((x) => x !== d) : [...days, d])}
+              className={`pressable grid min-h-10 flex-1 place-items-center rounded-full text-sm font-medium ${on ? 'bg-ink text-inverse' : 'bg-surface-2 text-ink-2'}`}>
+              {l}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
