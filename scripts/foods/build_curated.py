@@ -101,6 +101,16 @@ def main():
             entry['ref_name'] = ref['note']
             entry['verification'] = 'recipe'
             ref_desc = f"מתכון: {ref['note']} ({' + '.join(f'`{r}`' for r, _ in ref['recipe'])})"
+        elif 'label' in ref:
+            # a package label read by the user, per serving (e.g. one 112 g drained can)
+            per_g = ref['per_g']
+            values = {n: v * 100 / per_g for n, v in ref['label'].items()}
+            entry.update(rounded(values))
+            entry['source'] = 'off'  # a manufacturer label, like Open Food Facts records
+            entry['ref'] = ref['ref']
+            entry['ref_name'] = ref['note']
+            entry['verification'] = 'label'
+            ref_desc = f"תווית: {ref['note']}"
         else:
             k, p, f, c = ref['estimate']
             values = {'kcal': k, 'protein_g': p, 'fat_g': f, 'carbs_g': c}
