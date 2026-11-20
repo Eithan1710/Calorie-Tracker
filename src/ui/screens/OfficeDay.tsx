@@ -14,7 +14,7 @@ export function OfficeDay({ date, isToday }: { date: string; isToday: boolean })
   const settings = useStore((s) => s.settings)
   const exercise = useStore((s) => s.exercise)
   const schedule = isValidOfficeSchedule(settings.officeSchedule) ? settings.officeSchedule : null
-  if (!schedule || !isScheduledWorkday(schedule, date) || healthDeviceOf(settings, Object.values(exercise)) !== 'phone') return null
+  if (!schedule || !isScheduledWorkday(schedule, date) || healthDeviceOf(settings, Object.values(exercise)) !== 'phone' || settings.routineOff) return null
   const away = isOfficeOff(schedule, date)
   const hours = `${schedule.start}–${schedule.end}`
 

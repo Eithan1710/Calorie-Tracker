@@ -926,3 +926,28 @@ test('favourite meals come with the account: one tap logs and syncs; un-starring
   await page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' }).click()
   await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.favorites).toBeNull()
 })
+
+test('the routine can be turned off: Apple numbers only, synced, office hours hidden', async ({ page }) => {
+  const u = sb.addUser('איתן', '123456')
+  ;(sb.tables.mz_profiles ??= []).push(profileRow(u.id, { weight_kg: 60.1, routine_schedule: { days: [0, 1, 2, 3, 4], start: '09:30', end: '18:00', phoneBreaks: [['12:00', '13:00']] } }))
+  ;(sb.tables.mz_health_data ??= []).push({ user_id: u.id, date: '2026-10-06', steps: 2400, source: 'shortcut', active_kcal: 90, resting_kcal: 820, health_as_of: '2026-10-06T12:30:00+03:00', updated_at: '2026-10-06T09:30:05Z' })
+  await page.goto('/')
+  await login(page, 'איתן', '123456')
+  const energy = page.getByRole('region', { name: 'שריפה היום' })
+  const burned = async () => Number(/נשרפו ([\d,]+)/.exec((await hero(page).textContent()) ?? '')?.[1].replace(/,/g, ''))
+  await expect(energy.getByText('שגרה בלי הטלפון')).toBeVisible()
+  const before = await burned()
+
+  await page.getByRole('button', { name: 'הגדרות' }).click()
+  const d = page.getByRole('dialog')
+  await d.getByRole('switch', { name: 'להוסיף שגרה שהטלפון לא רואה' }).click()
+  await expect(d.getByRole('switch', { name: 'להוסיף שגרה שהטלפון לא רואה' })).toHaveAttribute('aria-checked', 'false')
+  await expect(d.getByTestId('office-schedule')).toHaveCount(0)
+  await expect(d.getByTestId('health-device-note')).toContainText('השגרה כבויה')
+  await expect.poll(() => sb.rows('mz_profiles', u.id)[0]?.routine_off).toBe(true)
+  await page.keyboard.press('Escape')
+
+  await expect(energy.getByText('שגרה בלי הטלפון')).toHaveCount(0)
+  await expect(page.getByTestId('office-day')).toHaveCount(0)
+  await expect.poll(burned).toBeLessThan(before)
+})
