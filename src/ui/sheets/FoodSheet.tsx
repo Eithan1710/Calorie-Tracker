@@ -10,7 +10,7 @@ import { MEALS, mealForTime, type Analysis, type FoodEntry, type Meal } from '..
 import { newId, totalsOf } from '../../../supabase/functions/_shared/nutrition.ts'
 import { showToast } from '../toast'
 import { fmt, haptic, KCAL } from '../format'
-import { FavoritesBar, toggleFavoriteEntry, useFavorites } from '../Favorites'
+import { FavoriteDays, FavoritesBar, toggleFavoriteEntry, useFavorites } from '../Favorites'
 import { findFavorite } from '../../domain/favorites'
 
 type Phase = 'input' | 'search' | 'analyzing' | 'review' | 'error'
@@ -529,6 +529,7 @@ export function EntrySheet({ entryId, onClose }: { entryId: string | null; onClo
     >
       <div className="flex flex-col gap-4 pt-1">
         <MealPicker value={meal} onChange={setMeal} />
+        {entry.status === 'ok' && findFavorite(favorites, entry.title) && <FavoriteDays fav={findFavorite(favorites, entry.title)!} />}
         <EntryPhotoEditor entry={entry} />
         {analysis ? (
           <Suspense fallback={<Loading />}>

@@ -229,6 +229,17 @@ test.describe('daily logging', () => {
     await log.getByRole('button', { name: /יוגורט חלבון/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'הוסף למועדפים' }).click()
     await expect(page.getByRole('dialog').getByRole('button', { name: 'הסר מהמועדפים' })).toHaveAttribute('aria-pressed', 'true')
+    // only on another weekday → not offered today; cleared → every day again
+    const today = await page.evaluate(() => new Date().getDay())
+    const other = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'][(today + 1) % 7]
+    const days = page.getByRole('dialog').getByTestId('favorite-days')
+    await days.getByRole('button', { name: `יום ${other}` }).click()
+    await expect(days).toContainText('רק בימים המסומנים')
+    await page.keyboard.press('Escape')
+    await expect(log.getByTestId('favorites')).toHaveCount(0)
+    await log.getByRole('button', { name: /יוגורט חלבון/ }).click()
+    await page.getByRole('dialog').getByTestId('favorite-days').getByRole('button', { name: `יום ${other}` }).click()
+    await expect(page.getByRole('dialog').getByTestId('favorite-days')).toContainText('בכל יום')
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     // one tap on Today, no sheet

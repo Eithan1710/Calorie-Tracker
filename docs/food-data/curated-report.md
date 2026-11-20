@@ -5,7 +5,7 @@ kcal: old value → new value from the referenced record. "alt" = other records 
 (⚠️ = differs by more than 15 %, see the note in the spec). Carbohydrates are *available* carbs
 (without fibre), as on Israeli labels; USDA totals were converted by subtracting fibre.
 
-Entries: 206 (previous table: ?).
+Entries: 208 (previous table: ?).
 
 | key | שם | kcal לפני | kcal עכשיו | שינוי | אימות | מקור | השוואה | דגלים |
 |---|---|---|---|---|---|---|---|---|
@@ -76,6 +76,7 @@ Entries: 206 (previous table: ?).
 | `chicken_drumstick` | שוקיים / כרעיים בגריל | חדש | 158 |  | label | `moh:866` בשר עוף, שוקיים בגריל, עוף ועוד, עוף העמק |  |  |
 | `turkey_breast_cooked` | חזה הודו מבושל | חדש | 108 |  | label | `moh:944` בשר הודו, חזה, לבן, מבושל |  |  |
 | `schnitzel` | שניצל עוף | חדש | 270 |  | recipe | `moh:818` שניצל חזה עוף מטוגן בשמן קנולה | `moh:815` 263 (-3%) |  |
+| `schnitzel_no_oil` | שניצל אפוי / באייר פרייר | חדש | 222 |  | recipe | `moh:9755` שניצל חזה עוף, אפוי |  |  |
 | `schnitzel_frozen` | שניצלונים / נאגטס | חדש | 211 |  | label | `moh:932` שניצל עוף, טבעות עוף, שניצלונים, נאגטס, עוף טוב |  |  |
 | `shawarma` | שווארמה (הודו) | חדש | 154 |  | recipe | `moh:982` שווארמה ביתית, מבשר הודו כהה, ללא תוספת שמן בבישול | `moh:998` 141 (-8%), `moh:8505` 130 (-16%) ⚠️ |  |
 | `ground_beef_raw` | בשר טחון / המבורגר (משקל נא) | חדש | 247 |  | official | `moh:655` בשר בקר, טחון, לא מבושל | `fdc:174036` 254 (+3%) |  |
@@ -118,6 +119,7 @@ Entries: 206 (previous table: ?).
 | `mashed_potato` | פירה | חדש | 113 |  | official | `fdc:168555` Potatoes, mashed, home-prepared, whole milk and butter added |  |  |
 | `sweet_potato` | בטטה (אפויה) | חדש | 89 |  | official | `moh:3654` בטטה אפוייה, קליפה נאכלה, ללא תוספת שומן, עם מלח |  |  |
 | `fries` | צ'יפס | חדש | 312 |  | official | `fdc:170698` Fast foods, potato, french fried in vegetable oil | `moh:3488` 222 (-29%) ⚠️ |  |
+| `fries_oven` | צ'יפס בתנור / באייר פרייר | חדש | 177 |  | label | `moh:3491` תפוחי אדמה, מטוגנים, צ'יפס קפוא לתנור, תפוגן | `fdc:170118` 168 (-5%) |  |
 | `corn` | תירס | חדש | 79 |  | official | `fdc:169216` Corn, sweet, yellow, canned, vacuum pack, regular pack | `fdc:168525` 96 (+22%) ⚠️ |  |
 | `hummus` | חומוס (ממרח) | חדש | 269 |  | recipe | `moh:1640` סלט חומוס, ביתי | `moh:1641` 322 (+20%) ⚠️, `moh:1648` 271 (+1%), `moh:9863` 176 (-35%) ⚠️, `fdc:321358` 229 (-15%) |  |
 | `chickpeas_cooked` | גרגרי חומוס (מבושלים) | חדש | 180 |  | official | `moh:1653` חומוס, גרגירים, מבושלים עם מלח | `fdc:173757` 164 (-9%) |  |
