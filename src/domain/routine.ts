@@ -283,14 +283,17 @@ export function healthDeviceOf(settings: { healthDevice?: HealthDevice }, exerci
 export interface RoutineContext {
   phoneOnly: boolean
   schedule: OfficeSchedule | null
+  /** false = the owner turned the routine off: nothing is added for what the phone can't see */
+  enabled?: boolean
 }
 
 export function routineContextOf(
-  settings: { healthDevice?: HealthDevice; officeSchedule?: OfficeSchedule | null },
+  settings: { healthDevice?: HealthDevice; officeSchedule?: OfficeSchedule | null; routineOff?: boolean },
   exercises: Iterable<{ source_app?: string | null }>,
 ): RoutineContext {
   return {
     phoneOnly: healthDeviceOf(settings, exercises) === 'phone',
     schedule: isValidOfficeSchedule(settings.officeSchedule) ? settings.officeSchedule : null,
+    enabled: !settings.routineOff,
   }
 }

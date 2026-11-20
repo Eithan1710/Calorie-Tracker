@@ -62,10 +62,33 @@ function HealthDeviceField() {
           { value: 'watch', label: 'גם Apple Watch' },
         ]}
       />
+      {device === 'phone' && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2 p-3">
+          <div>
+            <p className="font-medium">להוסיף שגרה שהטלפון לא רואה</p>
+            <p className="text-xs text-ink-3">כבוי: רק מה שאפל מדד, בלי תוספת</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!settings.routineOff}
+            aria-label="להוסיף שגרה שהטלפון לא רואה"
+            onClick={() => {
+              updateSettings({ routineOff: settings.routineOff ? undefined : true, summariesVersion: undefined })
+              void pushProfile()
+            }}
+            className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${!settings.routineOff ? 'bg-good' : 'bg-surface-3'}`}
+          >
+            <span className={`absolute top-1 size-6 rounded-full bg-white shadow transition-all ${!settings.routineOff ? 'start-7' : 'start-1'}`} />
+          </button>
+        </div>
+      )}
       <p className="text-sm text-ink-3" data-testid="health-device-note">
-        {device === 'phone'
-          ? 'האייפון סופר רק הליכה כשהוא עליך. מה שהוא לא רואה — ישיבה ועבודות קלות בבית, שעות העבודה שלמטה, הישיבה בהפסקת הצהריים, קימה, מקלחת והתלבשות — מוערך ומתווסף לימים עם נתוני Apple Health, רק מעל המנוחה. זמן ההליכה (מהצעדים) והאימונים מנוכה, כדי ששום דקה לא תיספר פעמיים.'
-          : 'השעון מודד גם את תנועות השגרה, אז לא מתווסף עליהן כלום.'}
+        {device === 'watch'
+          ? 'השעון מודד גם את תנועות השגרה, אז לא מתווסף עליהן כלום.'
+          : settings.routineOff
+            ? 'השגרה כבויה: נספרים רק המנוחה והפעילות שאפל מדד, האימונים שהוספת ועיכול המזון.'
+            : 'האייפון סופר רק הליכה כשהוא עליך. מה שהוא לא רואה — ישיבה ועבודות קלות בבית, שעות העבודה שלמטה, הישיבה בהפסקת הצהריים, קימה, מקלחת והתלבשות — מוערך ומתווסף לימים עם נתוני Apple Health, רק מעל המנוחה. זמן ההליכה (מהצעדים) והאימונים מנוכה, כדי ששום דקה לא תיספר פעמיים.'}
       </p>
     </div>
   )
@@ -86,7 +109,7 @@ function OfficeScheduleField() {
   useEffect(() => {
     if (saved) setDraft(saved)
   }, [saved?.start, saved?.end, saved?.days.join(), saved?.phoneBreaks.flat().join()])
-  if (healthDeviceOf(settings, Object.values(exercise)) !== 'phone') return null
+  if (healthDeviceOf(settings, Object.values(exercise)) !== 'phone' || settings.routineOff) return null
   const error = officeScheduleError(draft)
   const save = (next: OfficeSchedule | null) => {
     if (next) setDraft(next)

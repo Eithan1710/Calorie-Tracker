@@ -111,6 +111,8 @@ export interface Settings {
   healthDevice?: HealthDevice
   /** weekly work hours with the phone left aside (null/absent = none) — see domain/routine.ts */
   officeSchedule?: OfficeSchedule | null
+  /** the routine an iPhone can't see is not added (mz_profiles.routine_off) */
+  routineOff?: boolean
   /** the daily "anything the phone didn't see?" check: per date, activities answered "no" / the check skipped */
   activityCheck?: Record<string, { no: string[]; skipped?: boolean }>
   /** creatine taken (start / loading / stop) — its water shows on the scale, see domain/creatine.ts */

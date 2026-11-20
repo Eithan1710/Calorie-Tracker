@@ -167,5 +167,7 @@ jobs:
           grep -q 'creatine checks passed' creatine.log
           $P -f supabase/tests/favorites.sql 2>&1 | tee favorites.log
           grep -q 'favorites checks passed' favorites.log
+          $P -f supabase/tests/routine_off.sql 2>&1 | tee routine_off.log
+          grep -q 'routine_off checks passed' routine_off.log
           $P -f supabase/tests/client_errors.sql 2>&1 | tee errors.log
           grep -q 'client errors checks passed' errors.log

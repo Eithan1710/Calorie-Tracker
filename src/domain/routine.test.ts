@@ -12,7 +12,7 @@ const FRIDAY = '2026-10-30'
 const morning = net(3.3, 3) + net(2.0, 6) + net(2.0, 10) + net(2.5, 6)
 
 /** a finished day with Apple Health Resting + Active Energy (an iPhone without a watch) */
-const day = (date: string, opts: { active?: number | null; resting?: number | null; workouts?: DayWorkout[]; steps?: number; phoneOnly?: boolean; schedule?: OfficeSchedule | null; asOf?: string; now?: string } = {}) =>
+const day = (date: string, opts: { active?: number | null; resting?: number | null; workouts?: DayWorkout[]; steps?: number; phoneOnly?: boolean; schedule?: OfficeSchedule | null; asOf?: string; now?: string; enabled?: boolean } = {}) =>
   dayEnergy({
     date,
     profile: p,
@@ -23,7 +23,7 @@ const day = (date: string, opts: { active?: number | null; resting?: number | nu
         ? null
         : { active_kcal: opts.active === undefined ? 300 : opts.active, resting_kcal: opts.resting === undefined ? 1530 : opts.resting, health_as_of: opts.asOf ?? `${date}T23:59:00` },
     intake: { protein_g: 120, carbs_g: 180, fat_g: 50 },
-    routine: { phoneOnly: opts.phoneOnly ?? true, schedule: opts.schedule === undefined ? WORK : opts.schedule },
+    routine: { phoneOnly: opts.phoneOnly ?? true, schedule: opts.schedule === undefined ? WORK : opts.schedule, enabled: opts.enabled },
     now: new Date(opts.now ?? '2026-11-02T12:00:00'),
   })
 
@@ -121,6 +121,19 @@ describe('daily total — scenarios', () => {
     expect(e.total).toBe(Math.round(1530 + 300 + r.kcal + e.tef))
     expect(e.sources.apple).toBe(1830)
     expect(e.sources.estimated).toBe(e.total - 1830)
+  })
+
+  it("routine turned off by the owner: Apple's numbers only (no routine, no flat movement term)", () => {
+    const off = day(SUNDAY, { enabled: false })
+    expect(off.routine).toBe(0)
+    expect(off.total).toBe(Math.round(1530 + 300 + off.tef))
+    expect(off.total).toBeLessThan(day(SUNDAY).total)
+    // a morning with resting energy but no active samples: still a measured 0, nothing estimated in its place
+    const noActive = day(SUNDAY, { active: null, steps: 0, enabled: false })
+    expect(noActive.routine).toBe(0)
+    expect(noActive.active.kcal).toBe(0)
+    expect(routineContextOf({ healthDevice: 'phone', routineOff: true }, []).enabled).toBe(false)
+    expect(routineContextOf({ healthDevice: 'phone' }, []).enabled).toBe(true)
   })
 
   it('2. Apple Watch (complete data): nothing estimated on top of Apple Health except digestion', () => {
