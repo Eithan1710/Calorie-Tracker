@@ -81,13 +81,18 @@ describe('Apple Health mode', () => {
     const e = dayEnergy({ date: D, profile: me, steps: 4000, workouts: [], health: { resting_kcal: 750, active_kcal: 300, health_as_of: iso(D, '12:00') }, now: at(D, '12:10') })
     expect(e.partial).toBe(true)
     expect(e.coverageMinutes).toBe(720)
-    expect(e.resting.fullDay).toBe(1500)
+    // 750 by noon → 1,500 linear, but never under the BMR (1,502.5) before the day is over
+    expect(e.resting.fullDay).toBe(Math.round(BMR))
     expect(e.soFar).toBe(1050)
-    expect(e.total).toBe(1800)
+    expect(e.total).toBe(Math.round(BMR + 300))
   })
 
   it('early-morning projection is blended with BMR (not 24× a tiny sample)', () => {
-    expect(projectResting(125, 120, BMR)).toBeCloseTo(0.5 * 1500 + 0.5 * BMR, 6)
+    expect(projectResting(125, 120, BMR)).toBeCloseTo(BMR, 6) // the blend (1,501) is under the BMR → the BMR
+    expect(projectResting(150, 120, BMR)).toBeCloseTo(0.5 * 1800 + 0.5 * BMR, 6)
+    // lagging Apple samples mid-afternoon (873 by 15:12): not below the BMR until the day's total is in
+    expect(projectResting(873, 912, BMR)).toBe(BMR)
+    expect(projectResting(1400, 1440, BMR)).toBe(1400) // a finished day keeps Apple's own number
     expect(projectResting(10, 0, BMR)).toBe(BMR)
     // 23:30 still misses half an hour of rest: 1,480 × 1,440 / 1,410 (was taken as the full day)
     expect(projectResting(1480, 23 * 60 + 30, BMR)).toBeCloseTo(1511.5, 1)

@@ -257,9 +257,11 @@ export function projectResting(soFar: number, minutes: number, bmr: number): num
   if (minutes >= 1440 - 5) return soFar
   if (minutes <= 0) return bmr
   const linear = (soFar * 1440) / minutes
-  if (minutes >= PROJECTION_BLEND_MINUTES) return linear
-  const w = minutes / PROJECTION_BLEND_MINUTES
-  return w * linear + (1 - w) * bmr
+  const w = Math.min(1, minutes / PROJECTION_BLEND_MINUTES)
+  // Not below the BMR until the day is over: Apple's resting samples arrive in batches and lag the clock
+  // (21.11.2026 15:12: 873 so far → 1,378 projected, while his finished days are 1,480–1,645).
+  // The day's real total replaces the projection once it's in.
+  return Math.max(w * linear + (1 - w) * bmr, bmr)
 }
 
 export function dayEnergy(opts: {
